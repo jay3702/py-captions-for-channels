@@ -1,0 +1,16 @@
+# Bootstrapping notes
+
+I’m resuming work on my `py-captions-for-channels` project. This file contains the general instructions for future efforts.
+
+Summary of the project so far:
+
+- I originally built a Bash watcher that monitored `channels-dvr.log` for `Processing file-` events and triggered a captioning pipeline.
+- The Bash version was unreliable due to partial log lines, binary fragments, log rotation issues, AWK crashes, and systemd restart loops.
+- I decided to replace it with a Python project with two event sources:
+  1. a robust log-based watcher that handles partial lines and rotation,
+  2. a ChannelWatch WebSocket backend that provides structured JSON events.
+- The Python architecture includes: `watcher`, `log_source`, `channelwatch_source`, `parser`, `state manager`, `pipeline runner`, and `config` system.
+- The system tracks last processed timestamps for idempotency and can send optional Apprise notifications.
+- The long-term goal is a reliable, extensible, open-source captioning tool for Channels DVR.
+
+We created four Word documents that describe the project. Please wait until all are posted, then reconstruct the full project context and help continue development.we created four word documents that describe the project. please wait until I post all of them, then Please reconstruct the full project context and help me continue development.
