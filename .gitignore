@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+env/
+venv/
+.venv/
+venv/*
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Byte-compiled / logs
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Environment variables / secrets
+.env
+.env.*
+.env.local
+secrets.json
+state.json
+*.state.json
+
+# Local data and caches
+data/
+tmp/
+*.tmp
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Editor swap files
+*~
+*.swp
