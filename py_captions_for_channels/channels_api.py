@@ -1,14 +1,14 @@
 from datetime import datetime
-from .config import FAKE_MODE
+from .config import USE_MOCK
 
-FAKE_MODE = True
+USE_MOCK = True
 
 class ChannelsAPI:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
 
     def lookup_recording_path(self, title: str, start_time: datetime) -> str:
-        if FAKE_MODE:
+        if USE_MOCK:
             # Return a synthetic path for testing
             safe_title = title.replace(" ", "_")
             return f"/tmp/{safe_title}.mpg"

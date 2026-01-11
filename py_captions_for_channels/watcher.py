@@ -10,8 +10,8 @@ from .config import FAKE_MODE
 
 async def main():
     if FAKE_MODE:
-        from .fake_source import FakeSource
-        source = FakeSource(interval_seconds=5)
+        from .mock_source import MockSource
+        source = MockSource(interval_seconds=5)
     else:
         from .channelwatch_source import ChannelWatchSource
         source = ChannelWatchSource(CHANNELWATCH_URL)

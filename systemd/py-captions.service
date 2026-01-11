@@ -1,0 +1,10 @@
+[Unit]
+Description=py-captions-for-channels watcher
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/py-captions-for-channels/scripts/py-captions-watcher
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

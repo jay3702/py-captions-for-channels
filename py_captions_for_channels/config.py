@@ -11,4 +11,4 @@ CAPTION_COMMAND = "/usr/local/bin/whisper --model medium {path}"
 STATE_FILE = "/var/lib/py-captions/state.json"
 
 LOG_PATH = "/share/CACHEDEV1_DATA/.qpkg/ChannelsDVR/channels-dvr.log"
-FAKE_MODE = True
+USE_MOCK = True

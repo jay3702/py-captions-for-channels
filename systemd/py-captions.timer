@@ -1,0 +1,9 @@
+[Unit]
+Description=Restart py-captions-for-channels periodically
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+
+[Install]
+WantedBy=timers.target

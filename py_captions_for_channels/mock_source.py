@@ -7,9 +7,9 @@ class PartialProcessingEvent:
     timestamp: datetime
     title: str
     start_time: datetime
-    source: str = "fake"
+    source: str = "mock"
 
-class FakeSource:
+class MockSource:
     """
     Emits synthetic recording-completed events for testing.
     """
