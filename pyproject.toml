@@ -3,3 +3,8 @@ name = "py-captions-for-channels"
 version = "0.1.0"
 description = "Captioning pipeline for Channels DVR"
 requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
