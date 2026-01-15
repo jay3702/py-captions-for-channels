@@ -7,4 +7,5 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from py_captions_for_channels.watcher import main
 import asyncio
 
-asyncio.run(main())
+if __name__ == '__main__':
+    asyncio.run(main())

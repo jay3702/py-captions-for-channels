@@ -18,7 +18,10 @@ async def main(count: int = 5, interval: float | None = None):
     seen = 0
     async for ev in src.events():
         print(
-            f"[{ev.timestamp.isoformat()}] {ev.title} (start={ev.start_time.isoformat()}, source={ev.source})"
+            (
+                f"[{ev.timestamp.isoformat()}] {ev.title} "
+                f"(start={ev.start_time.isoformat()}, source={ev.source})"
+            )
         )
         seen += 1
         if seen >= count:
