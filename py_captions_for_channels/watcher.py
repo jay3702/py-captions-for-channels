@@ -1,4 +1,3 @@
-import asyncio
 from .channels_api import ChannelsAPI
 from .parser import Parser
 from .state import StateBackend
