@@ -3,14 +3,12 @@ from .channels_api import ChannelsAPI
 from .parser import Parser
 from .state import StateBackend
 from .pipeline import Pipeline
-from .channelwatch_source import ChannelWatchSource
 from .config import CHANNELWATCH_URL, CHANNELS_API_URL, CAPTION_COMMAND, STATE_FILE
-
-from .config import FAKE_MODE
+from .config import USE_MOCK
 
 
 async def main():
-    if FAKE_MODE:
+    if USE_MOCK:
         from .mock_source import MockSource
 
         source = MockSource(interval_seconds=5)

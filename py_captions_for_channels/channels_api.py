@@ -1,7 +1,6 @@
 from datetime import datetime
 from .config import USE_MOCK
-
-USE_MOCK = True
+import requests
 
 
 class ChannelsAPI:
