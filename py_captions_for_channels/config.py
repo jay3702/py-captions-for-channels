@@ -17,5 +17,10 @@ STATE_FILE = "/var/lib/py-captions/state.json"
 # Channels DVR log path (for log-based source, if implemented)
 LOG_PATH = "/share/CACHEDEV1_DATA/.qpkg/ChannelsDVR/channels-dvr.log"
 
-# Use mock source for testing (set to False for production)
-USE_MOCK = True
+# Event source configuration
+USE_MOCK = True  # Use mock source for testing
+USE_WEBHOOK = False  # Use webhook receiver (HTTP POST from ChannelWatch)
+
+# Webhook configuration (when USE_WEBHOOK=True)
+WEBHOOK_HOST = "0.0.0.0"  # Listen on all interfaces
+WEBHOOK_PORT = 9000  # Port for ChannelWatch webhook notifications
