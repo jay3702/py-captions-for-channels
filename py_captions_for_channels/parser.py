@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+
 @dataclass
 class ProcessingEvent:
     timestamp: datetime
     path: str
     title: str
     source: str
+
 
 class Parser:
     """
@@ -18,5 +20,5 @@ class Parser:
             timestamp=partial_event.timestamp,
             path=path,
             title=partial_event.title,
-            source="channelwatch+api"
+            source="channelwatch+api",
         )

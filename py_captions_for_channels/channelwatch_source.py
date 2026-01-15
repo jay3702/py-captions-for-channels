@@ -4,12 +4,14 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 
+
 @dataclass
 class PartialProcessingEvent:
     timestamp: datetime
     title: str
     start_time: datetime
     source: str = "channelwatch"
+
 
 class ChannelWatchSource:
     """
@@ -30,7 +32,7 @@ class ChannelWatchSource:
                             yield PartialProcessingEvent(
                                 timestamp=datetime.fromisoformat(data["timestamp"]),
                                 title=data["title"],
-                                start_time=datetime.fromisoformat(data["start_time"])
+                                start_time=datetime.fromisoformat(data["start_time"]),
                             )
             except Exception:
                 await asyncio.sleep(2)

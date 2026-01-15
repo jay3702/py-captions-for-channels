@@ -1,6 +1,7 @@
 import subprocess
 import logging
 
+
 class Pipeline:
     """
     Executes the captioning workflow.

@@ -2,12 +2,14 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+
 @dataclass
 class PartialProcessingEvent:
     timestamp: datetime
     title: str
     start_time: datetime
     source: str = "mock"
+
 
 class MockSource:
     """
@@ -24,7 +26,7 @@ class MockSource:
             yield PartialProcessingEvent(
                 timestamp=now,
                 title=f"Test Recording {counter}",
-                start_time=now - timedelta(hours=1)
+                start_time=now - timedelta(hours=1),
             )
             counter += 1
             await asyncio.sleep(self.interval)

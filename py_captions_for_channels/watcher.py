@@ -8,12 +8,15 @@ from .config import CHANNELWATCH_URL, CHANNELS_API_URL, CAPTION_COMMAND, STATE_F
 
 from .config import FAKE_MODE
 
+
 async def main():
     if FAKE_MODE:
         from .mock_source import MockSource
+
         source = MockSource(interval_seconds=5)
     else:
         from .channelwatch_source import ChannelWatchSource
+
         source = ChannelWatchSource(CHANNELWATCH_URL)
 
     api = ChannelsAPI(CHANNELS_API_URL)

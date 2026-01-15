@@ -12,14 +12,18 @@ import asyncio
 import sys
 from py_captions_for_channels.mock_source import MockSource
 
+
 async def main(count: int = 5, interval: float | None = None):
     src = MockSource(interval_seconds=0.5 if interval is None else interval)
     seen = 0
     async for ev in src.events():
-        print(f"[{ev.timestamp.isoformat()}] {ev.title} (start={ev.start_time.isoformat()}, source={ev.source})")
+        print(
+            f"[{ev.timestamp.isoformat()}] {ev.title} (start={ev.start_time.isoformat()}, source={ev.source})"
+        )
         seen += 1
         if seen >= count:
             break
+
 
 if __name__ == "__main__":
     count = 5
