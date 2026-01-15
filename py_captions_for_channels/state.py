@@ -2,6 +2,7 @@ import json
 import os
 from datetime import datetime
 
+
 class StateBackend:
     """
     Tracks last processed timestamp to ensure idempotency.
