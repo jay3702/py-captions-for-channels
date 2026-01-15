@@ -33,38 +33,59 @@ class ChannelWatchWebhookSource:
         self._runner = None
 
     async def _handle_webhook(self, request):
-        """Handle incoming webhook POST request from ChannelWatch."""
+        """Handle incoming webhook POST request from ChannelWatch via Apprise."""
         try:
             data = await request.json()
             LOG.info("Received webhook: %s", data)
 
-            # Validate this is a recording_completed event
-            if data.get("event") != "recording_completed":
-                LOG.debug("Ignoring non recording_completed event")
+            # Parse Apprise notification format
+            title = data.get("title", "")
+            message = data.get("message", "")
+
+            # Check if this is a recording event
+            if "Recording Event" not in title:
+                LOG.debug("Ignoring non-recording event: %s", title)
                 return web.Response(text="OK")
 
-            # Validate required fields
-            ts = data.get("timestamp")
-            title = data.get("title")
-            start = data.get("start_time")
+            # Parse the message to extract event details
+            # Message format from ChannelWatch/Apprise:
+            # ?? CHANNEL-NAME
+            # Channel: X.X
+            # Status: ?? Stopped (or ?? Started)
+            # Program: PROGRAM NAME
+            # Description...
+            # -----------------------
+            # Duration: X minute
+            program_title = None
+            status = None
 
-            if not (ts and title and start):
-                LOG.warning("Incomplete event received, skipping: %s", data)
-                return web.Response(text="OK", status=400)
+            for line in message.split("\n"):
+                if line.startswith("Program:"):
+                    program_title = line.replace("Program:", "").strip()
+                elif line.startswith("Status:"):
+                    status = line.replace("Status:", "").strip()
 
-            try:
-                timestamp = datetime.fromisoformat(ts)
-                start_time = datetime.fromisoformat(start)
-            except Exception as e:
-                LOG.warning("Invalid timestamp format: %s", e)
-                return web.Response(text="Invalid timestamp", status=400)
+            if not program_title:
+                LOG.warning("Could not parse program title from message")
+                return web.Response(text="OK")
 
-            # Queue the event for processing
+            # Only process "Stopped" events (recording completed)
+            if "Stopped" not in status:
+                LOG.debug("Ignoring non-stopped event: %s", status)
+                return web.Response(text="OK")
+
+            # Create event with current timestamp
+            # Note: Apprise doesn't provide the original event timestamp,
+            # so we use the current time
+            timestamp = datetime.now()
+            start_time = timestamp  # We don't have the actual start time
+
             event = PartialProcessingEvent(
-                timestamp=timestamp, title=title, start_time=start_time
+                timestamp=timestamp, title=program_title, start_time=start_time
             )
             await self._queue.put(event)
 
+            LOG.info("Queued recording completed event: %s", program_title)
             return web.Response(text="OK")
 
         except json.JSONDecodeError:
