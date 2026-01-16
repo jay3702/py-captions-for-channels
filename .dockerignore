@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+env/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.vs/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Local data
+data/
+logs/
+tmp/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Development
+requirements-dev.txt
+tests/
+scripts/test_*.py
+scripts/demo_*.py
+scripts/inspect_*.py

@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  py-captions:
+    build: .
+    container_name: py-captions-for-channels
+    restart: unless-stopped
+    
+    # Network mode: host allows easy access to DVR on same machine
+    # For niu deployment, this lets the container access 192.168.3.150:8089
+    network_mode: host
+    
+    # Environment variables for configuration
+    environment:
+      # Event source configuration
+      - USE_MOCK=false
+      - USE_WEBHOOK=true
+      
+      # Webhook configuration
+      - WEBHOOK_HOST=0.0.0.0
+      - WEBHOOK_PORT=9000
+      
+      # Channels DVR API
+      - CHANNELS_API_URL=http://192.168.3.150:8089
+      
+      # Caption command (customize for your setup)
+      - CAPTION_COMMAND=/usr/local/bin/whisper --model medium {path}
+      
+      # State file location
+      - STATE_FILE=/app/data/state.json
+      
+      # Pipeline configuration
+      - DRY_RUN=false
+    
+    # Mount volumes
+    volumes:
+      # State persistence
+      - ./data:/app/data
+      
+      # Logs
+      - ./logs:/app/logs
+      
+      # Access to DVR recordings (adjust path as needed)
+      # This should point to where your recordings are stored
+      - /tank/AllMedia/Channels:/recordings:ro
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
