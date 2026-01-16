@@ -19,10 +19,12 @@ async def main():
 """Main watcher loop - receives events and processes recordings."""
 import logging
 import sys
-    
+
 LOG = logging.getLogger(__name__)
 LOG.info("Initializing py-captions-for-channels...")
-LOG.info("USE_MOCK=%s, USE_WEBHOOK=%s, DRY_RUN=%s", USE_MOCK, USE_WEBHOOK, DRY_RUN)
+LOG.info(
+    "USE_MOCK=%s, USE_WEBHOOK=%s, DRY_RUN=%s", USE_MOCK, USE_WEBHOOK, DRY_RUN
+)
 sys.stdout.flush()
 
 # Select event source based on configuration
