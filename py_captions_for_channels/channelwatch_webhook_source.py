@@ -69,9 +69,10 @@ class ChannelWatchWebhookSource:
                 LOG.warning("Could not parse program title from message")
                 return web.Response(text="OK")
 
-            # Only process "Stopped" events (recording completed)
-            if "Stopped" not in status:
-                LOG.debug("Ignoring non-stopped event: %s", status)
+            # Only process completed recording events
+            # ChannelWatch sends either "Stopped" or "Completed" status
+            if "Stopped" not in status and "Completed" not in status:
+                LOG.debug("Ignoring non-completed event: %s", status)
                 return web.Response(text="OK")
 
             # Create event with current timestamp
