@@ -2,7 +2,7 @@
 
 A modular Python tool that listens for Channels DVR recording events and triggers a captioning pipeline.
 
-Docs and Copilot materials: see `docs/copilot/` for Copilot prompts, session summaries, and design artifacts. Redact secrets before sharing.
+Docs and Copilot materials: see `docs/copilot/` for Copilot prompts, session summaries, and design artifacts. 
 
 License: MIT (see `LICENSE`)
 
