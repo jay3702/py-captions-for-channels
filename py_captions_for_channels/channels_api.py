@@ -60,6 +60,10 @@ class ChannelsAPI:
 
             jobs = resp.json()
             LOG.debug("Retrieved %d recording jobs from API", len(jobs))
+            
+            # Log all available job names for debugging
+            job_names = [job.get("Name", "") for job in jobs if job.get("Name")]
+            LOG.info("Available recordings in DVR: %s", job_names[:10])  # First 10
 
             # Find matching recording by title
             file_id = None
