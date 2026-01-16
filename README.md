@@ -72,6 +72,7 @@ WEBHOOK_PORT=9000
 - **[SETUP.md](SETUP.md)** - Quick setup guide with examples
 - **[DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)** - Complete deployment documentation  
 - **[.env.example](.env.example)** - All configuration options
+- `docs/copilot/` - Design artifacts and session notes
 
 ## Architecture
 
@@ -79,20 +80,10 @@ WEBHOOK_PORT=9000
 ChannelWatch ? Webhook (this app) ? DVR API ? Caption Command
 ```
 
-See `docs/copilot/` for design artifacts and session notes.
-
 ## License
 
 MIT (see LICENSE)
 
-
-    ```powershell
-    python scripts\py-captions-watcher.py
-    ```
-
-## Using GitHub Copilot in Visual Studio
-
-This project supports both inline completions and the Copilot Chat pane in Visual Studio. Add these notes for contributors:
 
 - Completions (inline): provides AI code suggestions directly in the editor as you type. Ensure `GitHub Copilot` (Completions) is installed and signed in; accept suggestions with `Tab` or the UI accept control.
 - Chat (conversational): `GitHub Copilot Chat` is a separate pane for asking questions, requesting explanations, or referencing open files. Install the Chat extension if you want the chat UI.
