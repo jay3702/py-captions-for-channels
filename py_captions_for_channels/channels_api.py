@@ -27,9 +27,7 @@ class ChannelsAPI:
     def lookup_recording_path(self, title: str, start_time: datetime) -> str:
         """Look up the file path for a recording.
 
-        This is a two-step process:
-        1. Query /dvr/jobs to find the FileID by title
-        2. Query /dvr/files/:id to get the full file path
+        Query /dvr/files endpoint and match by title.
 
         Args:
             title: Program title
@@ -51,53 +49,41 @@ class ChannelsAPI:
         LOG.info("Looking up recording: %s (start: %s)", title, start_time)
 
         try:
-            # Step 1: Get recording ID from jobs endpoint
+            # Query DVR files endpoint
             resp = requests.get(
-                f"{self.base_url}/dvr/jobs",
+                f"{self.base_url}/dvr/files",
                 timeout=self.timeout,
             )
             resp.raise_for_status()
 
-            jobs = resp.json()
-            LOG.debug("Retrieved %d recording jobs from API", len(jobs))
-            
-            # Log all available job names for debugging
-            job_names = [job.get("Name", "") for job in jobs if job.get("Name")]
-            LOG.info("Available recordings in DVR: %s", job_names[:10])  # First 10
+            files = resp.json()
+            LOG.debug("Retrieved %d files from API", len(files))
+
+            # Log some available titles for debugging
+            available_titles = [
+                f.get("title", "") for f in files[:10] if f.get("title")
+            ]
+            LOG.info("Sample available recordings: %s", available_titles)
 
             # Find matching recording by title
-            file_id = None
-            for job in jobs:
-                job_name = job.get("Name", "")
-                job_file_id = job.get("FileID")
+            for file_data in files:
+                file_title = file_data.get("title", "")
+                file_path = file_data.get("path")
 
-                if job_name == title and job_file_id:
-                    file_id = job_file_id
-                    LOG.info("Found FileID: %s for '%s'", file_id, title)
-                    break
+                if file_title == title and file_path:
+                    LOG.info("Found recording: %s -> %s", title, file_path)
+                    return file_path
 
-            if not file_id:
-                LOG.warning("No recording found for: %s", title)
-                raise RuntimeError(f"No matching recording found for '{title}'")
+            # No match found
+            LOG.warning("No recording found for: %s", title)
+            raise RuntimeError(f"No matching recording found for '{title}'")
 
-            # Step 2: Get file details including path
-            LOG.debug("Fetching file details for FileID: %s", file_id)
-            resp = requests.get(
-                f"{self.base_url}/dvr/files/{file_id}",
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-
-            file_data = resp.json()
-
-            # Extract file path from file data
-            file_path = file_data.get("Path")
-
-            if not file_path:
-                LOG.error("No file path found in file data: %s", file_data.keys())
-                raise RuntimeError(f"File {file_id} found but has no path")
-
-            LOG.info("Found recording path: %s -> %s", title, file_path)
+        except requests.RequestException as e:
+            LOG.error("API request failed: %s", e)
+            raise RuntimeError(f"Failed to query Channels DVR API: {e}")
+        except (KeyError, ValueError) as e:
+            LOG.error("Failed to parse API response: %s", e)
+            raise RuntimeError(f"Invalid API response: {e}")
             return file_path
 
         except requests.RequestException as e:
