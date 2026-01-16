@@ -29,11 +29,14 @@ pip-wheel-metadata/
 
 # Environment variables / secrets
 .env
-.env.*
 .env.local
+.env.production
 secrets.json
 state.json
 *.state.json
+
+# But allow .env.example (template file)
+!.env.example
 
 # Local data and caches
 data/
