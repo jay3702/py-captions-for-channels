@@ -24,7 +24,7 @@ services:
       - API_TIMEOUT=${API_TIMEOUT:-10}
       
       # Caption command (customize for your setup)
-      - CAPTION_COMMAND=${CAPTION_COMMAND:-echo "Would process: {path}"}
+      - CAPTION_COMMAND=${CAPTION_COMMAND:-echo Would process {path}}
       
       # State file location
       - STATE_FILE=${STATE_FILE:-/app/data/state.json}
