@@ -44,8 +44,18 @@ async def main():
         if not state.should_process(partial.timestamp):
             continue
 
-        path = api.lookup_recording_path(partial.title, partial.start_time)
-        event = parser.from_channelwatch(partial, path)
+        try:
+            path = api.lookup_recording_path(partial.title, partial.start_time)
+            event = parser.from_channelwatch(partial, path)
 
-        pipeline.run(event)
-        state.update(event.timestamp)
+            pipeline.run(event)
+            state.update(event.timestamp)
+        except RuntimeError as e:
+            LOG.error("Failed to process event '%s': %s", partial.title, e)
+            # Continue processing other events instead of crashing
+            continue
+        except Exception as e:
+            LOG.error(
+                "Unexpected error processing '%s': %s", partial.title, e, exc_info=True
+            )
+            continue
