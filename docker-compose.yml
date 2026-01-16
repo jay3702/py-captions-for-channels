@@ -7,30 +7,34 @@ services:
     restart: unless-stopped
     
     # Network mode: host allows easy access to DVR on same machine
-    # For niu deployment, this lets the container access 192.168.3.150:8089
     network_mode: host
     
-    # Environment variables for configuration
+    # Environment variables (can be overridden in .env file)
     environment:
       # Event source configuration
-      - USE_MOCK=false
-      - USE_WEBHOOK=true
+      - USE_MOCK=${USE_MOCK:-false}
+      - USE_WEBHOOK=${USE_WEBHOOK:-true}
       
       # Webhook configuration
-      - WEBHOOK_HOST=0.0.0.0
-      - WEBHOOK_PORT=9000
+      - WEBHOOK_HOST=${WEBHOOK_HOST:-0.0.0.0}
+      - WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
       
       # Channels DVR API
-      - CHANNELS_API_URL=http://192.168.3.150:8089
+      - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
+      - API_TIMEOUT=${API_TIMEOUT:-10}
       
       # Caption command (customize for your setup)
-      - CAPTION_COMMAND=/usr/local/bin/whisper --model medium {path}
+      - CAPTION_COMMAND=${CAPTION_COMMAND:-echo "Would process: {path}"}
       
       # State file location
-      - STATE_FILE=/app/data/state.json
+      - STATE_FILE=${STATE_FILE:-/app/data/state.json}
       
       # Pipeline configuration
-      - DRY_RUN=false
+      - DRY_RUN=${DRY_RUN:-true}
+      - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-3600}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     
     # Mount volumes
     volumes:
@@ -40,9 +44,9 @@ services:
       # Logs
       - ./logs:/app/logs
       
-      # Access to DVR recordings (adjust path as needed)
-      # This should point to where your recordings are stored
-      - /tank/AllMedia/Channels:/recordings:ro
+      # Access to DVR recordings (configure path in .env file)
+      # Default mount point inside container is /recordings
+      - ${DVR_RECORDINGS_PATH:-/recordings}:/recordings:ro
     
     # Logging configuration
     logging:
@@ -50,3 +54,4 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+

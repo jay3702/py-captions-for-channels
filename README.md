@@ -1,22 +1,90 @@
 # py-captions-for-channels
 
-A modular Python tool that listens for Channels DVR recording events and triggers a captioning pipeline.
+Automatic caption generation for Channels DVR recordings using Whisper AI.
 
-Docs and Copilot materials: see `docs/copilot/` for Copilot prompts, session summaries, and design artifacts. Redact secrets before sharing.
+## Features
 
-License: MIT (see `LICENSE`)
+? **Automatic Processing** - Monitors ChannelWatch for completed recordings  
+? **Flexible Configuration** - Environment variables or .env file  
+? **Docker Ready** - Easy deployment with docker-compose  
+? **Idempotent** - Tracks processed recordings to avoid duplicates  
+? **Robust** - Webhook receiver with automatic reconnection  
+? **Dry-Run Mode** - Test before executing actual commands  
 
-## Quick start
+## Quick Start
 
-1. Install dependencies (use virtualenv):
+### Docker Deployment (Recommended)
 
-    ```powershell
-    python -m venv .venv
-    .\.venv\Scripts\Activate.ps1
-    pip install -r requirements.txt
-    ```
+```bash
+git clone https://github.com/jay3702/py-captions-for-channels.git
+cd py-captions-for-channels
 
-2. Run the watcher (development):
+# Copy and customize configuration
+cp .env.example .env
+nano .env  # Update CHANNELS_API_URL, DVR_RECORDINGS_PATH, etc.
+
+# Deploy
+docker-compose up -d
+docker-compose logs -f
+```
+
+### Local Development
+
+```bash
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements-dev.txt
+
+# Copy and edit configuration
+cp .env.example .env
+
+# Run tests
+pytest
+
+# Run watcher
+python -m py_captions_for_channels
+```
+
+## Configuration
+
+Configure via `.env` file (see `.env.example` for all options):
+
+```bash
+# Required settings
+CHANNELS_API_URL=http://localhost:8089
+DVR_RECORDINGS_PATH=/path/to/recordings
+CAPTION_COMMAND=/usr/local/bin/whisper --model medium {path}
+
+# Optional
+DRY_RUN=true        # Test mode
+WEBHOOK_PORT=9000
+```
+
+## ChannelWatch Setup
+
+1. Open ChannelWatch: `http://YOUR_DVR_IP:8501`
+2. Go to Settings ? Notification Providers
+3. Enable "Custom URL"
+4. Set URL: `json://YOUR_HOST_IP:9000`
+
+## Documentation
+
+- **[SETUP.md](SETUP.md)** - Quick setup guide with examples
+- **[DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)** - Complete deployment documentation  
+- **[.env.example](.env.example)** - All configuration options
+
+## Architecture
+
+```
+ChannelWatch ? Webhook (this app) ? DVR API ? Caption Command
+```
+
+See `docs/copilot/` for design artifacts and session notes.
+
+## License
+
+MIT (see LICENSE)
+
 
     ```powershell
     python scripts\py-captions-watcher.py
