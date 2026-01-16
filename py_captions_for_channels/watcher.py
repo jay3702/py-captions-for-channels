@@ -1,3 +1,5 @@
+import logging
+
 from .channels_api import ChannelsAPI
 from .parser import Parser
 from .state import StateBackend
@@ -13,6 +15,8 @@ from .config import (
     WEBHOOK_PORT,
     DRY_RUN,
 )
+
+LOG = logging.getLogger(__name__)
 
 
 async def main():
