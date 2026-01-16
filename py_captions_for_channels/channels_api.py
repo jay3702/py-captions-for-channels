@@ -27,6 +27,10 @@ class ChannelsAPI:
     def lookup_recording_path(self, title: str, start_time: datetime) -> str:
         """Look up the file path for a recording.
 
+        This is a two-step process:
+        1. Query /dvr/jobs to find the recording ID by title
+        2. Query /api/v1/episodes/:id to get the full file path
+
         Args:
             title: Program title
             start_time: Recording start time
@@ -47,7 +51,7 @@ class ChannelsAPI:
         LOG.info("Looking up recording: %s (start: %s)", title, start_time)
 
         try:
-            # Query DVR API for recordings
+            # Step 1: Get recording ID from jobs endpoint
             resp = requests.get(
                 f"{self.base_url}/dvr/jobs",
                 timeout=self.timeout,
@@ -58,18 +62,39 @@ class ChannelsAPI:
             LOG.debug("Retrieved %d recording jobs from API", len(jobs))
 
             # Find matching recording by title
-            # Note: We could also match by start_time for more accuracy
+            recording_id = None
             for job in jobs:
-                job_title = job.get("Name") or job.get("Title", "")
-                job_path = job.get("Path")
+                job_name = job.get("Name", "")
+                job_id = job.get("ID") or job.get("id")
 
-                if job_title == title and job_path:
-                    LOG.info("Found recording: %s -> %s", title, job_path)
-                    return job_path
+                if job_name == title and job_id:
+                    recording_id = job_id
+                    LOG.info("Found recording ID: %s for '%s'", recording_id, title)
+                    break
 
-            # No match found
-            LOG.warning("No recording found for: %s", title)
-            raise RuntimeError(f"No matching recording found for '{title}'")
+            if not recording_id:
+                LOG.warning("No recording found for: %s", title)
+                raise RuntimeError(f"No matching recording found for '{title}'")
+
+            # Step 2: Get full episode details including file path
+            LOG.debug("Fetching episode details for ID: %s", recording_id)
+            resp = requests.get(
+                f"{self.base_url}/api/v1/episodes/{recording_id}",
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+
+            episode = resp.json()
+
+            # Extract file path from episode details
+            file_path = episode.get("Path") or episode.get("Airing", {}).get("Path")
+
+            if not file_path:
+                LOG.error("No file path found in episode data: %s", episode.keys())
+                raise RuntimeError(f"Episode {recording_id} found but has no file path")
+
+            LOG.info("Found recording path: %s -> %s", title, file_path)
+            return file_path
 
         except requests.RequestException as e:
             LOG.error("API request failed: %s", e)
