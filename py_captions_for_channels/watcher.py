@@ -11,6 +11,7 @@ from .config import (
     USE_WEBHOOK,
     WEBHOOK_HOST,
     WEBHOOK_PORT,
+    DRY_RUN,
 )
 
 
@@ -36,7 +37,7 @@ async def main():
     api = ChannelsAPI(CHANNELS_API_URL)
     parser = Parser()
     state = StateBackend(STATE_FILE)
-    pipeline = Pipeline(CAPTION_COMMAND)
+    pipeline = Pipeline(CAPTION_COMMAND, dry_run=DRY_RUN)
 
     # Process events as they arrive
     async for partial in source.events():

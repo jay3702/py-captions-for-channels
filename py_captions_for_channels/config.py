@@ -24,3 +24,6 @@ USE_WEBHOOK = False  # Use webhook receiver (HTTP POST from ChannelWatch)
 # Webhook configuration (when USE_WEBHOOK=True)
 WEBHOOK_HOST = "0.0.0.0"  # Listen on all interfaces
 WEBHOOK_PORT = 9000  # Port for ChannelWatch webhook notifications
+
+# Pipeline configuration
+DRY_RUN = True  # If True, print commands instead of executing them
