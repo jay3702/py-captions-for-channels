@@ -27,11 +27,12 @@ class ChannelsAPI:
     def lookup_recording_path(self, title: str, start_time: datetime) -> str:
         """Look up the file path for a recording.
 
-        Query /dvr/files endpoint and match by title.
+        Query /api/v1/all endpoint sorted by date_added to find recent recordings.
+        Uses fuzzy matching against the most recent recordings.
 
         Args:
-            title: Program title
-            start_time: Recording start time
+            title: Program title from webhook
+            start_time: Recording start time (approximate)
 
         Returns:
             Full file path to the recording
@@ -49,34 +50,69 @@ class ChannelsAPI:
         LOG.info("Looking up recording: %s (start: %s)", title, start_time)
 
         try:
-            # Query DVR files endpoint
+            # Query recent recordings sorted by date_added (most recent first)
             resp = requests.get(
-                f"{self.base_url}/dvr/files",
+                f"{self.base_url}/api/v1/all",
+                params={"sort": "date_added", "order": "desc", "source": "recordings"},
                 timeout=self.timeout,
             )
             resp.raise_for_status()
 
-            files = resp.json()
-            LOG.debug("Retrieved %d files from API", len(files))
+            recordings = resp.json()
+            LOG.debug("Retrieved %d recordings from API", len(recordings))
 
-            # Log some available titles for debugging
-            available_titles = [
-                f.get("title", "") for f in files[:10] if f.get("title")
-            ]
-            LOG.info("Sample available recordings: %s", available_titles)
+            # Only check the most recent recordings (last hour or so)
+            # Webhook arrives right after completion, so match should be in top results
+            recent_count = min(20, len(recordings))
+            recent_recordings = recordings[:recent_count]
 
-            # Find matching recording by title
-            for file_data in files:
-                file_title = file_data.get("title", "")
-                file_path = file_data.get("path")
+            # Log available recent titles for debugging
+            recent_titles = [r.get("title", "") for r in recent_recordings[:5]]
+            LOG.info("Recent recordings: %s", recent_titles)
 
-                if file_title == title and file_path:
-                    LOG.info("Found recording: %s -> %s", title, file_path)
-                    return file_path
+            # Try exact match first
+            for recording in recent_recordings:
+                rec_title = recording.get("title", "")
+                rec_path = recording.get("path")
 
-            # No match found
-            LOG.warning("No recording found for: %s", title)
+                if rec_title == title and rec_path:
+                    LOG.info("Exact match found: %s -> %s", title, rec_path)
+                    return rec_path
+
+            # Try partial/fuzzy match on recent recordings
+            title_lower = title.lower()
+            for recording in recent_recordings:
+                rec_title = recording.get("title", "")
+                rec_path = recording.get("path")
+
+                # Case-insensitive partial match
+                if rec_path and rec_title.lower() == title_lower:
+                    LOG.info(
+                        "Case-insensitive match found: %s -> %s", rec_title, rec_path
+                    )
+                    return rec_path
+
+                # Contains match (for titles with extra info)
+                if rec_path and (
+                    title_lower in rec_title.lower() or rec_title.lower() in title_lower
+                ):
+                    LOG.info("Partial match found: %s -> %s", rec_title, rec_path)
+                    return rec_path
+
+            # No match found in recent recordings
+            LOG.warning(
+                "No recording found for: %s (checked %d recent recordings)",
+                title,
+                recent_count,
+            )
             raise RuntimeError(f"No matching recording found for '{title}'")
+
+        except requests.RequestException as e:
+            LOG.error("API request failed: %s", e)
+            raise RuntimeError(f"Failed to query Channels DVR API: {e}")
+        except (KeyError, ValueError) as e:
+            LOG.error("Failed to parse API response: %s", e)
+            raise RuntimeError(f"Invalid API response: {e}")
 
         except requests.RequestException as e:
             LOG.error("API request failed: %s", e)
