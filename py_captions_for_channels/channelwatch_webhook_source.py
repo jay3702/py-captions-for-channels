@@ -36,11 +36,17 @@ class ChannelWatchWebhookSource:
         """Handle incoming webhook POST request from ChannelWatch via Apprise."""
         try:
             data = await request.json()
-            LOG.info("Received webhook: %s", data)
 
-            # Parse Apprise notification format
+            # Log summary without attachments to avoid base64 clutter
             title = data.get("title", "")
             message = data.get("message", "")
+            msg_preview = message[:100] if message else ""
+            LOG.info("Received webhook: title='%s' message='%s...'", title, msg_preview)
+            LOG.debug("Full webhook payload: %s", data)
+
+            # Parse Apprise notification format
+            # title = data.get("title", "")  # Already extracted above
+            # message = data.get("message", "")  # Already extracted above
 
             # Check if this is a recording event
             if "Recording Event" not in title:
