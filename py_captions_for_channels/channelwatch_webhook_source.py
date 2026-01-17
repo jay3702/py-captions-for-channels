@@ -104,7 +104,9 @@ class ChannelWatchWebhookSource:
 
     async def _start_server(self):
         """Start the webhook HTTP server."""
-        self._app = web.Application()
+        # Increase max request size to handle large base64 image attachments
+        # Default is 2MB, we'll allow up to 10MB
+        self._app = web.Application(client_max_size=10 * 1024 * 1024)
         self._app.router.add_post("/", self._handle_webhook)
 
         self._runner = web.AppRunner(self._app)
