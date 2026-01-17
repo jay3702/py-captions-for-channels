@@ -84,14 +84,6 @@ class ChannelsAPI:
         except (KeyError, ValueError) as e:
             LOG.error("Failed to parse API response: %s", e)
             raise RuntimeError(f"Invalid API response: {e}")
-            return file_path
-
-        except requests.RequestException as e:
-            LOG.error("API request failed: %s", e)
-            raise RuntimeError(f"Failed to query Channels DVR API: {e}")
-        except (KeyError, ValueError) as e:
-            LOG.error("Failed to parse API response: %s", e)
-            raise RuntimeError(f"Invalid API response: {e}")
 
     def get_recording_info(self, file_id: str) -> Optional[dict]:
         """Get detailed information about a recording.
