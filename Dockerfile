@@ -26,4 +26,4 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 9000
 
 # Run the watcher
-CMD ["python", "-m", "py_captions_for_channels.watcher"]
+CMD ["python", "-u", "-m", "py_captions_for_channels"]
