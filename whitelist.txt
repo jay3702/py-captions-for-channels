@@ -1,0 +1,41 @@
+# py-captions-for-channels Whitelist
+# One rule per line. Format:
+#   Simple: ShowName
+#   Complex: ShowName;DayOfWeek;Channel(s);Time
+#
+# Examples:
+#   News                                  - matches any show with "News"
+#   Dateline;Friday;11.1,113;21:00       - only Fridays at 21:00 on channels 11.1 or 113
+
+# Time-specific shows (delayed captions on first run)
+Dateline;Friday;11.1,113;21:00
+48 hours;Saturday;5.1;22:00
+20/20;Friday;7.1;21:00
+20/20;Friday;7.1;22:00
+
+# News programs (always benefit from captions)
+News
+Laura Coates
+Entertainment Tonight
+CNN NewsNight With Abby Phillip
+Inside Edition
+The Source With Kaitlan Collins
+Erin Burnett OutFront
+The Lead With Jake Tapper
+The Arena With Kasie Hunt
+Amanpour
+Inside Politics With Dana Bash
+The Situation Room
+The Daily Show
+The Rachel Maddow Show
+CNN
+60 Minutes
+Fareed Zakaria GPS
+Saturday Night Live
+Anderson Cooper
+Smerconish
+The Late Show With Stephen Colbert
+All In With Chris Hayes
+
+# Special events
+Awards
