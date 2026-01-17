@@ -1,9 +1,9 @@
 requests
 websockets
 aiohttp
-# NOTE: PyTorch is installed separately in Dockerfile with CUDA support
-# Whisper for automatic speech recognition
+# Whisper for automatic speech recognition (NOTE: PyTorch installed separately in Dockerfile with CUDA)
 openai-whisper
+
 
 
 
