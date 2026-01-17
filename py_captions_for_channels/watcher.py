@@ -4,6 +4,7 @@ from .channels_api import ChannelsAPI
 from .parser import Parser
 from .state import StateBackend
 from .pipeline import Pipeline
+from .whitelist import Whitelist
 from .config import (
     CHANNELWATCH_URL,
     CHANNELS_API_URL,
@@ -14,6 +15,7 @@ from .config import (
     WEBHOOK_HOST,
     WEBHOOK_PORT,
     DRY_RUN,
+    WHITELIST_FILE,
 )
 
 LOG = logging.getLogger(__name__)
@@ -42,10 +44,15 @@ async def main():
     parser = Parser()
     state = StateBackend(STATE_FILE)
     pipeline = Pipeline(CAPTION_COMMAND, dry_run=DRY_RUN)
+    whitelist = Whitelist(WHITELIST_FILE)
 
     # Process events as they arrive
     async for partial in source.events():
         if not state.should_process(partial.timestamp):
+            continue
+
+        # Check whitelist
+        if not whitelist.is_allowed(partial.title, partial.start_time):
             continue
 
         try:
