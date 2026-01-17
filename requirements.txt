@@ -1,6 +1,10 @@
 requests
 websockets
 aiohttp
+# PyTorch with CUDA 11.8 support (required for GPU-accelerated whisper)
+torch>=2.0.0
+# Whisper for automatic speech recognition
 openai-whisper
+
 
 
