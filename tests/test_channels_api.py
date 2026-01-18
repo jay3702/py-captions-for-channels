@@ -34,7 +34,6 @@ def test_channels_api_mock_mode():
         assert path == "/tmp/Test_Show.mpg"
 
 
-@pytest.mark.skip(reason="Test needs update for new two-step API lookup")
 def test_channels_api_finds_recording(mock_api_response):
     """Test that API correctly finds and returns recording path."""
     with patch("py_captions_for_channels.channels_api.USE_MOCK", False):
@@ -42,7 +41,20 @@ def test_channels_api_finds_recording(mock_api_response):
 
         with patch("requests.get") as mock_get:
             mock_response = Mock()
-            mock_response.json.return_value = mock_api_response
+            # API v1/all returns recordings with lowercase fields (title, path)
+            recordings = [
+                {
+                    "title": "Extra",
+                    "path": "/recordings/Extra-2026-01-15.mpg",
+                    "date_added": "2026-01-15T14:30:00Z",
+                },
+                {
+                    "title": "KRON 4 News",
+                    "path": "/recordings/KRON_4_News-2026-01-15.mpg",
+                    "date_added": "2026-01-15T14:00:00Z",
+                },
+            ]
+            mock_response.json.return_value = recordings
             mock_response.raise_for_status.return_value = None
             mock_get.return_value = mock_response
 
@@ -50,7 +62,8 @@ def test_channels_api_finds_recording(mock_api_response):
 
             assert path == "/recordings/Extra-2026-01-15.mpg"
             mock_get.assert_called_once_with(
-                "http://localhost:8089/dvr/jobs",
+                "http://localhost:8089/api/v1/all",
+                params={"sort": "date_added", "order": "desc", "source": "recordings"},
                 timeout=10,
             )
 
