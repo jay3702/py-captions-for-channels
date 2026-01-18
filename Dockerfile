@@ -29,6 +29,9 @@ COPY py_captions_for_channels/ ./py_captions_for_channels/
 COPY scripts/ ./scripts/
 COPY whitelist.txt ./whitelist.txt
 
+# Make scripts executable
+RUN chmod +x ./scripts/*.sh
+
 # Create directories for state and logs
 RUN mkdir -p /app/data /app/logs
 
