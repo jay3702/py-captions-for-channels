@@ -9,14 +9,15 @@ py-captions:
     
   # GPU access for Whisper acceleration (using runtime syntax for compatibility)
   runtime: nvidia
-  environment:
-    - NVIDIA_VISIBLE_DEVICES=all
     
   # Environment variables (can be overridden in .env file)
-    environment:
-      # Event source configuration
-      - USE_MOCK=${USE_MOCK:-false}
-      - USE_WEBHOOK=${USE_WEBHOOK:-true}
+  environment:
+    # GPU configuration
+    - NVIDIA_VISIBLE_DEVICES=all
+      
+    # Event source configuration
+    - USE_MOCK=${USE_MOCK:-false}
+    - USE_WEBHOOK=${USE_WEBHOOK:-true}
       
       # Webhook configuration
       - WEBHOOK_HOST=${WEBHOOK_HOST:-0.0.0.0}
