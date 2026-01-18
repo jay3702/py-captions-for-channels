@@ -54,3 +54,65 @@ def test_atomic_write(tmp_path):
         data = json.load(f)
     assert data["last_timestamp"] == ts2.isoformat()
     assert sb.last_ts == ts2
+
+
+def test_reprocess_queue_mark_and_check(tmp_path):
+    p = tmp_path / "state.json"
+    sb = StateBackend(str(p))
+
+    path = "/tank/AllMedia/Channels/test_recording.mpg"
+
+    # Initially should not be in queue
+    assert not sb.has_reprocess_request(path)
+
+    # Mark for reprocessing
+    sb.mark_for_reprocess(path)
+    assert sb.has_reprocess_request(path)
+
+    # Load from disk and verify persistence
+    sb2 = StateBackend(str(p))
+    assert sb2.has_reprocess_request(path)
+
+
+def test_reprocess_queue_clear(tmp_path):
+    p = tmp_path / "state.json"
+    sb = StateBackend(str(p))
+
+    paths = [
+        "/tank/AllMedia/Channels/recording1.mpg",
+        "/tank/AllMedia/Channels/recording2.mpg",
+    ]
+
+    for path in paths:
+        sb.mark_for_reprocess(path)
+
+    # Verify both are in queue
+    assert len(sb.get_reprocess_queue()) == 2
+
+    # Clear one
+    sb.clear_reprocess_request(paths[0])
+    assert not sb.has_reprocess_request(paths[0])
+    assert sb.has_reprocess_request(paths[1])
+    assert len(sb.get_reprocess_queue()) == 1
+
+
+def test_reprocess_queue_persistence(tmp_path):
+    p = tmp_path / "state.json"
+    sb = StateBackend(str(p))
+
+    paths = [
+        "/tank/AllMedia/Channels/a.mpg",
+        "/tank/AllMedia/Channels/b.mpg",
+        "/tank/AllMedia/Channels/c.mpg",
+    ]
+
+    for path in paths:
+        sb.mark_for_reprocess(path)
+
+    # Load from disk
+    sb2 = StateBackend(str(p))
+
+    # Verify all items persisted
+    queue = sb2.get_reprocess_queue()
+    assert len(queue) == 3
+    assert set(queue) == set(paths)
