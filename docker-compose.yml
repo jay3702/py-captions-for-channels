@@ -14,48 +14,49 @@ py-captions:
   environment:
     # GPU configuration
     - NVIDIA_VISIBLE_DEVICES=all
-      
+    
     # Event source configuration
     - USE_MOCK=${USE_MOCK:-false}
     - USE_WEBHOOK=${USE_WEBHOOK:-true}
-      
-      # Webhook configuration
-      - WEBHOOK_HOST=${WEBHOOK_HOST:-0.0.0.0}
-      - WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
-      
-      # Channels DVR API
-      - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
-      - API_TIMEOUT=${API_TIMEOUT:-10}
-      
-      # Caption command (customize for your setup)
-      - CAPTION_COMMAND=${CAPTION_COMMAND:-echo Would process {path}}
-      
-      # State file location
-      - STATE_FILE=${STATE_FILE:-/app/data/state.json}
-      
-      # Pipeline configuration
-      - DRY_RUN=${DRY_RUN:-true}
-      - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-3600}
-      
-      # Logging
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     
-    # Mount volumes
-    volumes:
-      # State persistence
-      - ./data:/app/data
-      
-      # Logs
-      - ./logs:/app/logs
-      
-      # Access to DVR recordings (configure path in .env file)
-      # Default mount point inside container is /recordings
-      - ${DVR_RECORDINGS_PATH:-/recordings}:/recordings:ro
+    # Webhook configuration
+    - WEBHOOK_HOST=${WEBHOOK_HOST:-0.0.0.0}
+    - WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
     
-    # Logging configuration
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    # Channels DVR API
+    - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
+    - API_TIMEOUT=${API_TIMEOUT:-10}
+    
+    # Caption command (customize for your setup)
+    - CAPTION_COMMAND=${CAPTION_COMMAND:-echo Would process {path}}
+    
+    # State file location
+    - STATE_FILE=${STATE_FILE:-/app/data/state.json}
+    
+    # Pipeline configuration
+    - DRY_RUN=${DRY_RUN:-true}
+    - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-3600}
+    
+    # Logging
+    - LOG_LEVEL=${LOG_LEVEL:-INFO}
+  
+  # Mount volumes
+  volumes:
+    # State persistence
+    - ./data:/app/data
+    
+    # Logs
+    - ./logs:/app/logs
+    
+    # Access to DVR recordings (configure path in .env file)
+    # Default mount point inside container is /recordings
+    - ${DVR_RECORDINGS_PATH:-/recordings}:/recordings:ro
+  
+  # Logging configuration
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 
