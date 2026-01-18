@@ -1,16 +1,16 @@
 # Use NVIDIA CUDA base image for GPU acceleration
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
-# Install Python 3.11
+# Install Python 3.10 (comes with Ubuntu 22.04) and system dependencies
 RUN apt-get update && apt-get install -y \
-    python3.11 \
+    python3 \
     python3-pip \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Python 3.11 as default
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
-RUN update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+# Set Python 3.10 as default python
+RUN ln -sf /usr/bin/python3 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Set working directory
 WORKDIR /app
