@@ -91,6 +91,11 @@ class Pipeline:
                 )
             else:
                 LOG.info("Caption pipeline completed for %s", event.path)
+                # Log whisper's output for debugging
+                if proc.stdout:
+                    LOG.debug("stdout: %s", proc.stdout[-1000:])
+                if proc.stderr:
+                    LOG.info("whisper output: %s", proc.stderr[-500:])
                 return PipelineResult(
                     success=True,
                     returncode=0,
