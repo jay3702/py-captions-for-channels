@@ -1,34 +1,32 @@
 services:
-py-captions:
-  build: .
-  container_name: py-captions-for-channels
-  restart: unless-stopped
-  network_mode: host
-  runtime: nvidia
+  py-captions:
+    build: .
+    container_name: py-captions-for-channels
+    restart: unless-stopped
+    network_mode: host
+    runtime: nvidia
     
-  environment:
-    - NVIDIA_VISIBLE_DEVICES=all
-    - USE_MOCK=${USE_MOCK:-false}
-    - USE_WEBHOOK=${USE_WEBHOOK:-true}
-    - WEBHOOK_HOST=${WEBHOOK_HOST:-0.0.0.0}
-    - WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
-    - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
-    - API_TIMEOUT=${API_TIMEOUT:-10}
-    - CAPTION_COMMAND=${CAPTION_COMMAND:-bash -c 'whisper --model medium --output_format srt --output_dir "$(dirname "{path}")" "{path}"'}
-    - STATE_FILE=${STATE_FILE:-/app/data/state.json}
-    - DRY_RUN=${DRY_RUN:-false}
-    - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-3600}
-    - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - USE_MOCK=${USE_MOCK:-false}
+      - USE_WEBHOOK=${USE_WEBHOOK:-true}
+      - WEBHOOK_HOST=${WEBHOOK_HOST:-0.0.0.0}
+      - WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
+      - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
+      - API_TIMEOUT=${API_TIMEOUT:-10}
+      - CAPTION_COMMAND=${CAPTION_COMMAND:-bash -c 'whisper --model medium --output_format srt --output_dir "$(dirname "{path}")" "{path}"'}
+      - STATE_FILE=${STATE_FILE:-/app/data/state.json}
+      - DRY_RUN=${DRY_RUN:-false}
+      - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-3600}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     
-  volumes:
-    - ./data:/app/data
-    - ./logs:/app/logs
-    - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
     
-  logging:
-    driver: "json-file"
-    options:
-      max-size: "10m"
-      max-file: "3"
-
-
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
