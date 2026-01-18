@@ -14,16 +14,16 @@ py-captions:
     - WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
     - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
     - API_TIMEOUT=${API_TIMEOUT:-10}
-      - CAPTION_COMMAND=${CAPTION_COMMAND:-whisper --model medium --output_format srt {path}}
+    - CAPTION_COMMAND=${CAPTION_COMMAND:-whisper --model medium --output_format srt {path}}
     - STATE_FILE=${STATE_FILE:-/app/data/state.json}
     - DRY_RUN=${DRY_RUN:-false}
     - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-3600}
     - LOG_LEVEL=${LOG_LEVEL:-INFO}
     
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
+  volumes:
+    - ./data:/app/data
+    - ./logs:/app/logs
+    - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
     
   logging:
     driver: "json-file"
