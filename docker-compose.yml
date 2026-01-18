@@ -20,10 +20,10 @@ py-captions:
     - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-3600}
     - LOG_LEVEL=${LOG_LEVEL:-INFO}
     
-  volumes:
-    - ./data:/app/data
-    - ./logs:/app/logs
-    - ${DVR_RECORDINGS_PATH:-/recordings}:/recordings:ro
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
     
   logging:
     driver: "json-file"
