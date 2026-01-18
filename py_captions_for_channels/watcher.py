@@ -1,5 +1,4 @@
 import logging
-import asyncio
 
 from .channels_api import ChannelsAPI
 from .parser import Parser
@@ -104,6 +103,7 @@ async def main():
             state.update(event.timestamp)
             # Clear any reprocess request for this path after successful processing
             state.clear_reprocess_request(event.path)
+        except RuntimeError as e:
             LOG.error("Failed to process event '%s': %s", partial.title, e)
             # Continue processing other events instead of crashing
             continue
