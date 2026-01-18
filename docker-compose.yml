@@ -1,13 +1,18 @@
 services:
-  py-captions:
-    build: .
-    container_name: py-captions-for-channels
-    restart: unless-stopped
+py-captions:
+  build: .
+  container_name: py-captions-for-channels
+  restart: unless-stopped
     
-    # Network mode: host allows easy access to DVR on same machine
-    network_mode: host
+  # Network mode: host allows easy access to DVR on same machine
+  network_mode: host
     
-    # Environment variables (can be overridden in .env file)
+  # GPU access for Whisper acceleration (using runtime syntax for compatibility)
+  runtime: nvidia
+  environment:
+    - NVIDIA_VISIBLE_DEVICES=all
+    
+  # Environment variables (can be overridden in .env file)
     environment:
       # Event source configuration
       - USE_MOCK=${USE_MOCK:-false}
