@@ -13,15 +13,19 @@ import sys
 import argparse
 import os
 from pathlib import Path
+from datetime import datetime
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from py_captions_for_channels.state import StateBackend
-from py_captions_for_channels.config import STATE_FILE, CAPTION_COMMAND, DRY_RUN
-from py_captions_for_channels.pipeline import Pipeline
-from py_captions_for_channels.parser import ProcessingEvent
-from datetime import datetime
+from py_captions_for_channels.state import StateBackend  # noqa: E402
+from py_captions_for_channels.config import (  # noqa: E402
+    STATE_FILE,
+    CAPTION_COMMAND,
+    DRY_RUN,
+)
+from py_captions_for_channels.pipeline import Pipeline  # noqa: E402
+from py_captions_for_channels.parser import ProcessingEvent  # noqa: E402
 
 
 def list_reprocess_queue():
@@ -108,7 +112,7 @@ def execute_reprocess_queue():
 
             result = pipeline.run(event)
             if result.success:
-                print(f"    ✓ Success")
+                print("    ✓ Success")
                 state.clear_reprocess_request(path)
                 succeeded += 1
             else:
