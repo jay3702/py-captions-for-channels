@@ -14,7 +14,7 @@ py-captions:
     - WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
     - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
     - API_TIMEOUT=${API_TIMEOUT:-10}
-    - CAPTION_COMMAND=${CAPTION_COMMAND:-whisper --model medium {path}}
+      - CAPTION_COMMAND=${CAPTION_COMMAND:-whisper --model medium --output_format srt --output_dir /tank/AllMedia/Channels {path}}
     - STATE_FILE=${STATE_FILE:-/app/data/state.json}
     - DRY_RUN=${DRY_RUN:-true}
     - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-3600}
