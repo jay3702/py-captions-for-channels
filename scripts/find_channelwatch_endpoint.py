@@ -4,6 +4,7 @@ Test different ChannelWatch WebSocket endpoint paths.
 
 This helps identify the correct WebSocket URL.
 """
+
 import asyncio
 import sys
 from pathlib import Path

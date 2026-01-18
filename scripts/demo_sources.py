@@ -12,6 +12,7 @@ Usage:
     python scripts/demo_sources.py webhook
     python scripts/demo_sources.py websocket
 """
+
 import asyncio
 import sys
 from pathlib import Path

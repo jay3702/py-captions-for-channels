@@ -8,6 +8,7 @@ Examples:
     python scripts/run_mock.py         # prints 5 events with default interval
     python scripts/run_mock.py 10 0.2  # prints 10 events with 0.2s interval
 """
+
 import asyncio
 import sys
 from py_captions_for_channels.mock_source import MockSource
