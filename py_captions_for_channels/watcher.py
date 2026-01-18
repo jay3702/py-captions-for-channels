@@ -1,4 +1,5 @@
 import logging
+import asyncio
 
 from .channels_api import ChannelsAPI
 from .parser import Parser
@@ -19,6 +20,43 @@ from .config import (
 )
 
 LOG = logging.getLogger(__name__)
+
+
+async def process_reprocess_queue(state, pipeline, api, parser):
+    """Check and process any reprocess requests in the queue."""
+    queue = state.get_reprocess_queue()
+    if queue:
+        LOG.info("Processing reprocess queue: %d items", len(queue))
+        for path in queue:
+            LOG.info("Reprocessing: %s", path)
+            try:
+                # Create a minimal event from the path
+                # Use the filename as title for logging
+                filename = path.split("/")[-1]
+                event = Parser().from_channelwatch(
+                    type(
+                        "PartialEvent",
+                        (),
+                        {
+                            "timestamp": __import__("datetime").datetime.now(),
+                            "title": filename,
+                            "start_time": __import__("datetime").datetime.now(),
+                        },
+                    )(),
+                    path,
+                )
+                result = pipeline.run(event)
+                if result.success:
+                    LOG.info("Reprocessing succeeded: %s", path)
+                    state.clear_reprocess_request(path)
+                else:
+                    LOG.error(
+                        "Reprocessing failed: %s (exit code %d)",
+                        path,
+                        result.returncode,
+                    )
+            except Exception as e:
+                LOG.error("Error during reprocessing of %s: %s", path, e, exc_info=True)
 
 
 async def main():
@@ -46,6 +84,9 @@ async def main():
     pipeline = Pipeline(CAPTION_COMMAND, dry_run=DRY_RUN)
     whitelist = Whitelist(WHITELIST_FILE)
 
+    # Process reprocess queue on startup
+    await process_reprocess_queue(state, pipeline, api, parser)
+
     # Process events as they arrive
     async for partial in source.events():
         if not state.should_process(partial.timestamp):
@@ -61,7 +102,8 @@ async def main():
 
             pipeline.run(event)
             state.update(event.timestamp)
-        except RuntimeError as e:
+            # Clear any reprocess request for this path after successful processing
+            state.clear_reprocess_request(event.path)
             LOG.error("Failed to process event '%s': %s", partial.title, e)
             # Continue processing other events instead of crashing
             continue
