@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY py_captions_for_channels/ ./py_captions_for_channels/
 COPY scripts/ ./scripts/
+COPY whitelist.txt ./whitelist.txt
 
 # Create directories for state and logs
 RUN mkdir -p /app/data /app/logs
