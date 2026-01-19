@@ -1,5 +1,6 @@
 import logging
 
+from .logging_config import set_job_id
 from .channels_api import ChannelsAPI
 from .parser import Parser
 from .state import StateBackend
@@ -27,35 +28,44 @@ async def process_reprocess_queue(state, pipeline, api, parser):
     if queue:
         LOG.info("Processing reprocess queue: %d items", len(queue))
         for path in queue:
-            LOG.info("Reprocessing: %s", path)
+            # Set job ID for this reprocessing task
+            job_id = f"[REPROCESS] {path.split('/')[-1]}"
+            set_job_id(job_id)
+
             try:
-                # Create a minimal event from the path
-                # Use the filename as title for logging
-                filename = path.split("/")[-1]
-                event = Parser().from_channelwatch(
-                    type(
-                        "PartialEvent",
-                        (),
-                        {
-                            "timestamp": __import__("datetime").datetime.now(),
-                            "title": filename,
-                            "start_time": __import__("datetime").datetime.now(),
-                        },
-                    )(),
-                    path,
-                )
-                result = pipeline.run(event)
-                if result.success:
-                    LOG.info("Reprocessing succeeded: %s", path)
-                    state.clear_reprocess_request(path)
-                else:
-                    LOG.error(
-                        "Reprocessing failed: %s (exit code %d)",
+                LOG.info("Reprocessing: %s", path)
+                try:
+                    # Create a minimal event from the path
+                    # Use the filename as title for logging
+                    filename = path.split("/")[-1]
+                    event = Parser().from_channelwatch(
+                        type(
+                            "PartialEvent",
+                            (),
+                            {
+                                "timestamp": __import__("datetime").datetime.now(),
+                                "title": filename,
+                                "start_time": __import__("datetime").datetime.now(),
+                            },
+                        )(),
                         path,
-                        result.returncode,
                     )
-            except Exception as e:
-                LOG.error("Error during reprocessing of %s: %s", path, e, exc_info=True)
+                    result = pipeline.run(event)
+                    if result.success:
+                        LOG.info("Reprocessing succeeded: %s", path)
+                        state.clear_reprocess_request(path)
+                    else:
+                        LOG.error(
+                            "Reprocessing failed: %s (exit code %d)",
+                            path,
+                            result.returncode,
+                        )
+                except Exception as e:
+                    LOG.error(
+                        "Error during reprocessing of %s: %s", path, e, exc_info=True
+                    )
+            finally:
+                set_job_id(None)
 
 
 async def main():
@@ -95,6 +105,10 @@ async def main():
         if not whitelist.is_allowed(partial.title, partial.start_time):
             continue
 
+        # Set job ID for this processing task
+        job_id = f"{partial.title} @ {partial.start_time.strftime('%H:%M:%S')}"
+        set_job_id(job_id)
+
         try:
             path = api.lookup_recording_path(partial.title, partial.start_time)
             event = parser.from_channelwatch(partial, path)
@@ -105,10 +119,9 @@ async def main():
             state.clear_reprocess_request(event.path)
         except RuntimeError as e:
             LOG.error("Failed to process event '%s': %s", partial.title, e)
-            # Continue processing other events instead of crashing
-            continue
         except Exception as e:
             LOG.error(
                 "Unexpected error processing '%s': %s", partial.title, e, exc_info=True
             )
-            continue
+        finally:
+            set_job_id(None)
