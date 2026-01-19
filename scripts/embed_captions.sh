@@ -37,10 +37,10 @@ fi
 echo "Captions created: $SRT_PATH"
 
 # Step 2: Transcode to MP4 with burned-in subtitles
-echo "Transcoding to MP4 with embedded captions (this will take several minutes)..."
+echo "Transcoding to MP4 with embedded captions using NVIDIA GPU (this will take 2-3 minutes)..."
 ffmpeg -i "$VIDEO_PATH" \
     -vf "subtitles=$SRT_PATH" \
-    -c:v libx264 -preset medium -crf 23 \
+    -c:v h264_nvenc -preset fast -rc:v vbr -cq:v 23 \
     -c:a aac -b:a 128k \
     -movflags +faststart \
     -y \
