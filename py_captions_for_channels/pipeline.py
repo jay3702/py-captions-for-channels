@@ -48,8 +48,14 @@ class Pipeline:
         Returns:
             PipelineResult with execution details
         """
-        # Format command with event path
-        cmd = self.command_template.format(path=event.path)
+        # Format command with safe-quoted event path to handle spaces/special chars
+        try:
+            import shlex
+
+            safe_path = shlex.quote(event.path)
+        except Exception:
+            safe_path = event.path  # fallback
+        cmd = self.command_template.format(path=safe_path)
 
         if self.dry_run:
             LOG.info("[DRY-RUN] Would execute: %s", cmd)
