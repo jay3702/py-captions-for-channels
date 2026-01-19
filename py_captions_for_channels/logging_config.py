@@ -1,0 +1,128 @@
+"""
+Logging configuration for py-captions-for-channels.
+
+Supports:
+- Job ID tracking with formatted markers
+- Multiple verbosity levels (MINIMAL, NORMAL, VERBOSE)
+- Context-aware formatting for processing jobs
+"""
+
+import logging
+import sys
+from typing import Optional
+from contextvars import ContextVar
+
+# Context variable to track current job ID
+_job_id_context: ContextVar[Optional[str]] = ContextVar("job_id", default=None)
+
+
+class JobIDFormatter(logging.Formatter):
+    """Custom formatter that includes job ID markers for easy log parsing."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format log record with job ID marker if available."""
+        job_id = _job_id_context.get()
+
+        # Create base message
+        base_msg = super().format(record)
+
+        # Add job ID prefix if available
+        if job_id:
+            return f"[{job_id}] {base_msg}"
+        return base_msg
+
+
+class VerbosityFilter(logging.Filter):
+    """Filter that controls which records are logged based on verbosity level."""
+
+    def __init__(self, verbosity_level: str):
+        """Initialize filter with verbosity level.
+
+        Args:
+            verbosity_level: One of 'MINIMAL', 'NORMAL', 'VERBOSE'
+        """
+        super().__init__()
+        self.verbosity_level = verbosity_level.upper()
+
+        # Map verbosity levels to minimum log levels
+        # MINIMAL: Only warnings and errors (skip info/debug)
+        # NORMAL: Info and above (current behavior)
+        # VERBOSE: Debug and above (all messages)
+        self.level_map = {
+            "MINIMAL": logging.WARNING,
+            "NORMAL": logging.INFO,
+            "VERBOSE": logging.DEBUG,
+        }
+
+        self.min_level = self.level_map.get(self.verbosity_level, logging.INFO)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Filter based on verbosity level."""
+        return record.levelno >= self.min_level
+
+
+def set_job_id(job_id: Optional[str]) -> None:
+    """Set the current job ID for log formatting.
+
+    Args:
+        job_id: Job identifier (e.g., 'CNN News Central @ 22:01:16') or None to clear
+    """
+    _job_id_context.set(job_id)
+
+
+def get_job_id() -> Optional[str]:
+    """Get the current job ID."""
+    return _job_id_context.get()
+
+
+def configure_logging(verbosity: str = "NORMAL") -> None:
+    """Configure logging with job markers and verbosity levels.
+
+    Args:
+        verbosity: One of 'MINIMAL', 'NORMAL', 'VERBOSE'
+    """
+    verbosity = verbosity.upper()
+    if verbosity not in ("MINIMAL", "NORMAL", "VERBOSE"):
+        raise ValueError(
+            f"Invalid verbosity level: {verbosity}. Must be MINIMAL, NORMAL, or VERBOSE"
+        )
+
+    # Create console handler
+    handler = logging.StreamHandler(sys.stdout)
+
+    # Create formatter with job ID support
+    formatter = JobIDFormatter(
+        fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    handler.setFormatter(formatter)
+
+    # Add verbosity filter
+    verbosity_filter = VerbosityFilter(verbosity)
+    handler.addFilter(verbosity_filter)
+
+    # Get root logger and configure it
+    root_logger = logging.getLogger()
+    root_logger.setLevel(
+        logging.DEBUG
+    )  # Allow all levels through; filter controls output
+    root_logger.handlers.clear()  # Remove any existing handlers
+    root_logger.addHandler(handler)
+
+    # Ensure no duplicate propagation
+    for logger in logging.Logger.manager.loggerDict.values():
+        if isinstance(logger, logging.Logger):
+            logger.propagate = True
+            logger.handlers.clear()
+
+
+def get_logger(name: str) -> logging.Logger:
+    """Get a logger with the given name.
+
+    Args:
+        name: Logger name (typically __name__)
+
+    Returns:
+        Configured logger instance
+    """
+    return logging.getLogger(name)

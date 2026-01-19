@@ -77,5 +77,12 @@ WHITELIST_FILE = os.getenv("WHITELIST_FILE", "./whitelist.txt")
 # API timeout
 API_TIMEOUT = get_env_int("API_TIMEOUT", 10)
 
-# Logging
+# Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_VERBOSITY = os.getenv("LOG_VERBOSITY", "NORMAL")  # MINIMAL, NORMAL, or VERBOSE
+
+# Validate LOG_VERBOSITY
+if LOG_VERBOSITY.upper() not in ("MINIMAL", "NORMAL", "VERBOSE"):
+    raise ValueError(
+        f"Invalid LOG_VERBOSITY: {LOG_VERBOSITY}. Must be MINIMAL, NORMAL, or VERBOSE"
+    )
