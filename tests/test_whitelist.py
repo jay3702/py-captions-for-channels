@@ -4,8 +4,6 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-import pytest
-
 from py_captions_for_channels.whitelist import Whitelist, WhitelistRule
 
 
