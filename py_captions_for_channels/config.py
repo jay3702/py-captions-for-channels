@@ -84,6 +84,11 @@ LOG_FILE = os.getenv(
     "LOG_FILE", "./app.log"
 )  # Write logs to file (in addition to stdout)
 
+# Logging visuals and stats
+LOG_DIVIDER_LENGTH = get_env_int("LOG_DIVIDER_LENGTH", 40)
+LOG_DIVIDER_CHAR = os.getenv("LOG_DIVIDER_CHAR", "-")
+LOG_STATS_ENABLED = get_env_bool("LOG_STATS_ENABLED", True)
+
 # Validate LOG_VERBOSITY
 if LOG_VERBOSITY.upper() not in ("MINIMAL", "NORMAL", "VERBOSE"):
     raise ValueError(
