@@ -80,6 +80,9 @@ API_TIMEOUT = get_env_int("API_TIMEOUT", 10)
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_VERBOSITY = os.getenv("LOG_VERBOSITY", "NORMAL")  # MINIMAL, NORMAL, or VERBOSE
+LOG_FILE = os.getenv(
+    "LOG_FILE", "./app.log"
+)  # Write logs to file (in addition to stdout)
 
 # Validate LOG_VERBOSITY
 if LOG_VERBOSITY.upper() not in ("MINIMAL", "NORMAL", "VERBOSE"):

@@ -5,10 +5,12 @@ Supports:
 - Job ID tracking with formatted markers
 - Multiple verbosity levels (MINIMAL, NORMAL, VERBOSE)
 - Context-aware formatting for processing jobs
+- File and console output
 """
 
 import logging
 import sys
+from pathlib import Path
 from typing import Optional
 from contextvars import ContextVar
 
@@ -75,11 +77,14 @@ def get_job_id() -> Optional[str]:
     return _job_id_context.get()
 
 
-def configure_logging(verbosity: str = "NORMAL") -> None:
+def configure_logging(
+    verbosity: str = "NORMAL", log_file: Optional[str] = None
+) -> None:
     """Configure logging with job markers and verbosity levels.
 
     Args:
         verbosity: One of 'MINIMAL', 'NORMAL', 'VERBOSE'
+        log_file: Optional path to write logs to file (in addition to stdout)
     """
     verbosity = verbosity.upper()
     if verbosity not in ("MINIMAL", "NORMAL", "VERBOSE"):
@@ -87,19 +92,14 @@ def configure_logging(verbosity: str = "NORMAL") -> None:
             f"Invalid verbosity level: {verbosity}. Must be MINIMAL, NORMAL, or VERBOSE"
         )
 
-    # Create console handler
-    handler = logging.StreamHandler(sys.stdout)
-
     # Create formatter with job ID support
     formatter = JobIDFormatter(
         fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    handler.setFormatter(formatter)
 
-    # Add verbosity filter
+    # Create verbosity filter
     verbosity_filter = VerbosityFilter(verbosity)
-    handler.addFilter(verbosity_filter)
 
     # Get root logger and configure it
     root_logger = logging.getLogger()
@@ -107,7 +107,21 @@ def configure_logging(verbosity: str = "NORMAL") -> None:
         logging.DEBUG
     )  # Allow all levels through; filter controls output
     root_logger.handlers.clear()  # Remove any existing handlers
-    root_logger.addHandler(handler)
+
+    # Always add console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    console_handler.addFilter(verbosity_filter)
+    root_logger.addHandler(console_handler)
+
+    # Add file handler if requested
+    if log_file:
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        file_handler.addFilter(verbosity_filter)
+        root_logger.addHandler(file_handler)
 
     # Ensure no duplicate propagation
     for logger in logging.Logger.manager.loggerDict.values():

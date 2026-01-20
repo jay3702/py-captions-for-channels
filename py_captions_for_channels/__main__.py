@@ -8,11 +8,11 @@ This allows running the package as a module:
 import asyncio
 
 from .logging_config import configure_logging
-from .config import LOG_VERBOSITY
+from .config import LOG_VERBOSITY, LOG_FILE
 from .watcher import main
 
-# Configure logging with job markers and verbosity support
-configure_logging(verbosity=LOG_VERBOSITY)
+# Configure logging with job markers, verbosity support, and file output
+configure_logging(verbosity=LOG_VERBOSITY, log_file=LOG_FILE)
 
 if __name__ == "__main__":
     asyncio.run(main())
