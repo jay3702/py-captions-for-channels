@@ -53,6 +53,7 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                     result = pipeline.run(event)
                     if result.success:
                         LOG.info("Reprocessing succeeded: %s", path)
+                        pipeline._log_job_statistics(result, job_id)
                         state.clear_reprocess_request(path)
                     else:
                         LOG.error(
@@ -113,7 +114,9 @@ async def main():
             path = api.lookup_recording_path(partial.title, partial.start_time)
             event = parser.from_channelwatch(partial, path)
 
-            pipeline.run(event)
+            result = pipeline.run(event)
+            if result.success:
+                pipeline._log_job_statistics(result, job_id)
             state.update(event.timestamp)
             # Clear any reprocess request for this path after successful processing
             state.clear_reprocess_request(event.path)
