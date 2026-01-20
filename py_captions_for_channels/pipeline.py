@@ -1,6 +1,12 @@
 import subprocess
 import logging
 from .logging_config import set_job_id
+from .config import (
+    LOG_DIVIDER_CHAR,
+    LOG_DIVIDER_LENGTH,
+    LOG_STATS_ENABLED,
+    PIPELINE_TIMEOUT,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -25,6 +31,7 @@ class PipelineResult:
         elapsed_seconds: float = 0.0,
         output_files: dict = None,
         input_size_bytes: int = 0,
+        input_path: str = "",
     ):
         self.success = success
         self.returncode = returncode
@@ -34,6 +41,7 @@ class PipelineResult:
         self.elapsed_seconds = elapsed_seconds
         self.output_files = output_files or {}  # Dict of {filename: size_bytes}
         self.input_size_bytes = input_size_bytes
+        self.input_path = input_path
 
     def get_total_output_size(self) -> int:
         """Return total size of all output files in bytes."""
@@ -94,6 +102,52 @@ class Pipeline:
 
         return output_files
 
+    def _probe_input_duration_seconds(self, job_id_or_path: str) -> float:
+        """Probe input media duration using ffprobe.
+
+        Accepts either the recording path (preferred) or job_id which contains
+        the title and timestamp; in our case we will attempt to parse the path
+        from the current job ID when only job_id is available, but primarily
+        this should be called with the recording path.
+
+        Returns duration in seconds, or 0 if not available.
+        """
+        # If a path string was passed, use it directly
+        path = None
+        p = Path(job_id_or_path)
+        if p.exists():
+            path = str(p)
+        else:
+            # Not a valid path; cannot probe
+            return 0.0
+
+        try:
+            # Run ffprobe to get duration
+            proc = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if proc.returncode != 0:
+                return 0.0
+            out = proc.stdout.strip()
+            try:
+                return float(out)
+            except Exception:
+                return 0.0
+        except Exception:
+            return 0.0
+
     def _log_job_statistics(self, result: PipelineResult, job_id: str) -> None:
         """Log job completion statistics with visual divider.
 
@@ -108,17 +162,39 @@ class Pipeline:
         minutes, seconds = divmod(result.elapsed_seconds, 60)
         time_str = f"{int(minutes):02d}:{seconds:05.2f}"
 
+        # Probe input duration for real-time factor
+        # Input duration from original media
+        input_duration = 0.0
+        if getattr(result, "input_path", None):
+            input_duration = self._probe_input_duration_seconds(result.input_path)
+        if input_duration and input_duration > 0:
+            rt_factor = input_duration / max(result.elapsed_seconds, 0.001)
+        else:
+            rt_factor = None
+
         # Format file sizes
         total_size = result.get_total_output_size()
         total_size_str = result.format_size(total_size)
 
         # Build stats lines
+        divider = LOG_DIVIDER_CHAR * LOG_DIVIDER_LENGTH
         stats_lines = [
-            "--" * 20,  # Visual divider
+            divider,  # Visual divider
             f"Job Statistics: {job_id}",
             f"  Processing Time: {time_str}",
             f"  Total Output Size: {total_size_str}",
         ]
+
+        # Input file size and duration
+        if hasattr(result, "input_size_bytes"):
+            stats_lines.append(
+                f"  Input File Size: {result.format_size(result.input_size_bytes)}"
+            )
+        if input_duration and input_duration > 0:
+            m, s = divmod(input_duration, 60)
+            stats_lines.append(f"  Input Duration: {int(m):02d}:{s:05.2f}")
+        if rt_factor:
+            stats_lines.append(f"  Real-Time Factor: {rt_factor:.1f}x")
 
         # Input file size
         if hasattr(result, "input_size_bytes"):
@@ -133,10 +209,25 @@ class Pipeline:
                 size_str = result.format_size(size_bytes)
                 stats_lines.append(f"    - {filename}: {size_str}")
 
-        stats_lines.append("--" * 20)
+            # If an SRT exists, include line count as a helpful metric
+            srt_name = None
+            for name in result.output_files.keys():
+                if name.lower().endswith('.srt'):
+                    srt_name = name
+                    break
+            if srt_name:
+                try:
+                    srt_path = Path(job_id.split(' @ ')[0])  # job_id doesn't include path; fallback disabled
+                except Exception:
+                    srt_path = None
+                # Derive srt path from job_id is unreliable; instead, we skip attempting to open here.
+                # Users can see size; opening the file requires full path which we avoid in stats for safety.
+
+        stats_lines.append(divider)
 
         # Log as single info message (job ID will be added by formatter)
-        LOG.info("\n" + "\n".join(stats_lines))
+        if LOG_STATS_ENABLED:
+            LOG.info("\n" + "\n".join(stats_lines))
 
     def __init__(self, command_template: str, dry_run: bool = False):
         """Initialize pipeline.
@@ -184,8 +275,9 @@ class Pipeline:
                     command=cmd,
                 )
 
-            # Visual divider at job start
-            LOG.info("\n" + "-" * 40)
+            # Visual divider at job start (configurable)
+            if LOG_STATS_ENABLED:
+                LOG.info("\n" + (LOG_DIVIDER_CHAR * LOG_DIVIDER_LENGTH))
             LOG.info("Running caption pipeline: %s", cmd)
 
             try:
@@ -195,7 +287,7 @@ class Pipeline:
                     shell=True,
                     capture_output=True,
                     text=True,
-                    timeout=3600,  # 1 hour timeout
+                    timeout=PIPELINE_TIMEOUT,
                 )
 
                 if proc.returncode != 0:
@@ -214,6 +306,7 @@ class Pipeline:
                         stderr=proc.stderr,
                         command=cmd,
                         elapsed_seconds=elapsed,
+                        input_path=event.path,
                     )
                 else:
                     LOG.info("Caption pipeline completed for %s", event.path)
@@ -226,6 +319,12 @@ class Pipeline:
                     # Collect output file statistics
                     elapsed = time.time() - start_time
                     output_files = self._collect_output_files(event.path)
+                    # Parse ffmpeg speed if present
+                    ffmpeg_speed = None
+                    import re
+                    m = re.search(r"speed=([0-9.]+)x", proc.stderr)
+                    if m:
+                        ffmpeg_speed = float(m.group(1))
                     try:
                         input_size = Path(event.path).stat().st_size
                     except Exception:
@@ -240,7 +339,12 @@ class Pipeline:
                         elapsed_seconds=elapsed,
                         output_files=output_files,
                         input_size_bytes=input_size,
+                        input_path=event.path,
                     )
+
+                    # If ffmpeg speed parsed, log it for reference
+                    if ffmpeg_speed is not None:
+                        LOG.info("Transcode speed reported by ffmpeg: %.2fx", ffmpeg_speed)
 
             except subprocess.TimeoutExpired:
                 elapsed = time.time() - start_time
@@ -249,9 +353,10 @@ class Pipeline:
                     success=False,
                     returncode=-1,
                     stdout="",
-                    stderr="Command timed out after 3600 seconds",
+                    stderr=f"Command timed out after {PIPELINE_TIMEOUT} seconds",
                     command=cmd,
                     elapsed_seconds=elapsed,
+                    input_path=event.path,
                 )
             except Exception as e:
                 elapsed = time.time() - start_time
@@ -263,6 +368,7 @@ class Pipeline:
                     stderr=str(e),
                     command=cmd,
                     elapsed_seconds=elapsed,
+                    input_path=event.path,
                 )
         finally:
             # Clear job ID after processing
