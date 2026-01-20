@@ -24,6 +24,8 @@ services:
       - DRY_RUN=${DRY_RUN:-false}
       - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-7200}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_VERBOSITY=${LOG_VERBOSITY:-NORMAL}
+      - LOG_FILE=${LOG_FILE:-/app/logs/app.log}
     
     volumes:
       - ./data:/app/data
