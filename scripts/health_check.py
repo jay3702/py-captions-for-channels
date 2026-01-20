@@ -27,7 +27,8 @@ from typing import Dict, Iterable, List, Set, Tuple
 LOG = logging.getLogger("health_check")
 
 # Regex to extract timestamps and successful pipeline completions
-TIMESTAMP_RE = re.compile(r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+# Match lines with optional [Job ID] prefix before timestamp
+TIMESTAMP_RE = re.compile(r"^(?:\[.+?\] )?(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 COMPLETED_RE = re.compile(r"Caption pipeline completed for (?P<path>.+)")
 
 
