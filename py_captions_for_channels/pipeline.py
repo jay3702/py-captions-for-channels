@@ -1,21 +1,18 @@
-import subprocess
 import logging
-from .logging_config import set_job_id
+import re
+import subprocess
+import time
+from pathlib import Path
+
 from .config import (
     LOG_DIVIDER_CHAR,
     LOG_DIVIDER_LENGTH,
     LOG_STATS_ENABLED,
     PIPELINE_TIMEOUT,
 )
+from .logging_config import set_job_id
 
 LOG = logging.getLogger(__name__)
-
-
-import subprocess
-import logging
-import time
-from pathlib import Path
-from .logging_config import set_job_id
 
 
 class PipelineResult:
@@ -54,6 +51,7 @@ class PipelineResult:
                 return f"{bytes_size:.1f} {unit}"
             bytes_size /= 1024.0
         return f"{bytes_size:.1f} TB"
+
 
 class Pipeline:
     """Executes the captioning workflow.
@@ -209,35 +207,11 @@ class Pipeline:
                 size_str = result.format_size(size_bytes)
                 stats_lines.append(f"    - {filename}: {size_str}")
 
-            # If an SRT exists, include line count as a helpful metric
-            srt_name = None
-            for name in result.output_files.keys():
-                if name.lower().endswith('.srt'):
-                    srt_name = name
-                    break
-            if srt_name:
-                try:
-                    srt_path = Path(job_id.split(' @ ')[0])  # job_id doesn't include path; fallback disabled
-                except Exception:
-                    srt_path = None
-                # Derive srt path from job_id is unreliable; instead, we skip attempting to open here.
-                # Users can see size; opening the file requires full path which we avoid in stats for safety.
-
         stats_lines.append(divider)
 
         # Log as single info message (job ID will be added by formatter)
         if LOG_STATS_ENABLED:
             LOG.info("\n" + "\n".join(stats_lines))
-
-    def __init__(self, command_template: str, dry_run: bool = False):
-        """Initialize pipeline.
-
-        Args:
-            command_template: Command template with {path} placeholder
-            dry_run: If True, print commands instead of executing them
-        """
-        self.command_template = command_template
-        self.dry_run = dry_run
 
     def run(self, event) -> PipelineResult:
         """Execute the caption command for the given event.
@@ -259,6 +233,7 @@ class Pipeline:
             # Format command with safe-quoted event path to handle spaces/special chars
             try:
                 import shlex
+
                 safe_path = shlex.quote(event.path)
             except Exception:
                 safe_path = event.path  # fallback
@@ -321,7 +296,6 @@ class Pipeline:
                     output_files = self._collect_output_files(event.path)
                     # Parse ffmpeg speed if present
                     ffmpeg_speed = None
-                    import re
                     m = re.search(r"speed=([0-9.]+)x", proc.stderr)
                     if m:
                         ffmpeg_speed = float(m.group(1))
@@ -344,7 +318,9 @@ class Pipeline:
 
                     # If ffmpeg speed parsed, log it for reference
                     if ffmpeg_speed is not None:
-                        LOG.info("Transcode speed reported by ffmpeg: %.2fx", ffmpeg_speed)
+                        LOG.info(
+                            "Transcode speed reported by ffmpeg: %.2fx", ffmpeg_speed
+                        )
 
             except subprocess.TimeoutExpired:
                 elapsed = time.time() - start_time
