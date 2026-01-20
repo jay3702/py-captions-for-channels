@@ -1,11 +1,17 @@
 # py-captions-for-channels Whitelist
 # One rule per line. Format:
-#   Simple: ShowName
+#   Simple: ShowName (substring match)
+#   Regex: Pattern (regex if contains regex operators)
 #   Complex: ShowName;DayOfWeek;Channel(s);Time
 #
 # Examples:
-#   News                                  - matches any show with "News"
+#   News                                  - matches any show containing "News"
+#   ^CNN News                             - regex: matches titles starting with "CNN News"
+#   News.*(Central|Night)                 - regex: matches "News" followed by "Central" or "Night"
 #   Dateline;Friday;11.1,113;21:00       - only Fridays at 21:00 on channels 11.1 or 113
+#
+# Regex automatically detected by presence of: . * + ? ^ $ { } ( ) [ ] \ |
+# All patterns are case-insensitive
 
 # Time-specific shows (delayed captions on first run)
 Dateline;Friday;11.1,113;21:00

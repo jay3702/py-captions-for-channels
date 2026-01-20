@@ -1,12 +1,14 @@
 """Whitelist filtering for recording processing.
 
 Supports both simple show name matching and complex time/channel-based rules.
+Show name matching supports both substring and regex patterns.
 """
 
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Pattern
 
 LOG = logging.getLogger(__name__)
 
@@ -14,15 +16,21 @@ LOG = logging.getLogger(__name__)
 class WhitelistRule:
     """A single whitelist rule."""
 
+    # Regex operators that indicate a pattern should be treated as regex
+    REGEX_OPERATORS = r"[.*+?^${}()\[\]\\|]"
+
     def __init__(self, line: str):
         """Parse a whitelist rule from a line.
 
         Format:
-            Simple: "Show Name"
+            Simple: "Show Name" (substring match)
+            Regex: "News.*Central" (regex pattern)
             Complex: "Show Name;DayOfWeek;Channel;Time"
 
         Examples:
-            "News" - matches any recording with "News" in title
+            "News" - matches any recording containing "News"
+            "^CNN News" - regex: matches titles starting with "CNN News"
+            "News.*Central" - regex: matches "News" followed by "Central"
             "Dateline;Friday;11.1,113;21:00" - Dateline on Friday at 21:00
         """
         parts = line.strip().split(";")
@@ -32,6 +40,24 @@ class WhitelistRule:
             [c.strip() for c in parts[2].split(",")] if len(parts) > 2 else None
         )
         self.time = parts[3].strip() if len(parts) > 3 else None
+
+        # Determine if show_name is regex or substring
+        self.pattern: Optional[Pattern] = None
+        self.is_regex = bool(re.search(self.REGEX_OPERATORS, self.show_name))
+
+        if self.is_regex:
+            try:
+                # Compile as regex (case-insensitive)
+                self.pattern = re.compile(self.show_name, re.IGNORECASE)
+                LOG.debug("Whitelist rule '%s' using regex pattern", self.show_name)
+            except re.error as e:
+                LOG.warning(
+                    "Invalid regex pattern '%s': %s. Treating as substring.",
+                    self.show_name,
+                    e,
+                )
+                self.is_regex = False
+                self.pattern = None
 
     def matches(self, title: str, recording_time: Optional[datetime] = None) -> bool:
         """Check if a recording matches this whitelist rule.
@@ -43,9 +69,15 @@ class WhitelistRule:
         Returns:
             True if the recording matches this rule
         """
-        # Check title match (case-insensitive substring)
-        if self.show_name.lower() not in title.lower():
-            return False
+        # Check title match (regex or substring, case-insensitive)
+        if self.is_regex and self.pattern:
+            # Use compiled regex pattern
+            if not self.pattern.search(title):
+                return False
+        else:
+            # Use substring match (case-insensitive)
+            if self.show_name.lower() not in title.lower():
+                return False
 
         # If simple rule (no time constraints), we have a match
         if self.day_of_week is None:
