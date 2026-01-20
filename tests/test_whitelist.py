@@ -97,7 +97,9 @@ def test_complex_rule_with_regex():
 
     assert rule.matches("Dateline NBC", friday)
     assert rule.matches("Dateline Special", friday)
-    assert not rule.matches("The Dateline Show", friday)  # Doesn't start with "Dateline"
+    assert not rule.matches(
+        "The Dateline Show", friday
+    )  # Doesn't start with "Dateline"
 
 
 def test_whitelist_file_with_mixed_patterns():

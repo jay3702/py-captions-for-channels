@@ -46,6 +46,7 @@ class WhitelistRule:
         self.is_regex = bool(re.search(self.REGEX_OPERATORS, self.show_name))
 
         if self.is_regex:
+            LOG.debug("Whitelist rule '%s' detected as regex", self.show_name)
             try:
                 # Compile as regex (case-insensitive)
                 self.pattern = re.compile(self.show_name, re.IGNORECASE)
