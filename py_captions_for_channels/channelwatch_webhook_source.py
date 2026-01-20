@@ -75,6 +75,10 @@ class ChannelWatchWebhookSource:
                 LOG.warning("Could not parse program title from message")
                 return web.Response(text="OK")
 
+            if not status:
+                LOG.warning("Could not parse status from message")
+                return web.Response(text="Invalid payload: missing status", status=400)
+
             # Only process completed recording events
             # ChannelWatch sends either "Stopped" or "Completed" status
             if "Stopped" not in status and "Completed" not in status:
