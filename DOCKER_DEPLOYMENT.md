@@ -48,7 +48,7 @@ All configuration can be set via environment variables:
 | `USE_WEBHOOK` | `true` | Use webhook receiver (production) |
 | `WEBHOOK_HOST` | `0.0.0.0` | Webhook server bind address |
 | `WEBHOOK_PORT` | `9000` | Webhook server port |
-| `CHANNELS_API_URL` | `http://192.168.3.150:8089` | Channels DVR API endpoint |
+| `CHANNELS_API_URL` | `http://<CHANNELS_DVR_SERVER>:8089` | Channels DVR API endpoint |
 | `CAPTION_COMMAND` | `/usr/local/bin/whisper --model medium {path}` | Command to execute for captioning |
 | `STATE_FILE` | `/app/data/state.json` | Path to state file |
 | `DRY_RUN` | `true` | If true, only print commands without executing |
@@ -84,18 +84,18 @@ Configure ChannelWatch to send webhooks to your container:
    ```
    json://YOUR_DOCKER_HOST_IP:9000
    ```
-   - If running on the same machine as DVR: `json://192.168.3.150:9000`
+   - If running on the same machine as DVR: `http://<LOCAL_IP>:9000`
    - If running on a different machine: `json://YOUR_MACHINE_IP:9000`
 5. Save settings
 6. Enable notifications for "Recording Completed" events
 
-## Deployment to niu
+## Deployment to Your Server
 
 ### Via SSH
 
 ```bash
-# SSH to niu
-ssh admin@192.168.3.150
+# SSH to Your Server
+ssh admin@<SERVER_IP>
 
 # Install Docker if not already installed
 # (Follow QNAP Container Station setup)
@@ -115,7 +115,7 @@ docker-compose up -d
 docker-compose logs -f
 ```
 
-### Configure ChannelWatch on niu
+### Configure ChannelWatch on Your Server
 
 Update Custom Apprise URL to: `json://127.0.0.1:9000` (since running on same machine)
 
@@ -181,7 +181,7 @@ docker-compose config
 1. Verify `CHANNELS_API_URL` is correct
 2. Test from container:
    ```bash
-   docker exec -it py-captions curl http://192.168.3.150:8089/dvr/jobs
+   docker exec -it py-captions curl http://<CHANNELS_DVR_SERVER>:8089/dvr/jobs
    ```
 
 ### Recording Files Not Found

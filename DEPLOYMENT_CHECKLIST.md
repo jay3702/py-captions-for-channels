@@ -1,9 +1,9 @@
-# Deployment Checklist for niu
+# Deployment Checklist
 
 ## ? Pre-Deployment Complete
 - [x] Old services stopped (channels-watcher.service/timer)
 - [ ] ChannelWatch notification webhook ready to update
-- [ ] Docker installed on niu
+- [ ] Docker installed on target server
 
 ---
 
@@ -51,7 +51,7 @@ docker-compose logs -f
 ```
 
 ### 7. Update ChannelWatch
-1. Open: `http://192.168.3.150:8501`
+1. Open: `http://<CHANNELWATCH_SERVER>:8501`
 2. Go to: **Settings ? Notification Providers**
 3. Enable: **Custom URL**
 4. Set URL: `json://localhost:9000`

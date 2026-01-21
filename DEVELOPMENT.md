@@ -112,7 +112,7 @@
 
 ## 🔧 Current Deployment
 
-**Environment**: QNAP NAS (niu, 192.168.3.150)  
+**Environment**: QNAP NAS or similar Linux-based NAS with Docker support  
 **Hardware**: RTX 2080 Ti, 32GB RAM  
 **Status**: ✅ Fully operational, processing news/entertainment recordings  
 **Processing Rate**: 14.8–23.9x realtime (GPU-accelerated)  
