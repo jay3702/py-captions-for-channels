@@ -73,6 +73,10 @@ async def process_reprocess_queue(state, pipeline, api, parser):
 async def main():
     """Main watcher loop - receives events and processes recordings."""
 
+    LOG.info("=" * 80)
+    LOG.info("Py Captions for Channels - Starting up")
+    LOG.info("=" * 80)
+
     # Select event source based on configuration
     if USE_MOCK:
         from .mock_source import MockSource
@@ -99,6 +103,10 @@ async def main():
     if not await run_health_checks(api):
         LOG.error("Health checks failed. Aborting startup.")
         return
+
+    LOG.info("=" * 80)
+    LOG.info("All health checks passed! Starting event loop...")
+    LOG.info("=" * 80)
 
     # Process reprocess queue on startup
     await process_reprocess_queue(state, pipeline, api, parser)
