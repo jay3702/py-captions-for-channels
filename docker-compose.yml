@@ -1,9 +1,9 @@
 services:
   py-captions:
     build: .
+    image: py-captions-for-channels:latest
     container_name: py-captions-for-channels
     restart: unless-stopped
-    network_mode: host
     runtime: nvidia
     
     environment:
@@ -31,7 +31,28 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
+    ports:
+      - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
     
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  py-captions-web:
+    image: py-captions-for-channels:latest
+    depends_on:
+      - py-captions
+    restart: unless-stopped
+    command: uvicorn py_captions_for_channels.web_app:app --host 0.0.0.0 --port ${WEB_UI_PORT:-8000}
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
     logging:
       driver: "json-file"
       options:
