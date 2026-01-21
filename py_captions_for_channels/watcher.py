@@ -6,6 +6,7 @@ from .parser import Parser
 from .state import StateBackend
 from .pipeline import Pipeline
 from .whitelist import Whitelist
+from .health_check import run_health_checks
 from .config import (
     CHANNELWATCH_URL,
     CHANNELS_API_URL,
@@ -93,6 +94,11 @@ async def main():
     state = StateBackend(STATE_FILE)
     pipeline = Pipeline(CAPTION_COMMAND, dry_run=DRY_RUN)
     whitelist = Whitelist(WHITELIST_FILE)
+
+    # Run health checks before starting
+    if not await run_health_checks(api):
+        LOG.error("Health checks failed. Aborting startup.")
+        return
 
     # Process reprocess queue on startup
     await process_reprocess_queue(state, pipeline, api, parser)
