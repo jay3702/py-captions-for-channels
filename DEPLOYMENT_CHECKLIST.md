@@ -9,9 +9,9 @@
 
 ## Deployment Steps
 
-### 1. SSH to niu
+### 1. SSH to Your Server
 ```bash
-ssh jay@192.168.3.150
+ssh user@<SERVER_IP>
 ```
 
 ### 2. Clone repository
