@@ -164,11 +164,11 @@ def summarize(folders: Dict[Path, Dict[str, List[str]]]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Health check for captions pipeline")
     parser.add_argument(
-        "--log-file", default="./app.log", help="Path to application log file"
+        "--log-file", default="/app/logs/app.log", help="Path to application log file"
     )
     parser.add_argument(
         "--state-file",
-        default="./health_state.json",
+        default="/app/data/health_state.json",
         help="Path to store last processed log offset",
     )
     parser.add_argument(
