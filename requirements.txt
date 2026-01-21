@@ -3,6 +3,9 @@ websockets
 aiohttp
 # Whisper for automatic speech recognition (NOTE: PyTorch installed separately in Dockerfile with CUDA)
 openai-whisper
+fastapi
+uvicorn[standard]
+jinja2
 
 
 
