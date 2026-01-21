@@ -46,16 +46,6 @@
 
     <section class="card">
       <div class="card-head">
-        <h2>Recent logs</h2>
-        <small class="muted" id="log-count">(loading)</small>
-      </div>
-      <ul class="list" id="log-list" style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.85rem;">
-        <li class="muted">Loading logs...</li>
-      </ul>
-    </section>
-
-    <section class="card wide">
-      <div class="card-head">
         <h2>Next steps</h2>
       </div>
       <ol class="next-steps">
@@ -65,6 +55,16 @@
       </ol>
     </section>
   </main>
+
+  <section class="card logs-panel">
+    <div class="card-head">
+      <h2>Recent logs</h2>
+      <small class="muted" id="log-count">(loading)</small>
+    </div>
+    <ul class="list" id="log-list">
+      <li class="muted">Loading logs...</li>
+    </ul>
+  </section>
 
   <script src="/static/main.js"></script>
 </body>
