@@ -55,6 +55,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./py_captions_for_channels:/app/py_captions_for_channels
     ports:
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
     logging:
