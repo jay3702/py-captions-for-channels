@@ -50,19 +50,23 @@ docker-compose up -d
 docker-compose logs -f
 ```
 
-### 7. Update ChannelWatch
+### 7. Access web GUI
+- Open: http://localhost:8000 (compose exposes port 8000)
+- Check dashboard loads and placeholder status shows OK
+
+### 8. Update ChannelWatch
 1. Open: `http://<CHANNELWATCH_SERVER>:8501`
 2. Go to: **Settings ? Notification Providers**
 3. Enable: **Custom URL**
 4. Set URL: `json://localhost:9000`
 5. Save
 
-### 8. Test
+### 9. Test
 - Trigger a short recording
 - Watch logs: `docker-compose logs -f`
 - Verify event received and path lookup works
 
-### 9. Go Live
+### 10. Go Live
 When ready for production:
 ```bash
 # Edit .env and set DRY_RUN=false

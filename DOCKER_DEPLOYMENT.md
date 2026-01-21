@@ -17,6 +17,9 @@ docker-compose up -d
 
 # View logs
 docker-compose logs -f
+
+# Web GUI
+# Visit http://localhost:8000 once containers are up (ports exposed via compose)
 ```
 
 ### 2. Build and Run with Docker
@@ -34,6 +37,14 @@ docker run -d \
   -e USE_WEBHOOK=true \
   -e DRY_RUN=false \
   py-captions-for-channels
+
+# Optional: Web GUI (same image)
+docker run -d \
+  --name py-captions-web \
+  -p 8000:8000 \
+  -v $(pwd)/logs:/app/logs \
+  py-captions-for-channels \
+  uvicorn py_captions_for_channels.web_app:app --host 0.0.0.0 --port 8000
 ```
 
 ## Configuration

@@ -26,6 +26,10 @@ nano .env  # Update CHANNELS_API_URL, DVR_RECORDINGS_PATH, etc.
 # Deploy
 docker-compose up -d
 docker-compose logs -f
+
+# Web GUI
+# (after containers start)
+# Visit: http://localhost:8000
 ```
 
 ### Local Development
@@ -43,6 +47,9 @@ pytest
 
 # Run watcher
 python -m py_captions_for_channels
+
+# Run web GUI (auto-reload for development)
+uvicorn py_captions_for_channels.web_app:app --reload --port 8000
 ```
 
 ## Configuration

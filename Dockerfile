@@ -38,8 +38,9 @@ RUN mkdir -p /app/data /app/logs
 # Set Python to run in unbuffered mode (better for logs)
 ENV PYTHONUNBUFFERED=1
 
-# Expose webhook port
+# Expose webhook and web UI ports
 EXPOSE 9000
+EXPOSE 8000
 
 # Run the watcher
 CMD ["python", "-u", "-m", "py_captions_for_channels"]
