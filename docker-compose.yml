@@ -48,6 +48,10 @@ services:
     command: uvicorn py_captions_for_channels.web_app:app --host 0.0.0.0 --port ${WEB_UI_PORT:-8000}
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FILE=${LOG_FILE:-/app/logs/app.log}
+      - STATE_FILE=${STATE_FILE:-/app/data/state.json}
+      - DRY_RUN=${DRY_RUN:-false}
+      - CAPTION_COMMAND=${CAPTION_COMMAND:-bash -c 'whisper --model medium --output_format srt --output_dir "$(dirname "{path}")" "{path}"'}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
