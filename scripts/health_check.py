@@ -130,6 +130,9 @@ def scan_folders(paths: Iterable[Path]) -> Dict[Path, Dict[str, List[str]]]:
 
         # Identify unprocessed candidates in the same folder
         for mpg in folder.glob("*.mpg"):
+            # Skip .orig.mpg files (renamed originals after transcoding)
+            if mpg.suffix == ".mpg" and mpg.stem.endswith(".orig"):
+                continue
             if mpg in proc_paths:
                 continue
             srt = mpg.with_suffix(".srt")
