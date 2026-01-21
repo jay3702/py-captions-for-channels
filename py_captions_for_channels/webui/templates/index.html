@@ -31,18 +31,26 @@
         <p id="app-version" class="value">—</p>
       </div>
       <div class="stat">
-        <p class="label">Notes</p>
-        <p id="app-notes" class="value value-sub">—</p>
+        <p class="label">Dry Run</p>
+        <p id="dry-run" class="value">—</p>
+      </div>
+      <div class="stat">
+        <p class="label">Last Processed</p>
+        <p id="last-processed" class="value value-sub">—</p>
+      </div>
+      <div class="stat">
+        <p class="label">Reprocess Queue</p>
+        <p id="reprocess-queue" class="value">0 items</p>
       </div>
     </section>
 
     <section class="card">
       <div class="card-head">
-        <h2>Recent activity</h2>
-        <small class="muted">(placeholder)</small>
+        <h2>Recent logs</h2>
+        <small class="muted" id="log-count">(loading)</small>
       </div>
-      <ul class="list" id="log-list">
-        <li class="muted">Log streaming not yet implemented.</li>
+      <ul class="list" id="log-list" style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.85rem;">
+        <li class="muted">Loading logs...</li>
       </ul>
     </section>
 
