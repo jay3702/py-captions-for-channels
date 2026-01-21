@@ -18,7 +18,7 @@ class ChannelsAPI:
         """Initialize API client.
 
         Args:
-            base_url: Base URL of Channels DVR (e.g., http://192.168.3.150:8089)
+            base_url: Base URL of Channels DVR (e.g., http://<CHANNELS_DVR_SERVER>:8089)
             timeout: Request timeout in seconds
         """
         self.base_url = base_url.rstrip("/")

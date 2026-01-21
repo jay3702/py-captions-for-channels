@@ -9,7 +9,7 @@ Usage:
     python scripts/test_webhook.py
 
 Configure in ChannelWatch:
-    webhook://192.168.3.150:9000
+    webhook://<SERVER_IP>:9000
 
 Press Ctrl+C to stop.
 """

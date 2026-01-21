@@ -8,7 +8,7 @@ This helps us understand what the API returns and fix the lookup logic.
 import requests
 import json
 
-DVR_URL = "http://192.168.3.150:8089"
+DVR_URL = "http://<CHANNELS_DVR_SERVER>:8089"
 
 
 def inspect_api():

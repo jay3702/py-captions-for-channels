@@ -46,7 +46,7 @@ async def main():
     """Test common WebSocket endpoint paths."""
     setup_path()
 
-    base = "192.168.3.150:8501"
+    base = "<CHANNELWATCH_SERVER>:8501"
 
     # Common WebSocket paths
     paths = [
@@ -69,7 +69,7 @@ async def main():
 
     print("\n? None of the common paths worked.")
     print("\nNext steps:")
-    print("1. Check http://192.168.3.150:8501 in browser for API documentation")
+    print("1. Check http://<CHANNELWATCH_SERVER>:8501 in browser for API documentation")
     print("2. Check ChannelWatch settings for WebSocket configuration")
     print("3. Verify ChannelWatch is configured to send WebSocket events")
 
