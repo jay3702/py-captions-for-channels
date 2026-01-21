@@ -77,7 +77,19 @@ async def main():
     LOG.info("Py Captions for Channels - Starting up")
     LOG.info("=" * 80)
 
-    # Select event source based on configuration
+    # Initialize API first (needed for health checks)
+    api = ChannelsAPI(CHANNELS_API_URL)
+
+    # Run health checks BEFORE creating event source or other components
+    if not await run_health_checks(api):
+        LOG.error("Health checks failed. Aborting startup.")
+        return
+
+    LOG.info("=" * 80)
+    LOG.info("All health checks passed! Starting event loop...")
+    LOG.info("=" * 80)
+
+    # Now select and initialize event source (may start background services)
     if USE_MOCK:
         from .mock_source import MockSource
 
@@ -92,21 +104,11 @@ async def main():
 
         source = ChannelWatchSource(CHANNELWATCH_URL)
 
-    # Initialize processing components
-    api = ChannelsAPI(CHANNELS_API_URL)
+    # Initialize remaining processing components
     parser = Parser()
     state = StateBackend(STATE_FILE)
     pipeline = Pipeline(CAPTION_COMMAND, dry_run=DRY_RUN)
     whitelist = Whitelist(WHITELIST_FILE)
-
-    # Run health checks before starting
-    if not await run_health_checks(api):
-        LOG.error("Health checks failed. Aborting startup.")
-        return
-
-    LOG.info("=" * 80)
-    LOG.info("All health checks passed! Starting event loop...")
-    LOG.info("=" * 80)
 
     # Process reprocess queue on startup
     await process_reprocess_queue(state, pipeline, api, parser)
