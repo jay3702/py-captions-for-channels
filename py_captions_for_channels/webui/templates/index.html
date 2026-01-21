@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Py Captions Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Py Captions</p>
+      <h1>Real-time caption pipeline</h1>
+      <p class="lede">Monitor jobs, logs, and system health from a single place.</p>
+    </div>
+    <div class="pill">v0.8.0-dev</div>
+  </header>
+
+  <main class="grid">
+    <section class="card">
+      <div class="card-head">
+        <h2>Status</h2>
+        <span id="status-pill" class="pill pill-muted">loading</span>
+      </div>
+      <div class="stat">
+        <p class="label">Application</p>
+        <p id="app-name" class="value">—</p>
+      </div>
+      <div class="stat">
+        <p class="label">Version</p>
+        <p id="app-version" class="value">—</p>
+      </div>
+      <div class="stat">
+        <p class="label">Notes</p>
+        <p id="app-notes" class="value value-sub">—</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Recent activity</h2>
+        <small class="muted">(placeholder)</small>
+      </div>
+      <ul class="list" id="log-list">
+        <li class="muted">Log streaming not yet implemented.</li>
+      </ul>
+    </section>
+
+    <section class="card wide">
+      <div class="card-head">
+        <h2>Next steps</h2>
+      </div>
+      <ol class="next-steps">
+        <li>Wire /api/status to live pipeline metrics.</li>
+        <li>Add log streaming via WebSocket or SSE.</li>
+        <li>Expose controls for whitelist and processing toggles.</li>
+      </ol>
+    </section>
+  </main>
+
+  <script src="/static/main.js"></script>
+</body>
+</html>
