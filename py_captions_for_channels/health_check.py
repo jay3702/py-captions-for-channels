@@ -5,7 +5,6 @@ Verifies that all required services and dependencies are available before
 starting the main watcher loop.
 """
 
-import asyncio
 import logging
 import shutil
 from pathlib import Path
@@ -28,22 +27,33 @@ async def check_channels_dvr(api: ChannelsAPI) -> bool:
     """
     try:
         LOG.info("Checking Channels DVR API: %s", CHANNELS_API_URL)
-        # Attempt a simple API call
-        result = await asyncio.wait_for(api.get_all_recordings(), timeout=5.0)
-        if result is not None:
-            LOG.info("✓ Channels DVR API is reachable")
-            return True
-        LOG.warning("✗ Channels DVR API returned empty response")
-        return False
-    except asyncio.TimeoutError:
+        # Try a simple HTTP request to the API endpoint
+        import requests
+
+        response = requests.get(
+            f"{api.base_url}/api/v1/all",
+            params={"sort": "date_added", "order": "desc", "source": "recordings"},
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        LOG.info("✓ Channels DVR API is reachable")
+        return True
+    except requests.exceptions.Timeout:
         LOG.error(
             "✗ Channels DVR API timeout - check CHANNELS_API_URL: %s",
             CHANNELS_API_URL,
         )
         return False
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         LOG.error(
             "✗ Channels DVR API unreachable: %s - check CHANNELS_API_URL: %s",
+            str(e),
+            CHANNELS_API_URL,
+        )
+        return False
+    except Exception as e:
+        LOG.error(
+            "✗ Channels DVR API error: %s - check CHANNELS_API_URL: %s",
             str(e),
             CHANNELS_API_URL,
         )
