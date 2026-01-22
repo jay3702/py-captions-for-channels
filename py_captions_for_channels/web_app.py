@@ -7,7 +7,13 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .config import STATE_FILE, DRY_RUN, LOG_FILE, CAPTION_COMMAND
+from .config import (
+    STATE_FILE,
+    DRY_RUN,
+    LOG_FILE,
+    CAPTION_COMMAND,
+    STALE_EXECUTION_SECONDS,
+)
 from .state import StateBackend
 from .execution_tracker import get_tracker
 
@@ -134,6 +140,7 @@ async def get_executions(limit: int = 50) -> dict:
     """
     try:
         tracker = get_tracker()
+        tracker.mark_stale_executions(timeout_seconds=STALE_EXECUTION_SECONDS)
         executions = tracker.get_executions(limit=limit)
 
         return {
@@ -162,6 +169,7 @@ async def get_execution_detail(job_id: str) -> dict:
     """
     try:
         tracker = get_tracker()
+        tracker.mark_stale_executions(timeout_seconds=STALE_EXECUTION_SECONDS)
         execution = tracker.get_execution(job_id)
 
         if execution:
