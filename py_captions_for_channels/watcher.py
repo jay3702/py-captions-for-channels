@@ -93,9 +93,7 @@ async def main():
     # Check for interrupted executions from previous run
     tracker = get_tracker()
 
-    stale_count = tracker.mark_stale_executions(
-        timeout_seconds=STALE_EXECUTION_SECONDS
-    )
+    stale_count = tracker.mark_stale_executions(timeout_seconds=STALE_EXECUTION_SECONDS)
     if stale_count > 0:
         LOG.warning("Marked %d stale/interrupted executions as failed", stale_count)
 
