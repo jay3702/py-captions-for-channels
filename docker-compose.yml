@@ -52,6 +52,8 @@ services:
       - STATE_FILE=${STATE_FILE:-/app/data/state.json}
       - DRY_RUN=${DRY_RUN:-false}
       - CAPTION_COMMAND=${CAPTION_COMMAND:-bash -c 'whisper --model medium --output_format srt --output_dir "$(dirname "{path}")" "{path}"'}
+      - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
+      - CHANNELWATCH_URL=${CHANNELWATCH_URL:-ws://localhost:8501/events}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
