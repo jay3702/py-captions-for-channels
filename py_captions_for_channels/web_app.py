@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 
 from .config import STATE_FILE, DRY_RUN, LOG_FILE, CAPTION_COMMAND
 from .state import StateBackend
+from .execution_tracker import get_tracker
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
@@ -119,3 +120,51 @@ async def logs_endpoint(lines: int = 100) -> dict:
         "log_file": str(LOG_FILE),
         "timestamp": datetime.now().isoformat(),
     }
+
+    @app.get("/api/executions")
+    async def get_executions(limit: int = 50) -> dict:
+        """Get recent pipeline executions.
+
+        Args:
+            limit: Maximum number of executions to return
+
+        Returns:
+            Dict with execution list and metadata
+        """
+        try:
+            tracker = get_tracker()
+            executions = tracker.get_executions(limit=limit)
+
+            return {
+                "executions": executions,
+                "count": len(executions),
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            return {
+                "executions": [],
+                "count": 0,
+                "error": str(e),
+                "timestamp": datetime.now().isoformat(),
+            }
+
+    @app.get("/api/executions/{job_id:path}")
+    async def get_execution_detail(job_id: str) -> dict:
+        """Get detailed execution information including full logs.
+
+        Args:
+            job_id: Job identifier
+
+        Returns:
+            Execution detail dict
+        """
+        try:
+            tracker = get_tracker()
+            execution = tracker.get_execution(job_id)
+
+            if execution:
+                return execution
+            else:
+                return {"error": "Execution not found", "job_id": job_id}
+        except Exception as e:
+            return {"error": str(e), "job_id": job_id}

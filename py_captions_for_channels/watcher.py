@@ -7,6 +7,7 @@ from .state import StateBackend
 from .pipeline import Pipeline
 from .whitelist import Whitelist
 from .health_check import run_health_checks
+from .execution_tracker import get_tracker
 from .config import (
     CHANNELWATCH_URL,
     CHANNELS_API_URL,
@@ -126,11 +127,28 @@ async def main():
         job_id = f"{partial.title} @ {partial.start_time.strftime('%H:%M:%S')}"
         set_job_id(job_id)
 
+        tracker = get_tracker()
+        exec_id = None
+
         try:
             path = api.lookup_recording_path(partial.title, partial.start_time)
             event = parser.from_channelwatch(partial, path)
 
+            # Start tracking execution
+            exec_id = tracker.start_execution(
+                job_id, partial.title, event.path, event.timestamp.isoformat()
+            )
+
             result = pipeline.run(event)
+
+            # Complete execution tracking
+            tracker.complete_execution(
+                job_id,
+                success=result.success,
+                elapsed_seconds=result.elapsed_seconds,
+                error=None if result.success else f"Exit code {result.returncode}",
+            )
+
             if result.success:
                 pipeline._log_job_statistics(result, job_id)
             state.update(event.timestamp)
@@ -138,9 +156,17 @@ async def main():
             state.clear_reprocess_request(event.path)
         except RuntimeError as e:
             LOG.error("Failed to process event '%s': %s", partial.title, e)
+            if exec_id:
+                tracker.complete_execution(
+                    job_id, success=False, elapsed_seconds=0, error=str(e)
+                )
         except Exception as e:
             LOG.error(
                 "Unexpected error processing '%s': %s", partial.title, e, exc_info=True
             )
+            if exec_id:
+                tracker.complete_execution(
+                    job_id, success=False, elapsed_seconds=0, error=str(e)
+                )
         finally:
             set_job_id(None)
