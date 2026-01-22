@@ -262,35 +262,42 @@ h1 {
     transform: translateY(-1px);
   }
 
-  .exec-header {
+  .exec-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 8px;
+    gap: 12px;
+    font-size: 12px;
   }
 
   .exec-status {
     font-size: 18px;
     line-height: 1;
+    flex-shrink: 0;
   }
 
   .exec-title {
     flex: 1;
     font-weight: 500;
     font-size: 14px;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .exec-time {
     color: var(--muted);
     font-size: 12px;
+    flex-shrink: 0;
   }
 
   .exec-progress {
-    height: 4px;
+    height: 3px;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 2px;
     overflow: hidden;
-    margin-bottom: 8px;
+    flex-shrink: 0;
+    width: 80px;
   }
 
   .progress-bar {
@@ -305,28 +312,20 @@ h1 {
     100% { transform: translateX(100%); }
   }
 
-  .exec-footer {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 12px;
-    color: var(--muted);
-  }
-
   .exec-status-text {
     font-weight: 500;
+    flex-shrink: 0;
+    min-width: 60px;
   }
 
   .exec-elapsed {
     margin-left: auto;
+    flex-shrink: 0;
   }
 
   .exec-error {
-    color: #ef5350;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: none;
+  }
   }
 
   .exec-success .exec-status {
