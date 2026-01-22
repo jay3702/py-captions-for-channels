@@ -70,6 +70,7 @@ WEBHOOK_PORT = get_env_int("WEBHOOK_PORT", 9000)
 # Pipeline configuration
 DRY_RUN = get_env_bool("DRY_RUN", True)
 PIPELINE_TIMEOUT = get_env_int("PIPELINE_TIMEOUT", 3600)
+STALE_EXECUTION_SECONDS = get_env_int("STALE_EXECUTION_SECONDS", 900)
 
 # Whitelist configuration
 WHITELIST_FILE = os.getenv("WHITELIST_FILE", "./whitelist.txt")

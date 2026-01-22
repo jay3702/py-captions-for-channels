@@ -19,6 +19,7 @@ from .config import (
     WEBHOOK_PORT,
     DRY_RUN,
     WHITELIST_FILE,
+    STALE_EXECUTION_SECONDS,
 )
 
 LOG = logging.getLogger(__name__)
@@ -91,9 +92,10 @@ async def main():
 
     # Check for interrupted executions from previous run
     tracker = get_tracker()
-    from .config import PIPELINE_TIMEOUT
 
-    stale_count = tracker.mark_stale_executions(timeout_seconds=PIPELINE_TIMEOUT)
+    stale_count = tracker.mark_stale_executions(
+        timeout_seconds=STALE_EXECUTION_SECONDS
+    )
     if stale_count > 0:
         LOG.warning("Marked %d stale/interrupted executions as failed", stale_count)
 
