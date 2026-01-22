@@ -73,7 +73,9 @@ class ExecutionTracker:
             }
             self._save()
             LOG.info(
-                "Started tracking execution: %s (total: %d)", exec_id, len(self.executions)
+                "Started tracking execution: %s (total: %d)",
+                exec_id,
+                len(self.executions),
             )
             return exec_id
 
@@ -157,6 +159,68 @@ class ExecutionTracker:
         """
         with self.lock:
             return self.executions.get(job_id)
+
+    def mark_stale_executions(self, timeout_seconds: int = 7200) -> int:
+        """Mark long-running executions as failed (interrupted).
+
+        Args:
+            timeout_seconds: Maximum execution time before marking as stale
+
+        Returns:
+            Number of executions marked as stale
+        """
+        marked = 0
+        now = datetime.now()
+
+        with self.lock:
+            for exec_id, exec_data in self.executions.items():
+                if exec_data.get("status") != "running":
+                    continue
+
+                started_at = datetime.fromisoformat(exec_data["started_at"])
+                elapsed = (now - started_at).total_seconds()
+
+                if elapsed > timeout_seconds:
+                    exec_data.update(
+                        {
+                            "status": "completed",
+                            "success": False,
+                            "completed_at": now.isoformat(),
+                            "elapsed_seconds": elapsed,
+                            "error": (
+                                f"Execution interrupted or timed out "
+                                f"(exceeded {timeout_seconds}s)"
+                            ),
+                        }
+                    )
+                    marked += 1
+                    LOG.warning(
+                        "Marked stale execution as failed: %s (elapsed: %.1fs)",
+                        exec_id,
+                        elapsed,
+                    )
+
+            if marked > 0:
+                self._save()
+
+        return marked
+
+    def get_interrupted_paths(self) -> list[str]:
+        """Get file paths from recently interrupted executions.
+
+        Returns:
+            List of file paths that were interrupted
+        """
+        paths = []
+        with self.lock:
+            for exec_data in self.executions.values():
+                if (
+                    exec_data.get("status") == "completed"
+                    and not exec_data.get("success")
+                    and "interrupted" in exec_data.get("error", "").lower()
+                ):
+                    paths.append(exec_data.get("path"))
+        return paths
 
     def clear_old_executions(self, keep_count: int = 100):
         """Remove old executions, keeping only the most recent.
