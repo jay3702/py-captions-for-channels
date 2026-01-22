@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import requests
 
 from .config import (
     STATE_FILE,
@@ -13,6 +14,7 @@ from .config import (
     LOG_FILE,
     CAPTION_COMMAND,
     STALE_EXECUTION_SECONDS,
+    CHANNELS_API_URL,
 )
 from .state import StateBackend
 from .execution_tracker import get_tracker
@@ -48,6 +50,23 @@ async def root(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+def check_service_health(url: str, timeout: int = 5) -> bool:
+    """Check if a service is reachable.
+
+    Args:
+        url: Service URL to check
+        timeout: Request timeout in seconds
+
+    Returns:
+        True if service is reachable, False otherwise
+    """
+    try:
+        resp = requests.get(url, timeout=timeout)
+        return resp.status_code < 500
+    except Exception:
+        return False
+
+
 @app.get("/api/status")
 async def status() -> dict:
     """Return pipeline status and statistics.
@@ -57,6 +76,7 @@ async def status() -> dict:
     - Reprocess queue size
     - Configuration snapshot
     - Dry-run mode status
+    - Service health (Channels DVR, ChannelWatch)
     """
     try:
         # Reload state to get latest
@@ -64,6 +84,9 @@ async def status() -> dict:
 
         last_ts = state_backend.last_ts
         reprocess_queue = state_backend.get_reprocess_queue()
+
+        # Check service health
+        channels_healthy = check_service_health(CHANNELS_API_URL)
 
         return {
             "app": "py-captions-for-channels",
@@ -78,6 +101,13 @@ async def status() -> dict:
                 else CAPTION_COMMAND
             ),
             "log_file": str(LOG_FILE),
+            "services": {
+                "channels_dvr": {
+                    "name": "Channels DVR",
+                    "url": CHANNELS_API_URL,
+                    "healthy": channels_healthy,
+                }
+            },
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
@@ -86,6 +116,13 @@ async def status() -> dict:
             "version": "0.8.0-dev",
             "status": "error",
             "error": str(e),
+            "services": {
+                "channels_dvr": {
+                    "name": "Channels DVR",
+                    "url": CHANNELS_API_URL,
+                    "healthy": False,
+                }
+            },
             "timestamp": datetime.now().isoformat(),
         }
 
