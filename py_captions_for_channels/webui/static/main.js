@@ -82,7 +82,8 @@ async function fetchStatus() {
       if (!res.ok) throw new Error('Failed to fetch execution detail');
       const exec = await res.json();
     
-      if (exec.error) {
+      // Check for API-level error (e.g., "Execution not found")
+      if (exec.error && !exec.title) {
         alert('Error: ' + exec.error);
         return;
       }
@@ -92,6 +93,11 @@ async function fetchStatus() {
       const body = document.getElementById('modal-body');
     
       title.textContent = exec.title || 'Execution Details';
+    
+      // Format logs: handle both array of objects and array of strings
+      const logLines = exec.logs && exec.logs.length > 0 
+        ? exec.logs.map(l => typeof l === 'string' ? l : (l.message || '')).join('\n')
+        : 'No logs captured for this execution';
     
       body.innerHTML = `
         <div class="detail-section">
@@ -105,7 +111,7 @@ async function fetchStatus() {
         </div>
         <div class="detail-section">
           <h3>Logs</h3>
-          <pre class="log-output">${exec.logs && exec.logs.length > 0 ? exec.logs.map(l => escapeHtml(l.message)).join('\n') : 'No logs available'}</pre>
+          <pre class="log-output">${escapeHtml(logLines)}</pre>
         </div>
       `;
     
