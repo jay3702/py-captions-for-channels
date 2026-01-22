@@ -29,29 +29,109 @@ async function fetchStatus() {
   }
 }
 
-async function fetchLogs() {
+  async function fetchExecutions() {
   try {
-    const res = await fetch('/api/logs?lines=50');
-    if (!res.ok) throw new Error('Failed to fetch logs');
+      const res = await fetch('/api/executions?limit=50');
+      if (!res.ok) throw new Error('Failed to fetch executions');
     const data = await res.json();
     
-    const logList = document.getElementById('log-list');
-    const logCount = document.getElementById('log-count');
+      const execList = document.getElementById('exec-list');
+      const execCount = document.getElementById('exec-count');
     
-    logCount.textContent = `(${data.count} lines)`;
+      execCount.textContent = `(${data.count} items)`;
     
-    if (data.items && data.items.length > 0) {
-      logList.innerHTML = data.items.map(line => 
-        `<li>${escapeHtml(line)}</li>`
+      if (data.executions && data.executions.length > 0) {
+        execList.innerHTML = data.executions.map(exec => 
+          renderExecution(exec)
       ).join('');
     } else {
-      logList.innerHTML = '<li class="muted">No logs available</li>';
+        execList.innerHTML = '<li class="muted">No executions yet</li>';
     }
   } catch (err) {
-    document.getElementById('log-list').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
-    console.error('Logs fetch error:', err);
+      document.getElementById('exec-list').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
+      console.error('Executions fetch error:', err);
   }
 }
+
+  function renderExecution(exec) {
+    const statusClass = exec.status === 'running' ? 'exec-running' : (exec.success ? 'exec-success' : 'exec-failure');
+    const statusIcon = exec.status === 'running' ? '⏳' : (exec.success ? '✓' : '✗');
+    const statusText = exec.status === 'running' ? 'Running' : (exec.success ? 'Success' : 'Failed');
+  
+    const elapsed = exec.elapsed_seconds > 0 
+      ? `${Math.floor(exec.elapsed_seconds / 60)}:${(exec.elapsed_seconds % 60).toFixed(1).padStart(4, '0')}`
+      : '—';
+  
+    const startTime = new Date(exec.started_at).toLocaleTimeString();
+  
+    return `
+      <li class="exec-item ${statusClass}" onclick="showExecutionDetail('${escapeAttr(exec.id)}')">
+        <div class="exec-header">
+          <span class="exec-status">${statusIcon}</span>
+          <span class="exec-title">${escapeHtml(exec.title)}</span>
+          <span class="exec-time">${startTime}</span>
+        </div>
+        ${exec.status === 'running' ? '<div class="exec-progress"><div class="progress-bar"></div></div>' : ''}
+        <div class="exec-footer">
+          <span class="exec-status-text">${statusText}</span>
+          <span class="exec-elapsed">${elapsed}</span>
+          ${exec.error ? `<span class="exec-error">${escapeHtml(exec.error)}</span>` : ''}
+        </div>
+      </li>
+    `;
+  }
+
+  async function showExecutionDetail(jobId) {
+    try {
+      const res = await fetch(`/api/executions/${encodeURIComponent(jobId)}`);
+      if (!res.ok) throw new Error('Failed to fetch execution detail');
+      const exec = await res.json();
+    
+      if (exec.error) {
+        alert('Error: ' + exec.error);
+        return;
+      }
+    
+      const modal = document.getElementById('exec-modal');
+      const title = document.getElementById('modal-title');
+      const body = document.getElementById('modal-body');
+    
+      title.textContent = exec.title || 'Execution Details';
+    
+      body.innerHTML = `
+        <div class="detail-section">
+          <h3>Overview</h3>
+          <p><strong>Status:</strong> ${exec.status} ${exec.success !== null ? (exec.success ? '✓ Success' : '✗ Failed') : ''}</p>
+          <p><strong>Started:</strong> ${new Date(exec.started_at).toLocaleString()}</p>
+          ${exec.completed_at ? `<p><strong>Completed:</strong> ${new Date(exec.completed_at).toLocaleString()}</p>` : ''}
+          <p><strong>Duration:</strong> ${exec.elapsed_seconds > 0 ? Math.floor(exec.elapsed_seconds / 60) + 'm ' + (exec.elapsed_seconds % 60).toFixed(1) + 's' : '—'}</p>
+          <p><strong>Path:</strong> <code>${escapeHtml(exec.path)}</code></p>
+          ${exec.error ? `<p class="error-text"><strong>Error:</strong> ${escapeHtml(exec.error)}</p>` : ''}
+        </div>
+        <div class="detail-section">
+          <h3>Logs</h3>
+          <pre class="log-output">${exec.logs && exec.logs.length > 0 ? exec.logs.map(l => escapeHtml(l.message)).join('\n') : 'No logs available'}</pre>
+        </div>
+      `;
+    
+      modal.style.display = 'flex';
+    } catch (err) {
+      alert('Error loading execution detail: ' + err.message);
+      console.error('Execution detail fetch error:', err);
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('exec-modal').style.display = 'none';
+  }
+
+  // Close modal on background click
+  window.onclick = function(event) {
+    const modal = document.getElementById('exec-modal');
+    if (event.target === modal) {
+      closeModal();
+    }
+  }
 
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -59,11 +139,15 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+  function escapeAttr(text) {
+    return text.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+  }
+
 // Initial fetch
 fetchStatus();
-fetchLogs();
+  fetchExecutions();
 
 // Poll every 5 seconds
 setInterval(fetchStatus, 5000);
-setInterval(fetchLogs, 5000);
+  setInterval(fetchExecutions, 5000);
 

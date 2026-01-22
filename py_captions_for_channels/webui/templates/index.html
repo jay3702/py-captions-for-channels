@@ -58,13 +58,26 @@
 
   <section class="card logs-panel">
     <div class="card-head">
-      <h2>Recent logs</h2>
-      <small class="muted" id="log-count">(loading)</small>
+        <h2>Pipeline Executions</h2>
+        <small class="muted" id="exec-count">(loading)</small>
     </div>
-    <ul class="list" id="log-list">
-      <li class="muted">Loading logs...</li>
+      <ul class="exec-list" id="exec-list">
+        <li class="muted">Loading executions...</li>
     </ul>
   </section>
+
+    <!-- Modal for execution details -->
+    <div id="exec-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modal-title">Execution Details</h2>
+          <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-body">
+          <p class="muted">Loading...</p>
+        </div>
+      </div>
+    </div>
 
   <script src="/static/main.js"></script>
 </body>
