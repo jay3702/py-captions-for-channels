@@ -22,6 +22,20 @@ async function fetchStatus() {
       ? new Date(data.last_processed).toLocaleString() 
       : 'never';
     document.getElementById('reprocess-queue').textContent = `${data.reprocess_queue_size} items`;
+
+    // Update service health indicators
+    if (data.services) {
+      const servicesContainer = document.getElementById('services');
+      if (servicesContainer) {
+        let servicesHtml = '';
+        for (const [key, svc] of Object.entries(data.services)) {
+          const healthClass = svc.healthy ? 'service-healthy' : 'service-unhealthy';
+          const healthIndicator = svc.healthy ? '●' : '●';
+          servicesHtml += `<div class="service-status"><span class="${healthClass}">${healthIndicator}</span> ${svc.name}</div>`;
+        }
+        servicesContainer.innerHTML = servicesHtml;
+      }
+    }
   } catch (err) {
     document.getElementById('status-pill').className = 'pill pill-error';
     document.getElementById('status-pill').textContent = 'error';
