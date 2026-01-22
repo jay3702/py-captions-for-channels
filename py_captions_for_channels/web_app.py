@@ -289,7 +289,7 @@ async def get_reprocess_candidates() -> dict:
     try:
         tracker = get_tracker()
         all_executions = tracker.get_executions(limit=200)
-        
+
         # Only show completed executions as candidates
         candidates = [
             {
@@ -302,7 +302,7 @@ async def get_reprocess_candidates() -> dict:
             for exec in all_executions
             if exec.get("status") == "completed"
         ]
-        
+
         return {
             "candidates": candidates,
             "count": len(candidates),
@@ -326,14 +326,14 @@ async def add_to_reprocess_queue(request: Request) -> dict:
     try:
         data = await request.json()
         paths = data.get("paths", [])
-        
+
         if not paths:
             return {"error": "No paths provided", "added": 0}
-        
+
         # Add paths to reprocess queue
         for path in paths:
             state_backend.mark_for_reprocess(path)
-        
+
         return {
             "added": len(paths),
             "timestamp": datetime.now().isoformat(),
