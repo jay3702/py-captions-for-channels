@@ -278,3 +278,65 @@ async def get_execution_detail(job_id: str) -> dict:
             return {"error": "Execution not found", "job_id": job_id}
     except Exception as e:
         return {"error": str(e), "job_id": job_id}
+
+
+@app.get("/api/reprocess/candidates")
+async def get_reprocess_candidates() -> dict:
+    """Get list of recordings that can be reprocessed.
+
+    Returns completed executions (both successful and failed).
+    """
+    try:
+        tracker = get_tracker()
+        all_executions = tracker.get_executions(limit=200)
+        
+        # Only show completed executions as candidates
+        candidates = [
+            {
+                "path": exec["path"],
+                "title": exec["title"],
+                "started_at": exec["started_at"],
+                "success": exec.get("success"),
+                "error": exec.get("error"),
+            }
+            for exec in all_executions
+            if exec.get("status") == "completed"
+        ]
+        
+        return {
+            "candidates": candidates,
+            "count": len(candidates),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        return {
+            "candidates": [],
+            "count": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+
+@app.post("/api/reprocess/add")
+async def add_to_reprocess_queue(request: Request) -> dict:
+    """Add paths to the reprocess queue.
+
+    Expects JSON body: {"paths": ["path1", "path2", ...]}
+    """
+    try:
+        data = await request.json()
+        paths = data.get("paths", [])
+        
+        if not paths:
+            return {"error": "No paths provided", "added": 0}
+        
+        # Add paths to reprocess queue
+        for path in paths:
+            state_backend.mark_for_reprocess(path)
+        
+        return {
+            "added": len(paths),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        return {"error": str(e), "added": 0}

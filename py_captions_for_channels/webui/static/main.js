@@ -196,6 +196,79 @@ function switchTab(tabName) {
   document.getElementById(`${tabName}-tab`).classList.add('active');
 }
 
+async function showReprocessModal() {
+  const modal = document.getElementById('reprocess-modal');
+  const listContainer = document.getElementById('reprocess-list');
+  
+  // Show modal
+  modal.style.display = 'flex';
+  listContainer.innerHTML = '<p class="muted">Loading candidates...</p>';
+  
+  try {
+    const res = await fetch('/api/reprocess/candidates');
+    if (!res.ok) throw new Error('Failed to fetch candidates');
+    const data = await res.json();
+    
+    if (data.candidates && data.candidates.length > 0) {
+      listContainer.innerHTML = data.candidates.map((candidate, idx) => {
+        const statusIcon = candidate.success ? '✓' : '✗';
+        const statusClass = candidate.success ? 'text-success' : 'text-error';
+        return `
+          <div class="reprocess-item">
+            <label>
+              <input type="checkbox" name="reprocess-path" value="${escapeAttr(candidate.path)}" data-idx="${idx}">
+              <span class="${statusClass}">${statusIcon}</span>
+              <span class="reprocess-title">${escapeHtml(candidate.title)}</span>
+              <span class="reprocess-time">${new Date(candidate.started_at).toLocaleString()}</span>
+            </label>
+          </div>
+        `;
+      }).join('');
+    } else {
+      listContainer.innerHTML = '<p class="muted">No completed recordings available for reprocessing</p>';
+    }
+  } catch (err) {
+    listContainer.innerHTML = `<p class="muted">Error loading candidates: ${escapeHtml(err.message)}</p>`;
+    console.error('Reprocess candidates fetch error:', err);
+  }
+}
+
+function closeReprocessModal() {
+  document.getElementById('reprocess-modal').style.display = 'none';
+}
+
+async function submitReprocessing() {
+  const checkboxes = document.querySelectorAll('input[name="reprocess-path"]:checked');
+  const paths = Array.from(checkboxes).map(cb => cb.value);
+  
+  if (paths.length === 0) {
+    alert('Please select at least one recording to reprocess');
+    return;
+  }
+  
+  try {
+    const res = await fetch('/api/reprocess/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths })
+    });
+    
+    if (!res.ok) throw new Error('Failed to add to reprocess queue');
+    const data = await res.json();
+    
+    if (data.error) {
+      alert('Error: ' + data.error);
+    } else {
+      alert(`Added ${data.added} recording(s) to reprocess queue`);
+      closeReprocessModal();
+      fetchStatus(); // Refresh to update queue count
+    }
+  } catch (err) {
+    alert('Error adding to reprocess queue: ' + err.message);
+    console.error('Reprocess submit error:', err);
+  }
+}
+
 // Initial fetch
 fetchStatus();
 fetchExecutions();
@@ -205,4 +278,5 @@ fetchLogs();
 setInterval(fetchStatus, 5000);
 setInterval(fetchExecutions, 5000);
 setInterval(fetchLogs, 5000);
+
 

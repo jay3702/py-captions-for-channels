@@ -40,7 +40,10 @@
       </div>
       <div class="stat">
         <p class="label">Reprocess Queue</p>
-        <p id="reprocess-queue" class="value">0 items</p>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <p id="reprocess-queue" class="value" style="margin: 0;">0 items</p>
+          <button onclick="showReprocessModal()" class="btn-small">Manage</button>
+        </div>
       </div>
       <div class="stat">
         <p class="label">Services</p>
@@ -99,6 +102,26 @@
         </div>
         <div class="modal-body" id="modal-body">
           <p class="muted">Loading...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for reprocessing -->
+    <div id="reprocess-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Manage Reprocessing Queue</h2>
+          <button class="modal-close" onclick="closeReprocessModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="muted" style="margin-bottom: 16px;">Select recordings to add to the reprocessing queue:</p>
+          <div id="reprocess-list" style="max-height: 400px; overflow-y: auto;">
+            <p class="muted">Loading candidates...</p>
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
+            <button onclick="closeReprocessModal()" class="btn-secondary">Cancel</button>
+            <button onclick="submitReprocessing()" class="btn-primary">Add Selected to Queue</button>
+          </div>
         </div>
       </div>
     </div>
