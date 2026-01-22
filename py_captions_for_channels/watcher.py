@@ -88,6 +88,27 @@ async def main():
 
     LOG.info("=" * 80)
     LOG.info("All health checks passed! Starting event loop...")
+
+    # Check for interrupted executions from previous run
+    tracker = get_tracker()
+    from .config import PIPELINE_TIMEOUT
+
+    stale_count = tracker.mark_stale_executions(timeout_seconds=PIPELINE_TIMEOUT)
+    if stale_count > 0:
+        LOG.warning("Marked %d stale/interrupted executions as failed", stale_count)
+
+        # Optionally queue interrupted executions for reprocessing
+        # (only if they haven't been retried already)
+        interrupted_paths = tracker.get_interrupted_paths()
+        if interrupted_paths:
+            LOG.info(
+                "Found %d interrupted executions. "
+                "Consider manual reprocessing if needed.",
+                len(interrupted_paths),
+            )
+            # Note: We don't auto-queue to avoid infinite retry loops
+            # User can manually trigger reprocessing via web UI or state file
+
     LOG.info("=" * 80)
 
     # Now select and initialize event source (may start background services)
