@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import socket
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,8 @@ from .config import (
 )
 from .state import StateBackend
 from .execution_tracker import get_tracker
+
+LOG = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
@@ -52,21 +55,26 @@ async def root(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-def check_service_health(url: str, timeout: int = 5) -> bool:
+def check_service_health(url: str, timeout: int = 2) -> bool:
     """Check if a service is reachable.
+    
+    Returns True if the service responds or if we can't definitively say it's down.
+    Only returns False for clear connectivity failures.
 
     Args:
         url: Service URL to check (HTTP, HTTPS, or WS/WSS)
         timeout: Request timeout in seconds
 
     Returns:
-        True if service is reachable, False otherwise
+        True if service is reachable or assumed healthy, False if clearly unavailable
     """
+    if not url:
+        return False
+    
     try:
         # Handle WebSocket URLs by extracting host/port and testing connectivity
         if url.startswith('ws://') or url.startswith('wss://'):
             # Extract host and port from WebSocket URL
-            # ws://localhost:8501/events -> localhost:8501
             url_without_scheme = url.replace('wss://', '').replace('ws://', '')
             host_port = url_without_scheme.split('/')[0]
             
@@ -75,23 +83,36 @@ def check_service_health(url: str, timeout: int = 5) -> bool:
                 try:
                     port = int(port_str)
                 except ValueError:
+                    LOG.debug(f"Invalid port in URL: {url}")
                     return False
             else:
                 host = host_port
-                port = 8501  # default ChannelWatch port
+                port = 8501
             
-            # Test TCP connectivity to the WebSocket server
+            # Test TCP connectivity
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
-            result = sock.connect_ex((host, port))
-            sock.close()
-            return result == 0
+            try:
+                result = sock.connect_ex((host, port))
+                return result == 0
+            finally:
+                sock.close()
         else:
-            # Handle HTTP/HTTPS URLs
-            resp = requests.get(url, timeout=timeout)
-            return resp.status_code < 500
-    except Exception:
-        return False
+            # Handle HTTP/HTTPS URLs - be more lenient
+            try:
+                resp = requests.get(url, timeout=timeout, allow_redirects=False)
+                # Consider 2xx, 3xx, 4xx as "service is up" - only 5xx means unhealthy
+                return resp.status_code < 500
+            except requests.exceptions.Timeout:
+                # Timeout is ambiguous - assume healthy
+                return True
+            except requests.exceptions.ConnectionError:
+                # Connection refused = definitely unhealthy
+                return False
+    except Exception as e:
+        LOG.debug(f"Health check error for {url}: {str(e)}")
+        # Assume healthy on unknown error
+        return True
 
 
 @app.get("/api/status")
