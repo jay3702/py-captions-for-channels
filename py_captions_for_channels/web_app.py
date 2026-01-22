@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+import socket
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,7 @@ from .config import (
     CAPTION_COMMAND,
     STALE_EXECUTION_SECONDS,
     CHANNELS_API_URL,
+    CHANNELWATCH_URL,
 )
 from .state import StateBackend
 from .execution_tracker import get_tracker
@@ -54,15 +56,40 @@ def check_service_health(url: str, timeout: int = 5) -> bool:
     """Check if a service is reachable.
 
     Args:
-        url: Service URL to check
+        url: Service URL to check (HTTP, HTTPS, or WS/WSS)
         timeout: Request timeout in seconds
 
     Returns:
         True if service is reachable, False otherwise
     """
     try:
-        resp = requests.get(url, timeout=timeout)
-        return resp.status_code < 500
+        # Handle WebSocket URLs by extracting host/port and testing connectivity
+        if url.startswith('ws://') or url.startswith('wss://'):
+            # Extract host and port from WebSocket URL
+            # ws://localhost:8501/events -> localhost:8501
+            url_without_scheme = url.replace('wss://', '').replace('ws://', '')
+            host_port = url_without_scheme.split('/')[0]
+            
+            if ':' in host_port:
+                host, port_str = host_port.rsplit(':', 1)
+                try:
+                    port = int(port_str)
+                except ValueError:
+                    return False
+            else:
+                host = host_port
+                port = 8501  # default ChannelWatch port
+            
+            # Test TCP connectivity to the WebSocket server
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+        else:
+            # Handle HTTP/HTTPS URLs
+            resp = requests.get(url, timeout=timeout)
+            return resp.status_code < 500
     except Exception:
         return False
 
@@ -87,6 +114,7 @@ async def status() -> dict:
 
         # Check service health
         channels_healthy = check_service_health(CHANNELS_API_URL)
+        channelwatch_healthy = check_service_health(CHANNELWATCH_URL)
 
         return {
             "app": "py-captions-for-channels",
@@ -106,6 +134,11 @@ async def status() -> dict:
                     "name": "Channels DVR",
                     "url": CHANNELS_API_URL,
                     "healthy": channels_healthy,
+                },
+                "channelwatch": {
+                    "name": "ChannelWatch",
+                    "url": CHANNELWATCH_URL,
+                    "healthy": channelwatch_healthy,
                 }
             },
             "timestamp": datetime.now().isoformat(),
@@ -120,6 +153,11 @@ async def status() -> dict:
                 "channels_dvr": {
                     "name": "Channels DVR",
                     "url": CHANNELS_API_URL,
+                    "healthy": False,
+                },
+                "channelwatch": {
+                    "name": "ChannelWatch",
+                    "url": CHANNELWATCH_URL,
                     "healthy": False,
                 }
             },
