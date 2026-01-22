@@ -139,6 +139,7 @@ class ExecutionTracker:
         Returns:
             List of execution dicts
         """
+        self._load()
         with self.lock:
             # Sort by started_at descending
             sorted_execs = sorted(
@@ -157,6 +158,7 @@ class ExecutionTracker:
         Returns:
             Execution dict or None
         """
+        self._load()
         with self.lock:
             return self.executions.get(job_id)
 
