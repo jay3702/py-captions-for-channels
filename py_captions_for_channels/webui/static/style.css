@@ -166,15 +166,85 @@ h1 {
   max-height: calc(100vh - 600px);
 }
 
-  .exec-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 10px;
+.tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.tab-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--panel-border);
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--font-body);
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.tab-btn.active {
+  background: rgba(92, 225, 230, 0.12);
+  border-color: rgba(92, 225, 230, 0.45);
+  color: var(--accent);
+}
+
+.tab-content {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.tab-content.active {
+  display: flex;
+}
+
+.tab-header {
+  padding: 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.exec-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
   flex: 1;
   overflow-y: auto;
   min-height: 300px;
+}
+
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 300px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.log-list li {
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+.log-list code {
+  color: var(--text);
+  background: none;
 }
 
   .exec-item {

@@ -58,12 +58,30 @@
 
   <section class="card logs-panel">
     <div class="card-head">
-        <h2>Pipeline Executions</h2>
-        <small class="muted" id="exec-count">(loading)</small>
+      <h2>Pipeline Activity</h2>
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('executions')">Executions</button>
+        <button class="tab-btn" onclick="switchTab('logs')">Full Logs</button>
+      </div>
     </div>
+    
+    <div id="executions-tab" class="tab-content active">
+      <div class="tab-header">
+        <small class="muted" id="exec-count">(loading)</small>
+      </div>
       <ul class="exec-list" id="exec-list">
         <li class="muted">Loading executions...</li>
-    </ul>
+      </ul>
+    </div>
+    
+    <div id="logs-tab" class="tab-content">
+      <div class="tab-header">
+        <small class="muted" id="log-count">(loading)</small>
+      </div>
+      <ul class="log-list" id="log-list">
+        <li class="muted">Loading logs...</li>
+      </ul>
+    </div>
   </section>
 
     <!-- Modal for execution details -->

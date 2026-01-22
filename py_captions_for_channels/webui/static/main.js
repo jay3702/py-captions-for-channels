@@ -143,11 +143,51 @@ function escapeHtml(text) {
     return text.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
   }
 
+async function fetchLogs() {
+  try {
+    const res = await fetch('/api/logs?lines=100');
+    if (!res.ok) throw new Error('Failed to fetch logs');
+    const data = await res.json();
+    
+    const logList = document.getElementById('log-list');
+    const logCount = document.getElementById('log-count');
+    
+    logCount.textContent = `(${data.count} lines)`;
+    
+    if (data.items && data.items.length > 0) {
+      logList.innerHTML = data.items.map(line => 
+        `<li><code>${escapeHtml(line)}</code></li>`
+      ).join('');
+    } else {
+      logList.innerHTML = '<li class="muted">No logs available</li>';
+    }
+  } catch (err) {
+    document.getElementById('log-list').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
+    console.error('Logs fetch error:', err);
+  }
+}
+
+function switchTab(tabName) {
+  // Update tab buttons
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  event.target.classList.add('active');
+  
+  // Update tab content
+  document.querySelectorAll('.tab-content').forEach(content => {
+    content.classList.remove('active');
+  });
+  document.getElementById(`${tabName}-tab`).classList.add('active');
+}
+
 // Initial fetch
 fetchStatus();
-  fetchExecutions();
+fetchExecutions();
+fetchLogs();
 
 // Poll every 5 seconds
 setInterval(fetchStatus, 5000);
-  setInterval(fetchExecutions, 5000);
+setInterval(fetchExecutions, 5000);
+setInterval(fetchLogs, 5000);
 
