@@ -72,6 +72,9 @@ class ExecutionTracker:
                 "error": None,
             }
             self._save()
+            LOG.info(
+                "Started tracking execution: %s (total: %d)", exec_id, len(self.executions)
+            )
             return exec_id
 
     def add_log(self, job_id: str, log_line: str):
@@ -116,6 +119,14 @@ class ExecutionTracker:
                     }
                 )
                 self._save()
+                LOG.info(
+                    "Completed execution: %s (success=%s, elapsed=%.1fs)",
+                    job_id,
+                    success,
+                    elapsed_seconds,
+                )
+            else:
+                LOG.warning("Attempted to complete unknown execution: %s", job_id)
 
     def get_executions(self, limit: int = 50) -> List[dict]:
         """Get recent executions, most recent first.
