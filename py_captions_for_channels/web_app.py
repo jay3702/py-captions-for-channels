@@ -121,6 +121,7 @@ async def logs_endpoint(lines: int = 100) -> dict:
         "timestamp": datetime.now().isoformat(),
     }
 
+
 @app.get("/api/executions")
 async def get_executions(limit: int = 50) -> dict:
     """Get recent pipeline executions.
