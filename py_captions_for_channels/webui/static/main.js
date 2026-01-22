@@ -66,17 +66,12 @@ async function fetchStatus() {
   
     return `
       <li class="exec-item ${statusClass}" onclick="showExecutionDetail('${escapeAttr(exec.id)}')">
-        <div class="exec-header">
-          <span class="exec-status">${statusIcon}</span>
-          <span class="exec-title">${escapeHtml(exec.title)}</span>
-          <span class="exec-time">${startTime}</span>
-        </div>
+        <span class="exec-status">${statusIcon}</span>
+        <span class="exec-title">${escapeHtml(exec.title)}</span>
+        <span class="exec-time">${startTime}</span>
+        <span class="exec-status-text">${statusText}</span>
+        <span class="exec-elapsed">${elapsed}</span>
         ${exec.status === 'running' ? '<div class="exec-progress"><div class="progress-bar"></div></div>' : ''}
-        <div class="exec-footer">
-          <span class="exec-status-text">${statusText}</span>
-          <span class="exec-elapsed">${elapsed}</span>
-          ${exec.error ? `<span class="exec-error">${escapeHtml(exec.error)}</span>` : ''}
-        </div>
       </li>
     `;
   }
