@@ -30,7 +30,8 @@ async function fetchStatus() {
         let servicesHtml = '';
         for (const [key, svc] of Object.entries(data.services)) {
           const healthClass = svc.healthy ? 'service-healthy' : 'service-unhealthy';
-          servicesHtml += `<div class="service-status"><span class="${healthClass}">●</span> ${svc.name}</div>`;
+          const statusText = svc.status || (svc.healthy ? 'Healthy' : 'Unhealthy');
+          servicesHtml += `<div class="service-status" title="${statusText}"><span class="${healthClass}">●</span> ${svc.name}</div>`;
         }
         servicesContainer.innerHTML = servicesHtml;
       }

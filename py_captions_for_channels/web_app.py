@@ -55,21 +55,20 @@ async def root(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-def check_service_health(url: str, timeout: int = 2) -> bool:
+def check_service_health(url: str, timeout: int = 2) -> tuple[bool, str]:
     """Check if a service is reachable.
     
-    Returns True if the service responds or if we can't definitively say it's down.
-    Only returns False for clear connectivity failures.
+    Returns tuple of (is_healthy, diagnostic_message).
 
     Args:
         url: Service URL to check (HTTP, HTTPS, or WS/WSS)
         timeout: Request timeout in seconds
 
     Returns:
-        True if service is reachable or assumed healthy, False if clearly unavailable
+        Tuple of (bool: healthy, str: diagnostic message)
     """
     if not url:
-        return False
+        return (False, "No URL configured")
     
     try:
         # Handle WebSocket URLs by extracting host/port and testing connectivity
@@ -83,8 +82,7 @@ def check_service_health(url: str, timeout: int = 2) -> bool:
                 try:
                     port = int(port_str)
                 except ValueError:
-                    LOG.debug(f"Invalid port in URL: {url}")
-                    return False
+                    return (False, f"Invalid port in URL: {url}")
             else:
                 host = host_port
                 port = 8501
@@ -94,25 +92,28 @@ def check_service_health(url: str, timeout: int = 2) -> bool:
             sock.settimeout(timeout)
             try:
                 result = sock.connect_ex((host, port))
-                return result == 0
+                if result == 0:
+                    return (True, f"Connected to {host}:{port}")
+                else:
+                    return (False, f"Connection refused: {host}:{port}")
             finally:
                 sock.close()
         else:
-            # Handle HTTP/HTTPS URLs - be more lenient
+            # Handle HTTP/HTTPS URLs
             try:
                 resp = requests.get(url, timeout=timeout, allow_redirects=False)
-                # Consider 2xx, 3xx, 4xx as "service is up" - only 5xx means unhealthy
-                return resp.status_code < 500
+                if resp.status_code < 500:
+                    return (True, f"HTTP {resp.status_code}")
+                else:
+                    return (False, f"HTTP {resp.status_code}")
             except requests.exceptions.Timeout:
-                # Timeout is ambiguous - assume healthy
-                return True
-            except requests.exceptions.ConnectionError:
-                # Connection refused = definitely unhealthy
-                return False
+                return (True, "Responding but slow (timeout)")
+            except requests.exceptions.ConnectionError as e:
+                return (False, f"Connection error: {str(e)[:50]}")
     except Exception as e:
-        LOG.debug(f"Health check error for {url}: {str(e)}")
-        # Assume healthy on unknown error
-        return True
+        msg = str(e)[:50]
+        return (True, f"Health check skipped: {msg}")
+
 
 
 @app.get("/api/status")
@@ -134,8 +135,8 @@ async def status() -> dict:
         reprocess_queue = state_backend.get_reprocess_queue()
 
         # Check service health
-        channels_healthy = check_service_health(CHANNELS_API_URL)
-        channelwatch_healthy = check_service_health(CHANNELWATCH_URL)
+        channels_healthy, channels_msg = check_service_health(CHANNELS_API_URL)
+        channelwatch_healthy, channelwatch_msg = check_service_health(CHANNELWATCH_URL)
 
         return {
             "app": "py-captions-for-channels",
@@ -155,11 +156,13 @@ async def status() -> dict:
                     "name": "Channels DVR",
                     "url": CHANNELS_API_URL,
                     "healthy": channels_healthy,
+                    "status": channels_msg,
                 },
                 "channelwatch": {
                     "name": "ChannelWatch",
                     "url": CHANNELWATCH_URL,
                     "healthy": channelwatch_healthy,
+                    "status": channelwatch_msg,
                 }
             },
             "timestamp": datetime.now().isoformat(),
@@ -175,11 +178,13 @@ async def status() -> dict:
                     "name": "Channels DVR",
                     "url": CHANNELS_API_URL,
                     "healthy": False,
+                    "status": "Error loading status",
                 },
                 "channelwatch": {
                     "name": "ChannelWatch",
                     "url": CHANNELWATCH_URL,
                     "healthy": False,
+                    "status": "Error loading status",
                 }
             },
             "timestamp": datetime.now().isoformat(),
