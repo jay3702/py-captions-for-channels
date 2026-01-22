@@ -57,7 +57,7 @@ async def root(request: Request) -> HTMLResponse:
 
 def check_service_health(url: str, timeout: int = 2) -> tuple[bool, str]:
     """Check if a service is reachable.
-    
+
     Returns tuple of (is_healthy, diagnostic_message).
 
     Args:
@@ -69,16 +69,16 @@ def check_service_health(url: str, timeout: int = 2) -> tuple[bool, str]:
     """
     if not url:
         return (False, "No URL configured")
-    
+
     try:
         # Handle WebSocket URLs by extracting host/port and testing connectivity
-        if url.startswith('ws://') or url.startswith('wss://'):
+        if url.startswith("ws://") or url.startswith("wss://"):
             # Extract host and port from WebSocket URL
-            url_without_scheme = url.replace('wss://', '').replace('ws://', '')
-            host_port = url_without_scheme.split('/')[0]
-            
-            if ':' in host_port:
-                host, port_str = host_port.rsplit(':', 1)
+            url_without_scheme = url.replace("wss://", "").replace("ws://", "")
+            host_port = url_without_scheme.split("/")[0]
+
+            if ":" in host_port:
+                host, port_str = host_port.rsplit(":", 1)
                 try:
                     port = int(port_str)
                 except ValueError:
@@ -86,7 +86,7 @@ def check_service_health(url: str, timeout: int = 2) -> tuple[bool, str]:
             else:
                 host = host_port
                 port = 8501
-            
+
             # Test TCP connectivity
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
@@ -113,7 +113,6 @@ def check_service_health(url: str, timeout: int = 2) -> tuple[bool, str]:
     except Exception as e:
         msg = str(e)[:50]
         return (True, f"Health check skipped: {msg}")
-
 
 
 @app.get("/api/status")
@@ -163,7 +162,7 @@ async def status() -> dict:
                     "url": CHANNELWATCH_URL,
                     "healthy": channelwatch_healthy,
                     "status": channelwatch_msg,
-                }
+                },
             },
             "timestamp": datetime.now().isoformat(),
         }
@@ -185,7 +184,7 @@ async def status() -> dict:
                     "url": CHANNELWATCH_URL,
                     "healthy": False,
                     "status": "Error loading status",
-                }
+                },
             },
             "timestamp": datetime.now().isoformat(),
         }
