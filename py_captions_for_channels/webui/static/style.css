@@ -566,8 +566,7 @@ h1 {
     max-height: 400px;
     min-height: 200px;
     margin: 0;
-    white-space: pre-wrap;
-    word-wrap: break-word;
+    white-space: pre; /* preserve long lines: horizontal scroll only */
   }
 
   .error-text {
