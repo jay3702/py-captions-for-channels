@@ -8,6 +8,7 @@ import json
 import logging
 import threading
 from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -64,7 +65,7 @@ class ExecutionTracker:
                 "title": title,
                 "path": path,
                 "status": "running",
-                "started_at": timestamp or datetime.now().isoformat(),
+                "started_at": timestamp or datetime.now(timezone.utc).isoformat(),
                 "completed_at": None,
                 "success": None,
                 "elapsed_seconds": 0.0,
@@ -89,7 +90,10 @@ class ExecutionTracker:
         with self.lock:
             if job_id in self.executions:
                 self.executions[job_id]["logs"].append(
-                    {"timestamp": datetime.now().isoformat(), "message": log_line}
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "message": log_line,
+                    }
                 )
                 # Keep only last 500 log lines per execution
                 self.executions[job_id]["logs"] = self.executions[job_id]["logs"][-500:]
@@ -115,7 +119,7 @@ class ExecutionTracker:
                     {
                         "status": "completed",
                         "success": success,
-                        "completed_at": datetime.now().isoformat(),
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
                         "elapsed_seconds": elapsed_seconds,
                         "error": error,
                     }

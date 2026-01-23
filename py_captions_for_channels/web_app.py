@@ -116,11 +116,14 @@ def check_service_health(url: str, timeout: int = 2) -> tuple[bool, str]:
 
 
 def format_local(ts: str) -> str:
-    """Format an ISO timestamp into server local time for display."""
+    """Format an ISO timestamp (assumed UTC) into server local time for display."""
     try:
         dt = datetime.fromisoformat(ts)
+        # Assume UTC if naive
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+            from datetime import timezone
+
+            dt = dt.replace(tzinfo=timezone.utc)
         dt_local = dt.astimezone()
         return dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
     except Exception:
@@ -269,6 +272,36 @@ async def get_executions(limit: int = 50) -> dict:
         }
 
 
+def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
+    """Extract log lines for a specific job from the main log file.
+
+    Args:
+        job_id: Job identifier to search for in log lines
+        max_lines: Maximum number of log lines to return
+
+    Returns:
+        List of log lines matching the job_id
+    """
+    job_logs = []
+    log_path = Path(LOG_FILE)
+
+    if not log_path.exists():
+        return []
+
+    try:
+        # Read the log file and find lines containing [job_id]
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if f"[{job_id}]" in line:
+                    job_logs.append(line.rstrip())
+                    if len(job_logs) >= max_lines:
+                        break
+    except Exception as e:
+        LOG.error("Error extracting job logs: %s", e)
+
+    return job_logs
+
+
 @app.get("/api/executions/{job_id:path}")
 async def get_execution_detail(job_id: str) -> dict:
     """Get detailed execution information including full logs.
@@ -292,14 +325,12 @@ async def get_execution_detail(job_id: str) -> dict:
             if exec_copy.get("completed_at"):
                 exec_copy["completed_local"] = format_local(exec_copy["completed_at"])
 
-            # Prepare joined logs text for UI convenience
-            if exec_copy.get("logs"):
-                exec_copy["logs_text"] = "\n".join(
-                    [
-                        log.get("message", "") if isinstance(log, dict) else str(log)
-                        for log in exec_copy["logs"]
-                    ]
-                )
+            # Extract job-specific logs from main log file
+            job_logs = get_job_logs_from_file(job_id)
+            if job_logs:
+                exec_copy["logs_text"] = "\n".join(job_logs)
+            else:
+                exec_copy["logs_text"] = "No logs found for this job"
 
             return exec_copy
         else:
