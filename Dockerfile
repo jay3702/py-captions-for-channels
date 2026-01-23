@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install timezone data separately to avoid invalidating PyTorch cache
-RUN apt-get update && apt-get install -y tzdata && rm -rf /var/lib/apt/lists/*
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y tzdata && rm -rf /var/lib/apt/lists/*
 
 # Copy application code
 COPY py_captions_for_channels/ ./py_captions_for_channels/
