@@ -44,7 +44,12 @@ class ExecutionTracker:
             LOG.error("Failed to save executions: %s", e)
 
     def start_execution(
-        self, job_id: str, title: str, path: str, timestamp: Optional[str] = None
+        self,
+        job_id: str,
+        title: str,
+        path: str,
+        timestamp: Optional[str] = None,
+        status: str = "running",
     ) -> str:
         """Register a new pipeline execution.
 
@@ -53,6 +58,7 @@ class ExecutionTracker:
             title: Recording title
             path: File path
             timestamp: ISO timestamp (defaults to now)
+            status: Initial status (pending, running)
 
         Returns:
             Execution ID
@@ -63,7 +69,7 @@ class ExecutionTracker:
                 "id": exec_id,
                 "title": title,
                 "path": path,
-                "status": "running",
+                "status": status,
                 "started_at": timestamp or datetime.now(timezone.utc).isoformat(),
                 "completed_at": None,
                 "success": None,
@@ -73,11 +79,25 @@ class ExecutionTracker:
             }
             self._save()
             LOG.info(
-                "Started tracking execution: %s (total: %d)",
+                "Started tracking execution: %s [%s] (total: %d)",
                 exec_id,
+                status,
                 len(self.executions),
             )
             return exec_id
+
+    def update_status(self, job_id: str, status: str):
+        """Update the status of an execution.
+
+        Args:
+            job_id: Job identifier
+            status: New status (pending, running, completed)
+        """
+        with self.lock:
+            if job_id in self.executions:
+                self.executions[job_id]["status"] = status
+                self._save()
+                LOG.debug("Updated execution status: %s -> %s", job_id, status)
 
     def add_log(self, job_id: str, log_line: str):
         """Add a log line to an execution.

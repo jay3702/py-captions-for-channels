@@ -364,6 +364,10 @@ h1 {
     color: var(--accent);
   }
 
+  .exec-pending .exec-status {
+    color: var(--muted);
+  }
+
   /* Modal styles */
   .modal {
     display: none;

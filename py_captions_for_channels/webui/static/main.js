@@ -68,9 +68,26 @@ async function fetchStatus() {
 }
 
   function renderExecution(exec) {
-    const statusClass = exec.status === 'running' ? 'exec-running' : (exec.success ? 'exec-success' : 'exec-failure');
-    const statusIcon = exec.status === 'running' ? '⏳' : (exec.success ? '✓' : '✗');
-    const statusText = exec.status === 'running' ? 'Running' : (exec.success ? 'Success' : 'Failed');
+    // Determine status display
+    let statusClass, statusIcon, statusText;
+    
+    if (exec.status === 'pending') {
+      statusClass = 'exec-pending';
+      statusIcon = '⏸';
+      statusText = 'Pending';
+    } else if (exec.status === 'running') {
+      statusClass = 'exec-running';
+      statusIcon = '⏳';
+      statusText = 'Running';
+    } else if (exec.success) {
+      statusClass = 'exec-success';
+      statusIcon = '✓';
+      statusText = 'Success';
+    } else {
+      statusClass = 'exec-failure';
+      statusIcon = '✗';
+      statusText = 'Failed';
+    }
   
     const elapsed = exec.elapsed_seconds > 0 
       ? `${Math.floor(exec.elapsed_seconds / 60)}:${(exec.elapsed_seconds % 60).toFixed(1).padStart(4, '0')}`
