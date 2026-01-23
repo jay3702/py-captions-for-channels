@@ -186,8 +186,8 @@ h1 {
   margin-top: 20px;
   display: flex;
   flex-direction: column;
-  min-height: 400px;
-  max-height: calc(100vh - 600px);
+  min-height: 320px;
+  max-height: calc(100vh - 680px);
 }
 
 .tabs {
@@ -576,4 +576,37 @@ h1 {
   body { padding: 32px 20px 48px; }
   .hero { flex-direction: column; align-items: flex-start; }
   h1 { font-size: 28px; }
+}
+
+.status-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.status-table tr {
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.status-table tr:last-child {
+  border-bottom: none;
+}
+
+.status-label {
+  padding: 8px 12px 8px 0;
+  color: var(--muted);
+  font-size: 13px;
+  width: 40%;
+  vertical-align: top;
+}
+
+.status-value {
+  padding: 8px 0;
+  font-size: 14px;
+  color: var(--text);
+  vertical-align: top;
+}
+
+.status-value .services-container {
+  margin: 0;
+  padding: 0;
 }

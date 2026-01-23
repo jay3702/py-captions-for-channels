@@ -17,7 +17,8 @@ async function fetchStatus() {
     statusPill.textContent = data.status || 'unknown';
     document.getElementById('app-name').textContent = data.app || '—';
     document.getElementById('app-version').textContent = data.version || '—';
-    document.getElementById('dry-run').textContent = data.dry_run ? 'YES (test mode)' : 'NO (live)';
+    document.getElementById('timezone').textContent = data.timezone || '—';
+    document.getElementById('dry-run').textContent = data.dry_run ? 'YES' : 'NO';
     document.getElementById('last-processed').textContent = data.last_processed 
       ? new Date(data.last_processed).toLocaleString() 
       : 'never';
@@ -44,7 +45,7 @@ async function fetchStatus() {
 }
 
   async function fetchExecutions() {
-  try {
+  try:
       const res = await fetch('/api/executions?limit=50');
       if (!res.ok) throw new Error('Failed to fetch executions');
     const data = await res.json();
