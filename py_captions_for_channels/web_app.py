@@ -118,15 +118,25 @@ def check_service_health(url: str, timeout: int = 2) -> tuple[bool, str]:
 def format_local(ts: str) -> str:
     """Format an ISO timestamp (assumed UTC) into server local time for display."""
     try:
+        import time
+
         dt = datetime.fromisoformat(ts)
         # Assume UTC if naive
         if dt.tzinfo is None:
             from datetime import timezone
 
             dt = dt.replace(tzinfo=timezone.utc)
+
+        # Convert to local time
         dt_local = dt.astimezone()
-        return dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
-    except Exception:
+
+        # Get timezone name (handle both standard time and DST)
+        tz_name = time.tzname[time.daylight and time.localtime().tm_isdst > 0]
+
+        # Format with explicit timezone
+        return dt_local.strftime(f"%Y-%m-%d %H:%M:%S {tz_name}")
+    except Exception as e:
+        LOG.warning("Error formatting timestamp %s: %s", ts, e)
         return ts
 
 
