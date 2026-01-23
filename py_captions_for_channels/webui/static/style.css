@@ -427,6 +427,7 @@ h1 {
     padding: 24px;
     overflow-y: auto;
     flex: 1;
+    min-height: 0; /* Important for flexbox scrolling */
   }
 
   .detail-section {
@@ -563,7 +564,10 @@ h1 {
     font-size: 13px;
     line-height: 1.5;
     max-height: 400px;
+    min-height: 200px;
     margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
   }
 
   .error-text {
