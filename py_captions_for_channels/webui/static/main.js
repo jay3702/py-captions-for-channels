@@ -45,7 +45,7 @@ async function fetchStatus() {
 }
 
   async function fetchExecutions() {
-  try:
+  try {
       const res = await fetch('/api/executions?limit=50');
       if (!res.ok) throw new Error('Failed to fetch executions');
     const data = await res.json();
