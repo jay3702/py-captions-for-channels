@@ -108,17 +108,23 @@ async function fetchStatus() {
     
       title.textContent = exec.title || 'Execution Details';
     
-      // Format logs: handle both array of objects and array of strings
-      const logLines = exec.logs && exec.logs.length > 0 
-        ? exec.logs.map(l => typeof l === 'string' ? l : (l.message || '')).join('\n')
-        : 'No logs captured for this execution';
+      // Format logs: use server-prepared text if available
+      const logLinesRaw = (exec.logs_text && exec.logs_text.trim().length > 0)
+        ? exec.logs_text
+        : (exec.logs && exec.logs.length > 0
+            ? exec.logs.map(l => typeof l === 'string' ? l : (l.message || '')).join('\n')
+            : 'No logs captured for this execution');
+      const logLines = logLinesRaw && logLinesRaw.trim().length > 0 ? logLinesRaw : 'No logs captured for this execution';
+    
+      const startedDisplay = exec.started_local || (exec.started_at ? new Date(exec.started_at).toLocaleString() : '—');
+      const completedDisplay = exec.completed_local || (exec.completed_at ? new Date(exec.completed_at).toLocaleString() : null);
     
       body.innerHTML = `
         <div class="detail-section">
           <h3>Overview</h3>
           <p><strong>Status:</strong> ${exec.status} ${exec.success !== null ? (exec.success ? '✓ Success' : '✗ Failed') : ''}</p>
-          <p><strong>Started:</strong> ${new Date(exec.started_at).toLocaleString()}</p>
-          ${exec.completed_at ? `<p><strong>Completed:</strong> ${new Date(exec.completed_at).toLocaleString()}</p>` : ''}
+          <p><strong>Started:</strong> ${escapeHtml(startedDisplay)}</p>
+          ${completedDisplay ? `<p><strong>Completed:</strong> ${escapeHtml(completedDisplay)}</p>` : ''}
           <p><strong>Duration:</strong> ${exec.elapsed_seconds > 0 ? Math.floor(exec.elapsed_seconds / 60) + 'm ' + (exec.elapsed_seconds % 60).toFixed(1) + 's' : '—'}</p>
           <p><strong>Path:</strong> <code>${escapeHtml(exec.path)}</code></p>
           ${exec.error ? `<p class="error-text"><strong>Error:</strong> ${escapeHtml(exec.error)}</p>` : ''}

@@ -115,6 +115,18 @@ def check_service_health(url: str, timeout: int = 2) -> tuple[bool, str]:
         return (True, f"Health check skipped: {msg}")
 
 
+def format_local(ts: str) -> str:
+    """Format an ISO timestamp into server local time for display."""
+    try:
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+        dt_local = dt.astimezone()
+        return dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+    except Exception:
+        return ts
+
+
 @app.get("/api/status")
 async def status() -> dict:
     """Return pipeline status and statistics.
@@ -273,7 +285,23 @@ async def get_execution_detail(job_id: str) -> dict:
         execution = tracker.get_execution(job_id)
 
         if execution:
-            return execution
+            exec_copy = execution.copy()
+            # Pre-format local times for display
+            if exec_copy.get("started_at"):
+                exec_copy["started_local"] = format_local(exec_copy["started_at"])
+            if exec_copy.get("completed_at"):
+                exec_copy["completed_local"] = format_local(exec_copy["completed_at"])
+
+            # Prepare joined logs text for UI convenience
+            if exec_copy.get("logs"):
+                exec_copy["logs_text"] = "\n".join(
+                    [
+                        log.get("message", "") if isinstance(log, dict) else str(log)
+                        for log in exec_copy["logs"]
+                    ]
+                )
+
+            return exec_copy
         else:
             return {"error": "Execution not found", "job_id": job_id}
     except Exception as e:
