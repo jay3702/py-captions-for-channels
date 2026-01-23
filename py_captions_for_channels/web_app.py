@@ -1,4 +1,10 @@
 from datetime import datetime
+import os
+
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except Exception:
+    ZoneInfo = None
 from pathlib import Path
 import socket
 import logging
@@ -115,11 +121,27 @@ def check_service_health(url: str, timeout: int = 2) -> tuple[bool, str]:
         return (True, f"Health check skipped: {msg}")
 
 
+def _get_local_tz():
+    """Determine local timezone; prefer TZ/SERVER_TZ env vars if set."""
+    tz_name = os.getenv("SERVER_TZ") or os.getenv("TZ")
+    if tz_name and ZoneInfo:
+        try:
+            return ZoneInfo(tz_name)
+        except Exception:
+            LOG.warning("Invalid timezone '%s'; falling back to system", tz_name)
+    # Fallback to system local tz
+    try:
+        return datetime.now().astimezone().tzinfo
+    except Exception:
+        return None
+
+
+LOCAL_TZ = _get_local_tz()
+
+
 def format_local(ts: str) -> str:
     """Format an ISO timestamp (assumed UTC) into server local time for display."""
     try:
-        import time
-
         dt = datetime.fromisoformat(ts)
         # Assume UTC if naive
         if dt.tzinfo is None:
@@ -127,14 +149,13 @@ def format_local(ts: str) -> str:
 
             dt = dt.replace(tzinfo=timezone.utc)
 
-        # Convert to local time
-        dt_local = dt.astimezone()
+        # Convert to configured local timezone if available
+        if LOCAL_TZ is not None:
+            dt_local = dt.astimezone(LOCAL_TZ)
+        else:
+            dt_local = dt.astimezone()
 
-        # Get timezone name (handle both standard time and DST)
-        tz_name = time.tzname[time.daylight and time.localtime().tm_isdst > 0]
-
-        # Format with explicit timezone
-        return dt_local.strftime(f"%Y-%m-%d %H:%M:%S {tz_name}")
+        return dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
     except Exception as e:
         LOG.warning("Error formatting timestamp %s: %s", ts, e)
         return ts
