@@ -8,6 +8,8 @@ services:
     
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
+      # Set container timezone (recommended for local timestamp display)
+      - TZ=${TZ:-}
       - USE_MOCK=${USE_MOCK:-false}
       - USE_WEBHOOK=${USE_WEBHOOK:-true}
       - WEBHOOK_HOST=${WEBHOOK_HOST:-0.0.0.0}
@@ -51,6 +53,8 @@ services:
       - LOG_FILE=${LOG_FILE:-/app/logs/app.log}
       - STATE_FILE=${STATE_FILE:-/app/data/state.json}
       - DRY_RUN=${DRY_RUN:-false}
+      # Set container timezone (recommended for local timestamp display)
+      - TZ=${TZ:-}
       - CAPTION_COMMAND=${CAPTION_COMMAND:-bash -c 'whisper --model medium --output_format srt --output_dir "$(dirname "{path}")" "{path}"'}
       - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
       - CHANNELWATCH_URL=${CHANNELWATCH_URL:-ws://localhost:8501/events}

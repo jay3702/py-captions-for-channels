@@ -30,6 +30,10 @@ class ExecutionTracker:
                 with open(self.storage_path, "r") as f:
                     data = json.load(f)
                     self.executions = data.get("executions", {})
+                    # Backfill missing IDs for older records
+                    for key, val in list(self.executions.items()):
+                        if isinstance(val, dict) and "id" not in val:
+                            val["id"] = key
             except Exception as e:
                 LOG.warning("Failed to load executions: %s", e)
                 self.executions = {}

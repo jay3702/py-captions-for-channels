@@ -196,6 +196,7 @@ async def status() -> dict:
                 else CAPTION_COMMAND
             ),
             "log_file": str(LOG_FILE),
+            "timezone": str(LOCAL_TZ) if LOCAL_TZ else "system-default",
             "services": {
                 "channels_dvr": {
                     "name": "Channels DVR",
@@ -320,7 +321,9 @@ def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
     Returns:
         List of log lines matching the job_id
     """
-    job_logs = []
+    from collections import deque
+
+    job_logs = deque(maxlen=max_lines)
     log_path = Path(LOG_FILE)
 
     if not log_path.exists():
@@ -332,12 +335,10 @@ def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
             for line in f:
                 if f"[{job_id}]" in line:
                     job_logs.append(line.rstrip())
-                    if len(job_logs) >= max_lines:
-                        break
     except Exception as e:
         LOG.error("Error extracting job logs: %s", e)
 
-    return job_logs
+    return list(job_logs)
 
 
 @app.get("/api/executions/{job_id:path}")
