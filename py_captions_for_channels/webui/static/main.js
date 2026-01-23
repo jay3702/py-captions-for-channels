@@ -76,7 +76,8 @@ async function fetchStatus() {
       ? `${Math.floor(exec.elapsed_seconds / 60)}:${(exec.elapsed_seconds % 60).toFixed(1).padStart(4, '0')}`
       : '—';
   
-    const startTime = new Date(exec.started_at).toLocaleTimeString();
+    // Use server-provided local time if available, otherwise parse ISO timestamp
+    const startTime = exec.started_local ? exec.started_local.split(' ')[1] : new Date(exec.started_at).toLocaleTimeString();
   
     return `
       <li class="exec-item ${statusClass}" onclick="showExecutionDetail('${escapeAttr(exec.id)}')">
