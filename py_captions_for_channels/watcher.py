@@ -30,10 +30,12 @@ async def process_reprocess_queue(state, pipeline, api, parser):
     queue = state.get_reprocess_queue()
     if queue:
         LOG.info("Processing reprocess queue: %d items", len(queue))
+        tracker = get_tracker()
         for path in queue:
             # Set job ID for this reprocessing task
             job_id = f"[REPROCESS] {path.split('/')[-1]}"
             set_job_id(job_id)
+            exec_id = None
 
             try:
                 LOG.info("Reprocessing: %s", path)
@@ -53,7 +55,34 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                         )(),
                         path,
                     )
+
+                    # Start tracking execution
+                    exec_id = tracker.start_execution(
+                        job_id, filename, path, event.timestamp.isoformat()
+                    )
+
                     result = pipeline.run(event)
+
+                    # Add pipeline output to execution logs
+                    if result.stdout:
+                        for line in result.stdout.strip().split("\n"):
+                            if line.strip():
+                                tracker.add_log(job_id, f"[stdout] {line}")
+                    if result.stderr:
+                        for line in result.stderr.strip().split("\n"):
+                            if line.strip():
+                                tracker.add_log(job_id, f"[stderr] {line}")
+
+                    # Complete execution tracking
+                    tracker.complete_execution(
+                        job_id,
+                        success=result.success,
+                        elapsed_seconds=result.elapsed_seconds,
+                        error=(
+                            None if result.success else f"Exit code {result.returncode}"
+                        ),
+                    )
+
                     if result.success:
                         LOG.info("Reprocessing succeeded: %s", path)
                         pipeline._log_job_statistics(result, job_id)
@@ -68,6 +97,10 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                     LOG.error(
                         "Error during reprocessing of %s: %s", path, e, exc_info=True
                     )
+                    if exec_id:
+                        tracker.complete_execution(
+                            job_id, success=False, elapsed_seconds=0, error=str(e)
+                        )
             finally:
                 set_job_id(None)
 
@@ -161,6 +194,16 @@ async def main():
             )
 
             result = pipeline.run(event)
+
+            # Add pipeline output to execution logs
+            if result.stdout:
+                for line in result.stdout.strip().split("\n"):
+                    if line.strip():
+                        tracker.add_log(job_id, f"[stdout] {line}")
+            if result.stderr:
+                for line in result.stderr.strip().split("\n"):
+                    if line.strip():
+                        tracker.add_log(job_id, f"[stderr] {line}")
 
             # Complete execution tracking
             tracker.complete_execution(
