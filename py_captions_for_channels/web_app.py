@@ -258,6 +258,13 @@ async def get_executions(limit: int = 50) -> dict:
         tracker.mark_stale_executions(timeout_seconds=STALE_EXECUTION_SECONDS)
         executions = tracker.get_executions(limit=limit)
 
+        # Add local time formatting to each execution
+        for exec in executions:
+            if exec.get("started_at"):
+                exec["started_local"] = format_local(exec["started_at"])
+            if exec.get("completed_at"):
+                exec["completed_local"] = format_local(exec["completed_at"])
+
         return {
             "executions": executions,
             "count": len(executions),

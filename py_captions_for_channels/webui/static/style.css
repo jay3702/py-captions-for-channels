@@ -554,6 +554,7 @@ h1 {
     border-radius: 8px;
     padding: 12px;
     overflow-x: auto;
+    overflow-y: auto;
     font-family: monospace;
     font-size: 13px;
     line-height: 1.5;
