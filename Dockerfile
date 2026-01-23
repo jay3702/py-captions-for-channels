@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     ffmpeg \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Python 3.10 as default python
