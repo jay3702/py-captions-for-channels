@@ -563,8 +563,7 @@ h1 {
     font-family: monospace;
     font-size: 13px;
     line-height: 1.5;
-    max-height: 400px;
-    min-height: 200px;
+    height: 50vh; /* fixed height to ensure vertical scrolling */
     margin: 0;
     white-space: pre; /* preserve long lines: horizontal scroll only */
   }
