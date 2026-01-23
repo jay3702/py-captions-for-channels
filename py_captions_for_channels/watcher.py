@@ -188,10 +188,17 @@ async def main():
             path = api.lookup_recording_path(partial.title, partial.start_time)
             event = parser.from_channelwatch(partial, path)
 
-            # Start tracking execution
+            # Create pending execution immediately so it shows in UI
             exec_id = tracker.start_execution(
-                job_id, partial.title, event.path, event.timestamp.isoformat()
+                job_id,
+                partial.title,
+                event.path,
+                event.timestamp.isoformat(),
+                status="pending",
             )
+
+            # Update to running when we actually start processing
+            tracker.update_status(job_id, "running")
 
             result = pipeline.run(event)
 
