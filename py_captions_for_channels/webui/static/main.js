@@ -96,11 +96,13 @@ async function fetchStatus() {
   
     // Use server-provided local time if available, otherwise parse ISO timestamp
     const startTime = exec.started_local ? exec.started_local.split(' ')[1] : new Date(exec.started_at).toLocaleTimeString();
+    const tagHtml = exec.kind === 'reprocess' ? '<span class="exec-tag">Reprocess</span>' : '';
   
     return `
       <li class="exec-item ${statusClass}" onclick="showExecutionDetail('${escapeAttr(exec.id)}')">
         <span class="exec-status">${statusIcon}</span>
         <span class="exec-title">${escapeHtml(exec.title)}</span>
+        ${tagHtml}
         <span class="exec-time">${startTime}</span>
         <span class="exec-status-text">${statusText}</span>
         <span class="exec-elapsed">${elapsed}</span>
@@ -141,6 +143,7 @@ async function fetchStatus() {
       body.innerHTML = `
         <div class="detail-section">
           <h3>Overview</h3>
+          ${exec.kind === 'reprocess' ? '<p><strong>Type:</strong> Reprocess</p>' : ''}
           <p><strong>Status:</strong> ${exec.status} ${exec.success !== null ? (exec.success ? '✓ Success' : '✗ Failed') : ''}</p>
           <p><strong>Started:</strong> ${escapeHtml(startedDisplay)}</p>
           ${completedDisplay ? `<p><strong>Completed:</strong> ${escapeHtml(completedDisplay)}</p>` : ''}

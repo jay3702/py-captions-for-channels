@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 from .logging_config import set_job_id
 from .channels_api import ChannelsAPI
@@ -7,7 +8,7 @@ from .state import StateBackend
 from .pipeline import Pipeline
 from .whitelist import Whitelist
 from .health_check import run_health_checks
-from .execution_tracker import get_tracker
+from .execution_tracker import get_tracker, build_reprocess_job_id
 from .config import (
     CHANNELWATCH_URL,
     CHANNELS_API_URL,
@@ -33,7 +34,7 @@ async def process_reprocess_queue(state, pipeline, api, parser):
         tracker = get_tracker()
         for path in queue:
             # Set job ID for this reprocessing task
-            job_id = f"[REPROCESS] {path.split('/')[-1]}"
+            job_id = build_reprocess_job_id(path)
             set_job_id(job_id)
             exec_id = None
 
@@ -43,14 +44,15 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                     # Create a minimal event from the path
                     # Use the filename as title for logging
                     filename = path.split("/")[-1]
+                    title = f"Reprocess: {filename}"
                     event = Parser().from_channelwatch(
                         type(
                             "PartialEvent",
                             (),
                             {
-                                "timestamp": __import__("datetime").datetime.now(),
+                                "timestamp": datetime.now(timezone.utc),
                                 "title": filename,
-                                "start_time": __import__("datetime").datetime.now(),
+                                "start_time": datetime.now(timezone.utc),
                             },
                         )(),
                         path,
@@ -58,7 +60,12 @@ async def process_reprocess_queue(state, pipeline, api, parser):
 
                     # Start tracking execution
                     exec_id = tracker.start_execution(
-                        job_id, filename, path, event.timestamp.isoformat()
+                        job_id,
+                        title,
+                        path,
+                        event.timestamp.isoformat(),
+                        status="running",
+                        kind="reprocess",
                     )
 
                     result = pipeline.run(event)

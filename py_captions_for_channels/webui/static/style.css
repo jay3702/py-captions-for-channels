@@ -315,6 +315,15 @@ h1 {
     flex-shrink: 0;
   }
 
+  .exec-tag {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
   .exec-progress {
     height: 3px;
     background: rgba(255, 255, 255, 0.1);
