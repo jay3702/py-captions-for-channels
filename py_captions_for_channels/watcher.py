@@ -98,7 +98,9 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                             None
                             if result.success
                             else (
-                                "Canceled" if result.returncode == -2 else f"Exit code {result.returncode}"
+                                "Canceled"
+                                if result.returncode == -2
+                                else f"Exit code {result.returncode}"
                             )
                         ),
                     )
@@ -273,7 +275,9 @@ async def main():
                     None
                     if result.success
                     else (
-                        "Canceled" if result.returncode == -2 else f"Exit code {result.returncode}"
+                        "Canceled"
+                        if result.returncode == -2
+                        else f"Exit code {result.returncode}"
                     )
                 ),
             )
