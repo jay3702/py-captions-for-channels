@@ -1,20 +1,21 @@
-from datetime import datetime, timezone
+import json
+import logging
 import os
+import socket
+from datetime import datetime, timezone
+from pathlib import Path
 
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
     ZoneInfo = None
-from pathlib import Path
-import socket
-import logging
 
+import requests
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import requests
 
 from .config import (
     STATE_FILE,
@@ -28,9 +29,8 @@ from .config import (
     LOG_VERBOSITY_FILE,
 )
 from .state import StateBackend
-from .execution_tracker import get_tracker, build_reprocess_job_id
-from .logging_config import set_verbosity, get_verbosity
-import json
+from .execution_tracker import build_reprocess_job_id, get_tracker
+from .logging_config import get_verbosity, set_verbosity
 
 LOG = logging.getLogger(__name__)
 
