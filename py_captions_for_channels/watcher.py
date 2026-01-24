@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -22,6 +23,7 @@ from .config import (
     WHITELIST_FILE,
     STALE_EXECUTION_SECONDS,
     LOG_VERBOSITY_FILE,
+    REPROCESS_POLL_SECONDS,
 )
 from .logging_config import set_verbosity, get_verbosity
 import json
@@ -64,6 +66,11 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                     )
 
                     # Start tracking execution
+                    existing = tracker.get_execution(job_id)
+                    if existing and existing.get("status") in ("running", "canceling"):
+                        LOG.info("Reprocess already running: %s", path)
+                        continue
+
                     exec_id = tracker.start_execution(
                         job_id,
                         title,
@@ -217,6 +224,13 @@ async def main():
     _maybe_update_log_verbosity()
     await process_reprocess_queue(state, pipeline, api, parser)
 
+    async def _reprocess_loop():
+        while True:
+            await process_reprocess_queue(state, pipeline, api, parser)
+            await asyncio.sleep(REPROCESS_POLL_SECONDS)
+
+    reprocess_task = asyncio.create_task(_reprocess_loop())
+
     # Process events as they arrive
     async for partial in source.events():
         _maybe_update_log_verbosity()
@@ -303,3 +317,5 @@ async def main():
                 )
         finally:
             set_job_id(None)
+
+    reprocess_task.cancel()
