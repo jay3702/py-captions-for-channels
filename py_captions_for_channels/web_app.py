@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 try:
@@ -26,7 +26,7 @@ from .config import (
     CHANNELWATCH_URL,
 )
 from .state import StateBackend
-from .execution_tracker import get_tracker
+from .execution_tracker import get_tracker, build_reprocess_job_id
 
 LOG = logging.getLogger(__name__)
 
@@ -428,9 +428,24 @@ async def add_to_reprocess_queue(request: Request) -> dict:
         if not paths:
             return {"error": "No paths provided", "added": 0}
 
+        tracker = get_tracker()
+
         # Add paths to reprocess queue
         for path in paths:
             state_backend.mark_for_reprocess(path)
+            filename = path.split("/")[-1]
+            title = f"Reprocess: {filename}"
+            job_id = build_reprocess_job_id(path)
+            existing = tracker.get_execution(job_id)
+            if not existing or existing.get("status") != "running":
+                tracker.start_execution(
+                    job_id,
+                    title,
+                    path,
+                    datetime.now(timezone.utc).isoformat(),
+                    status="pending",
+                    kind="reprocess",
+                )
 
         return {
             "added": len(paths),

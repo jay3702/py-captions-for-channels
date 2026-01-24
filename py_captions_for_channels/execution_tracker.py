@@ -14,6 +14,11 @@ from typing import Dict, List, Optional
 LOG = logging.getLogger(__name__)
 
 
+def build_reprocess_job_id(path: str) -> str:
+    """Build a stable job ID for reprocess executions."""
+    return f"reprocess::{path}"
+
+
 class ExecutionTracker:
     """Thread-safe tracker for pipeline executions."""
 
@@ -54,6 +59,7 @@ class ExecutionTracker:
         path: str,
         timestamp: Optional[str] = None,
         status: str = "running",
+        kind: str = "normal",
     ) -> str:
         """Register a new pipeline execution.
 
@@ -73,6 +79,7 @@ class ExecutionTracker:
                 "id": exec_id,
                 "title": title,
                 "path": path,
+                "kind": kind,
                 "status": status,
                 "started_at": timestamp or datetime.now(timezone.utc).isoformat(),
                 "completed_at": None,
