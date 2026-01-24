@@ -100,6 +100,11 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                             path,
                             result.returncode,
                         )
+                        state.clear_reprocess_request(path)
+                        LOG.warning(
+                            "Removed failed reprocess request after retry: %s",
+                            path,
+                        )
                 except Exception as e:
                     LOG.error(
                         "Error during reprocessing of %s: %s", path, e, exc_info=True
@@ -108,6 +113,11 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                         tracker.complete_execution(
                             job_id, success=False, elapsed_seconds=0, error=str(e)
                         )
+                    state.clear_reprocess_request(path)
+                    LOG.warning(
+                        "Removed failed reprocess request after retry: %s",
+                        path,
+                    )
             finally:
                 set_job_id(None)
 
