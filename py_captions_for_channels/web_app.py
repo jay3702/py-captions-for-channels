@@ -391,7 +391,11 @@ async def cancel_execution(job_id: str) -> dict:
         ok = tracker.request_cancel(job_id)
         if not ok:
             return {"error": "Execution not found", "job_id": job_id}
-        if execution and execution.get("kind") == "reprocess" and execution.get("path"):
+        if (
+            execution
+            and execution.get("kind") == "reprocess"
+            and execution.get("path")
+        ):
             state_backend.clear_reprocess_request(execution["path"])
         return {"ok": True, "job_id": job_id}
     except Exception as e:
@@ -499,7 +503,10 @@ async def set_logging_verbosity(request: Request) -> dict:
         data = await request.json()
         verbosity = str(data.get("verbosity", "")).upper()
         if verbosity not in ("MINIMAL", "NORMAL", "VERBOSE"):
-            return {"error": "Invalid verbosity", "allowed": ["MINIMAL", "NORMAL", "VERBOSE"]}
+            return {
+                "error": "Invalid verbosity",
+                "allowed": ["MINIMAL", "NORMAL", "VERBOSE"],
+            }
 
         # Update web process logging
         set_verbosity(verbosity)

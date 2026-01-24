@@ -102,11 +102,11 @@ async function fetchStatus() {
     const startTime = exec.started_local ? exec.started_local.split(' ')[1] : new Date(exec.started_at).toLocaleTimeString();
     const tagHtml = exec.kind === 'reprocess' ? '<span class="exec-tag">Reprocess</span>' : '';
     const cancelHtml = (exec.status === 'running' && !exec.cancel_requested)
-      ? `<button class="exec-cancel" onclick="cancelExecution('${escapeAttr(exec.id)}', event)">Cancel</button>`
+      ? `<button class="exec-cancel" data-exec-id="${encodeURIComponent(exec.id)}" onclick="cancelExecutionFromEl(this, event)">Cancel</button>`
       : '';
   
     return `
-      <li class="exec-item ${statusClass}" onclick="showExecutionDetail('${escapeAttr(exec.id)}')">
+      <li class="exec-item ${statusClass}" data-exec-id="${encodeURIComponent(exec.id)}" onclick="showExecutionDetailFromEl(this)">
         <span class="exec-status">${statusIcon}</span>
         <span class="exec-title">${escapeHtml(exec.title)}</span>
         ${tagHtml}
@@ -194,8 +194,17 @@ function escapeHtml(text) {
     return text.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
   }
 
-async function cancelExecution(jobId, event) {
+function showExecutionDetailFromEl(el) {
+  const jobId = decodeURIComponent(el.dataset.execId || '');
+  if (jobId) {
+    showExecutionDetail(jobId);
+  }
+}
+
+async function cancelExecutionFromEl(el, event) {
   event.stopPropagation();
+  const jobId = decodeURIComponent(el.dataset.execId || '');
+  if (!jobId) return;
   if (!confirm('Cancel this running job?')) return;
   try {
     const res = await fetch(`/api/executions/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });

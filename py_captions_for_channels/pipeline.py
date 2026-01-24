@@ -276,7 +276,9 @@ class Pipeline:
                 while True:
                     # Cancel request check
                     if cancel_check and cancel_check():
-                        LOG.warning("Cancel requested; terminating pipeline for %s", event.path)
+                        LOG.warning(
+                            "Cancel requested; terminating pipeline for %s", event.path
+                        )
                         proc.terminate()
                         try:
                             proc.wait(timeout=10)
@@ -310,7 +312,9 @@ class Pipeline:
                             success=False,
                             returncode=-1,
                             stdout=stdout,
-                            stderr=f"Command timed out after {PIPELINE_TIMEOUT} seconds",
+                            stderr=(
+                                f"Command timed out after {PIPELINE_TIMEOUT} seconds"
+                            ),
                             command=cmd,
                             elapsed_seconds=elapsed,
                             input_path=event.path,
