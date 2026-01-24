@@ -54,14 +54,10 @@ else
     VIDEO_CODEC="-c:v libx264 -preset veryfast -crf 23"
 fi
 
-# Escape subtitle path for ffmpeg filter syntax
-SRT_FILTER_PATH="$SRT_PATH"
-SRT_FILTER_PATH="${SRT_FILTER_PATH//\\/\\\\}"
-SRT_FILTER_PATH="${SRT_FILTER_PATH//:/\\:}"
-SRT_FILTER_PATH="${SRT_FILTER_PATH//\'/\\\'}"
 
+# Pass the original, unredacted SRT path to ffmpeg
 ffmpeg -i "$VIDEO_PATH" \
-    -vf "subtitles='${SRT_FILTER_PATH}'" \
+    -vf "subtitles='${SRT_PATH}'" \
     $VIDEO_CODEC \
     -c:a aac -b:a 128k \
     -movflags +faststart \
