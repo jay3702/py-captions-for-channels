@@ -76,6 +76,10 @@ async function fetchStatus() {
       statusClass = 'exec-pending';
       statusIcon = '⏸';
       statusText = 'Pending';
+    } else if (exec.status === 'canceling' || exec.cancel_requested) {
+      statusClass = 'exec-running';
+      statusIcon = '⏹';
+      statusText = 'Canceling';
     } else if (exec.status === 'running') {
       statusClass = 'exec-running';
       statusIcon = '⏳';
@@ -97,6 +101,9 @@ async function fetchStatus() {
     // Use server-provided local time if available, otherwise parse ISO timestamp
     const startTime = exec.started_local ? exec.started_local.split(' ')[1] : new Date(exec.started_at).toLocaleTimeString();
     const tagHtml = exec.kind === 'reprocess' ? '<span class="exec-tag">Reprocess</span>' : '';
+    const cancelHtml = (exec.status === 'running' && !exec.cancel_requested)
+      ? `<button class="exec-cancel" onclick="cancelExecution('${escapeAttr(exec.id)}', event)">Cancel</button>`
+      : '';
   
     return `
       <li class="exec-item ${statusClass}" onclick="showExecutionDetail('${escapeAttr(exec.id)}')">
@@ -106,6 +113,7 @@ async function fetchStatus() {
         <span class="exec-time">${startTime}</span>
         <span class="exec-status-text">${statusText}</span>
         <span class="exec-elapsed">${elapsed}</span>
+        ${cancelHtml}
         ${exec.status === 'running' ? '<div class="exec-progress"><div class="progress-bar"></div></div>' : ''}
       </li>
     `;
@@ -186,6 +194,20 @@ function escapeHtml(text) {
     return text.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
   }
 
+async function cancelExecution(jobId, event) {
+  event.stopPropagation();
+  if (!confirm('Cancel this running job?')) return;
+  try {
+    const res = await fetch(`/api/executions/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to cancel execution');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    fetchExecutions();
+  } catch (err) {
+    alert('Cancel failed: ' + err.message);
+  }
+}
+
 async function fetchLogs() {
   try {
     const res = await fetch('/api/logs?lines=100');
@@ -227,12 +249,21 @@ function switchTab(tabName) {
 async function showReprocessModal() {
   const modal = document.getElementById('reprocess-modal');
   const listContainer = document.getElementById('reprocess-list');
+  const verbositySelect = document.getElementById('log-verbosity');
   
   // Show modal
   modal.style.display = 'flex';
   listContainer.innerHTML = '<p class="muted">Loading candidates...</p>';
   
   try {
+    const verbosityRes = await fetch('/api/logging/verbosity');
+    if (verbosityRes.ok) {
+      const verbosityData = await verbosityRes.json();
+      if (verbosityData.verbosity) {
+        verbositySelect.value = verbosityData.verbosity.toUpperCase();
+      }
+    }
+
     const res = await fetch('/api/reprocess/candidates');
     if (!res.ok) throw new Error('Failed to fetch candidates');
     const data = await res.json();
@@ -258,6 +289,23 @@ async function showReprocessModal() {
   } catch (err) {
     listContainer.innerHTML = `<p class="muted">Error loading candidates: ${escapeHtml(err.message)}</p>`;
     console.error('Reprocess candidates fetch error:', err);
+  }
+}
+
+async function updateLogVerbosity() {
+  const verbositySelect = document.getElementById('log-verbosity');
+  const verbosity = verbositySelect.value;
+  try {
+    const res = await fetch('/api/logging/verbosity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verbosity })
+    });
+    if (!res.ok) throw new Error('Failed to update verbosity');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+  } catch (err) {
+    alert('Failed to update log verbosity: ' + err.message);
   }
 }
 

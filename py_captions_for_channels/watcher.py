@@ -21,7 +21,11 @@ from .config import (
     DRY_RUN,
     WHITELIST_FILE,
     STALE_EXECUTION_SECONDS,
+    LOG_VERBOSITY_FILE,
 )
+from .logging_config import set_verbosity, get_verbosity
+import json
+from pathlib import Path
 
 LOG = logging.getLogger(__name__)
 
@@ -33,6 +37,7 @@ async def process_reprocess_queue(state, pipeline, api, parser):
         LOG.info("Processing reprocess queue: %d items", len(queue))
         tracker = get_tracker()
         for path in queue:
+            _maybe_update_log_verbosity()
             # Set job ID for this reprocessing task
             job_id = build_reprocess_job_id(path)
             set_job_id(job_id)
@@ -68,7 +73,11 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                         kind="reprocess",
                     )
 
-                    result = pipeline.run(event)
+                    result = pipeline.run(
+                        event,
+                        job_id_override=job_id,
+                        cancel_check=lambda: tracker.is_cancel_requested(job_id),
+                    )
 
                     # Add pipeline output to execution logs
                     if result.stdout:
@@ -86,7 +95,11 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                         success=result.success,
                         elapsed_seconds=result.elapsed_seconds,
                         error=(
-                            None if result.success else f"Exit code {result.returncode}"
+                            None
+                            if result.success
+                            else (
+                                "Canceled" if result.returncode == -2 else f"Exit code {result.returncode}"
+                            )
                         ),
                     )
 
@@ -120,6 +133,22 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                     )
             finally:
                 set_job_id(None)
+
+
+def _maybe_update_log_verbosity() -> None:
+    """Update log verbosity based on shared config file if present."""
+    try:
+        path = Path(LOG_VERBOSITY_FILE)
+        if not path.exists():
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        desired = str(data.get("verbosity", "")).upper()
+        if desired and desired != get_verbosity():
+            set_verbosity(desired)
+            LOG.info("Log verbosity updated to %s", desired)
+    except Exception as e:
+        LOG.warning("Failed to update log verbosity: %s", e)
 
 
 async def main():
@@ -183,10 +212,12 @@ async def main():
     whitelist = Whitelist(WHITELIST_FILE)
 
     # Process reprocess queue on startup
+    _maybe_update_log_verbosity()
     await process_reprocess_queue(state, pipeline, api, parser)
 
     # Process events as they arrive
     async for partial in source.events():
+        _maybe_update_log_verbosity()
         if not state.should_process(partial.timestamp):
             continue
 
@@ -217,7 +248,11 @@ async def main():
             # Update to running when we actually start processing
             tracker.update_status(job_id, "running")
 
-            result = pipeline.run(event)
+            result = pipeline.run(
+                event,
+                job_id_override=job_id,
+                cancel_check=lambda: tracker.is_cancel_requested(job_id),
+            )
 
             # Add pipeline output to execution logs
             if result.stdout:
@@ -234,7 +269,13 @@ async def main():
                 job_id,
                 success=result.success,
                 elapsed_seconds=result.elapsed_seconds,
-                error=None if result.success else f"Exit code {result.returncode}",
+                error=(
+                    None
+                    if result.success
+                    else (
+                        "Canceled" if result.returncode == -2 else f"Exit code {result.returncode}"
+                    )
+                ),
             )
 
             if result.success:

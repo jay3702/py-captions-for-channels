@@ -77,6 +77,9 @@ def get_job_id() -> Optional[str]:
     return _job_id_context.get()
 
 
+_current_verbosity: str = "NORMAL"
+
+
 def configure_logging(
     verbosity: str = "NORMAL", log_file: Optional[str] = None
 ) -> None:
@@ -86,6 +89,7 @@ def configure_logging(
         verbosity: One of 'MINIMAL', 'NORMAL', 'VERBOSE'
         log_file: Optional path to write logs to file (in addition to stdout)
     """
+    global _current_verbosity
     verbosity = verbosity.upper()
     if verbosity not in ("MINIMAL", "NORMAL", "VERBOSE"):
         raise ValueError(
@@ -100,6 +104,7 @@ def configure_logging(
 
     # Create verbosity filter
     verbosity_filter = VerbosityFilter(verbosity)
+    _current_verbosity = verbosity
 
     # Get root logger and configure it
     root_logger = logging.getLogger()
@@ -128,6 +133,34 @@ def configure_logging(
         if isinstance(logger, logging.Logger):
             logger.propagate = True
             logger.handlers.clear()
+
+
+def set_verbosity(verbosity: str) -> None:
+    """Update verbosity level on existing handlers."""
+    global _current_verbosity
+    verbosity = verbosity.upper()
+    if verbosity not in ("MINIMAL", "NORMAL", "VERBOSE"):
+        raise ValueError(
+            f"Invalid verbosity level: {verbosity}. Must be MINIMAL, NORMAL, or VERBOSE"
+        )
+
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        found = False
+        for flt in handler.filters:
+            if isinstance(flt, VerbosityFilter):
+                flt.verbosity_level = verbosity
+                flt.min_level = flt.level_map.get(verbosity, logging.INFO)
+                found = True
+        if not found:
+            handler.addFilter(VerbosityFilter(verbosity))
+
+    _current_verbosity = verbosity
+
+
+def get_verbosity() -> str:
+    """Return current logging verbosity."""
+    return _current_verbosity
 
 
 def get_logger(name: str) -> logging.Logger:

@@ -81,6 +81,7 @@ class ExecutionTracker:
                 "path": path,
                 "kind": kind,
                 "status": status,
+                "cancel_requested": False,
                 "started_at": timestamp or datetime.now(timezone.utc).isoformat(),
                 "completed_at": None,
                 "success": None,
@@ -109,6 +110,28 @@ class ExecutionTracker:
                 self.executions[job_id]["status"] = status
                 self._save()
                 LOG.debug("Updated execution status: %s -> %s", job_id, status)
+
+    def request_cancel(self, job_id: str) -> bool:
+        """Request cancellation of a running execution.
+
+        Returns True if the job exists and was marked for cancel.
+        """
+        with self.lock:
+            exec_data = self.executions.get(job_id)
+            if not exec_data:
+                return False
+            exec_data["cancel_requested"] = True
+            if exec_data.get("status") == "running":
+                exec_data["status"] = "canceling"
+            self._save()
+            LOG.info("Cancel requested for execution: %s", job_id)
+            return True
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        """Check if cancellation has been requested for a job."""
+        with self.lock:
+            exec_data = self.executions.get(job_id)
+            return bool(exec_data and exec_data.get("cancel_requested"))
 
     def add_log(self, job_id: str, log_line: str):
         """Add a log line to an execution.
@@ -148,6 +171,7 @@ class ExecutionTracker:
                 self.executions[job_id].update(
                     {
                         "status": "completed",
+                        "cancel_requested": False,
                         "success": success,
                         "completed_at": datetime.now(timezone.utc).isoformat(),
                         "elapsed_seconds": elapsed_seconds,

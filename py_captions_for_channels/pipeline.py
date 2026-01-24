@@ -1,6 +1,7 @@
 import logging
 import re
 import subprocess
+from typing import Callable, Optional
 import time
 from pathlib import Path
 
@@ -213,7 +214,12 @@ class Pipeline:
         if LOG_STATS_ENABLED:
             LOG.info("\n" + "\n".join(stats_lines))
 
-    def run(self, event) -> PipelineResult:
+    def run(
+        self,
+        event,
+        job_id_override: Optional[str] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> PipelineResult:
         """Execute the caption command for the given event.
 
         Args:
@@ -225,7 +231,7 @@ class Pipeline:
         # Set job ID for log formatting
         timestamp = getattr(event, "timestamp", None)
         timestamp_str = timestamp.strftime("%H:%M:%S") if timestamp else "UNKNOWN"
-        job_id = f"{event.title} @ {timestamp_str}"
+        job_id = job_id_override or f"{event.title} @ {timestamp_str}"
         set_job_id(job_id)
 
         start_time = time.time()
@@ -256,14 +262,65 @@ class Pipeline:
             LOG.info("Running caption pipeline: %s", cmd)
 
             try:
-                # Execute command and capture output
-                proc = subprocess.run(
+                # Execute command and capture output (cancel-aware)
+                proc = subprocess.Popen(
                     cmd,
                     shell=True,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    timeout=PIPELINE_TIMEOUT,
                 )
+
+                stdout = ""
+                stderr = ""
+                while True:
+                    # Cancel request check
+                    if cancel_check and cancel_check():
+                        LOG.warning("Cancel requested; terminating pipeline for %s", event.path)
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=10)
+                        except Exception:
+                            proc.kill()
+                        try:
+                            stdout, stderr = proc.communicate(timeout=5)
+                        except Exception:
+                            stdout, stderr = "", "Canceled"
+                        elapsed = time.time() - start_time
+                        return PipelineResult(
+                            success=False,
+                            returncode=-2,
+                            stdout=stdout,
+                            stderr=stderr or "Canceled",
+                            command=cmd,
+                            elapsed_seconds=elapsed,
+                            input_path=event.path,
+                        )
+
+                    # Timeout check
+                    if (time.time() - start_time) > PIPELINE_TIMEOUT:
+                        LOG.error("Caption pipeline timed out for %s", event.path)
+                        proc.kill()
+                        try:
+                            stdout, stderr = proc.communicate(timeout=5)
+                        except Exception:
+                            stdout, stderr = "", "Command timed out"
+                        elapsed = time.time() - start_time
+                        return PipelineResult(
+                            success=False,
+                            returncode=-1,
+                            stdout=stdout,
+                            stderr=f"Command timed out after {PIPELINE_TIMEOUT} seconds",
+                            command=cmd,
+                            elapsed_seconds=elapsed,
+                            input_path=event.path,
+                        )
+
+                    try:
+                        stdout, stderr = proc.communicate(timeout=1)
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
 
                 if proc.returncode != 0:
                     elapsed = time.time() - start_time
@@ -272,13 +329,13 @@ class Pipeline:
                         event.path,
                         proc.returncode,
                     )
-                    if proc.stderr:
-                        LOG.error("stderr: %s", proc.stderr[:500])
+                    if stderr:
+                        LOG.error("stderr: %s", stderr[:500])
                     return PipelineResult(
                         success=False,
                         returncode=proc.returncode,
-                        stdout=proc.stdout,
-                        stderr=proc.stderr,
+                        stdout=stdout,
+                        stderr=stderr,
                         command=cmd,
                         elapsed_seconds=elapsed,
                         input_path=event.path,
@@ -286,17 +343,17 @@ class Pipeline:
                 else:
                     LOG.info("Caption pipeline completed for %s", event.path)
                     # Log whisper's output for debugging
-                    if proc.stdout:
-                        LOG.debug("stdout: %s", proc.stdout[-1000:])
-                    if proc.stderr:
-                        LOG.info("whisper output: %s", proc.stderr[-500:])
+                    if stdout:
+                        LOG.debug("stdout: %s", stdout[-1000:])
+                    if stderr:
+                        LOG.info("whisper output: %s", stderr[-500:])
 
                     # Collect output file statistics
                     elapsed = time.time() - start_time
                     output_files = self._collect_output_files(event.path)
                     # Parse ffmpeg speed if present
                     ffmpeg_speed = None
-                    m = re.search(r"speed=([0-9.]+)x", proc.stderr)
+                    m = re.search(r"speed=([0-9.]+)x", stderr)
                     if m:
                         ffmpeg_speed = float(m.group(1))
                     try:
@@ -307,8 +364,8 @@ class Pipeline:
                     return PipelineResult(
                         success=True,
                         returncode=0,
-                        stdout=proc.stdout,
-                        stderr=proc.stderr,
+                        stdout=stdout,
+                        stderr=stderr,
                         command=cmd,
                         elapsed_seconds=elapsed,
                         output_files=output_files,
@@ -322,18 +379,6 @@ class Pipeline:
                             "Transcode speed reported by ffmpeg: %.2fx", ffmpeg_speed
                         )
 
-            except subprocess.TimeoutExpired:
-                elapsed = time.time() - start_time
-                LOG.error("Caption pipeline timed out for %s", event.path)
-                return PipelineResult(
-                    success=False,
-                    returncode=-1,
-                    stdout="",
-                    stderr=f"Command timed out after {PIPELINE_TIMEOUT} seconds",
-                    command=cmd,
-                    elapsed_seconds=elapsed,
-                    input_path=event.path,
-                )
             except Exception as e:
                 elapsed = time.time() - start_time
                 LOG.error("Exception running caption pipeline: %s", e)
