@@ -84,6 +84,7 @@ LOG_VERBOSITY = os.getenv("LOG_VERBOSITY", "NORMAL")  # MINIMAL, NORMAL, or VERB
 LOG_FILE = os.getenv(
     "LOG_FILE", "./app.log"
 )  # Write logs to file (in addition to stdout)
+LOG_VERBOSITY_FILE = os.getenv("LOG_VERBOSITY_FILE", "/app/data/log_verbosity.json")
 
 # Logging visuals and stats
 LOG_DIVIDER_LENGTH = get_env_int("LOG_DIVIDER_LENGTH", 40)

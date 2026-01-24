@@ -24,9 +24,13 @@ from .config import (
     STALE_EXECUTION_SECONDS,
     CHANNELS_API_URL,
     CHANNELWATCH_URL,
+    LOG_VERBOSITY,
+    LOG_VERBOSITY_FILE,
 )
 from .state import StateBackend
 from .execution_tracker import get_tracker, build_reprocess_job_id
+from .logging_config import set_verbosity, get_verbosity
+import json
 
 LOG = logging.getLogger(__name__)
 
@@ -378,6 +382,19 @@ async def get_execution_detail(job_id: str) -> dict:
         return {"error": str(e), "job_id": job_id}
 
 
+@app.post("/api/executions/{job_id:path}/cancel")
+async def cancel_execution(job_id: str) -> dict:
+    """Request cancellation of a running execution."""
+    try:
+        tracker = get_tracker()
+        ok = tracker.request_cancel(job_id)
+        if not ok:
+            return {"error": "Execution not found", "job_id": job_id}
+        return {"ok": True, "job_id": job_id}
+    except Exception as e:
+        return {"error": str(e), "job_id": job_id}
+
+
 @app.get("/api/reprocess/candidates")
 async def get_reprocess_candidates() -> dict:
     """Get list of recordings that can be reprocessed.
@@ -453,3 +470,43 @@ async def add_to_reprocess_queue(request: Request) -> dict:
         }
     except Exception as e:
         return {"error": str(e), "added": 0}
+
+
+@app.get("/api/logging/verbosity")
+async def get_logging_verbosity() -> dict:
+    """Get current logging verbosity setting."""
+    try:
+        verbosity = None
+        path = Path(LOG_VERBOSITY_FILE)
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                verbosity = data.get("verbosity")
+        if not verbosity:
+            verbosity = get_verbosity() or LOG_VERBOSITY
+        return {"verbosity": str(verbosity).upper()}
+    except Exception as e:
+        return {"verbosity": LOG_VERBOSITY, "error": str(e)}
+
+
+@app.post("/api/logging/verbosity")
+async def set_logging_verbosity(request: Request) -> dict:
+    """Update logging verbosity setting (shared across containers)."""
+    try:
+        data = await request.json()
+        verbosity = str(data.get("verbosity", "")).upper()
+        if verbosity not in ("MINIMAL", "NORMAL", "VERBOSE"):
+            return {"error": "Invalid verbosity", "allowed": ["MINIMAL", "NORMAL", "VERBOSE"]}
+
+        # Update web process logging
+        set_verbosity(verbosity)
+
+        # Persist to shared file for watcher to read
+        path = Path(LOG_VERBOSITY_FILE)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"verbosity": verbosity}, f)
+
+        return {"verbosity": verbosity}
+    except Exception as e:
+        return {"error": str(e)}

@@ -118,7 +118,17 @@
           <button class="modal-close" onclick="closeReprocessModal()">&times;</button>
         </div>
         <div class="modal-body">
-          <p class="muted" style="margin-bottom: 16px;">Select recordings to add to the reprocessing queue:</p>
+           <div class="reprocess-controls">
+             <p class="muted">Select recordings to add to the reprocessing queue:</p>
+             <div class="verbosity-control">
+               <label for="log-verbosity">Log Verbosity</label>
+               <select id="log-verbosity" onchange="updateLogVerbosity()">
+                 <option value="MINIMAL">Minimal</option>
+                 <option value="NORMAL">Normal</option>
+                 <option value="VERBOSE">Verbose</option>
+               </select>
+             </div>
+           </div>
           <div id="reprocess-list" style="max-height: 400px; overflow-y: auto;">
             <p class="muted">Loading candidates...</p>
           </div>

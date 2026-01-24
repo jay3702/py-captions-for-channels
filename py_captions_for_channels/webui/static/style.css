@@ -356,6 +356,21 @@ h1 {
     flex-shrink: 0;
   }
 
+  .exec-cancel {
+    background: rgba(239, 83, 80, 0.15);
+    border: 1px solid rgba(239, 83, 80, 0.4);
+    color: #ef5350;
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .exec-cancel:hover {
+    background: rgba(239, 83, 80, 0.25);
+  }
+
   .exec-error {
     display: none;
   }
@@ -375,6 +390,30 @@ h1 {
 
   .exec-pending .exec-status {
     color: var(--muted);
+  }
+
+  .reprocess-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .verbosity-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .verbosity-control select {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 6px 10px;
   }
 
   /* Modal styles */
