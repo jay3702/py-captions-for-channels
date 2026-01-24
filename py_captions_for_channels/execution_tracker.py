@@ -206,7 +206,7 @@ class ExecutionTracker:
             Number of executions marked as stale
         """
         marked = 0
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         with self.lock:
             for exec_id, exec_data in self.executions.items():
@@ -214,6 +214,8 @@ class ExecutionTracker:
                     continue
 
                 started_at = datetime.fromisoformat(exec_data["started_at"])
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
                 elapsed = (now - started_at).total_seconds()
 
                 if elapsed > timeout_seconds:
