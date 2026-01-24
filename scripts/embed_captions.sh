@@ -17,14 +17,27 @@ set -euo pipefail
 VIDEO_PATH="$1"
 VIDEO_DIR="$(dirname "$VIDEO_PATH")"
 VIDEO_BASE="$(basename "$VIDEO_PATH" .mpg)"
+#   WHISPER_MODEL: whisper model size (default: medium)
+#   WHISPER_MODEL_DIR: cache dir for whisper models (default: /app/data/whisper)
+#   WHISPER_ARGS: extra args to pass to whisper
 SRT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.srt"
 MP4_PATH="${VIDEO_DIR}/${VIDEO_BASE}.mp4"
+WHISPER_MODEL="${WHISPER_MODEL:-medium}"
+WHISPER_MODEL_DIR="${WHISPER_MODEL_DIR:-/app/data/whisper}"
+WHISPER_ARGS="${WHISPER_ARGS:-}"
 ORIG_PATH="${VIDEO_PATH}.orig"
 KEEP_ORIGINAL="${KEEP_ORIGINAL:-true}"
 
+echo "Whisper model: $WHISPER_MODEL"
+echo "Whisper model dir: $WHISPER_MODEL_DIR"
+
+mkdir -p "$WHISPER_MODEL_DIR"
 echo "Processing: $VIDEO_PATH"
 echo "Keep original: $KEEP_ORIGINAL"
-
+if ! whisper --model "$WHISPER_MODEL" --model_dir "$WHISPER_MODEL_DIR" --output_format srt --output_dir "$VIDEO_DIR" $WHISPER_ARGS "$VIDEO_PATH"; then
+    echo "ERROR: Whisper failed for $VIDEO_PATH"
+    exit 1
+fi
 # Step 1: Generate SRT captions
 echo "Generating captions..."
 whisper --model medium --output_format srt --output_dir "$VIDEO_DIR" "$VIDEO_PATH"
@@ -33,7 +46,21 @@ if [ ! -f "$SRT_PATH" ]; then
     echo "ERROR: Caption file not created: $SRT_PATH"
     exit 1
 fi
+if [ -e /dev/nvidia0 ]; then
+    echo "Transcoding to MP4 with NVIDIA GPU (nvenc)..."
+    VIDEO_CODEC="-c:v h264_nvenc -preset fast -rc:v vbr -cq:v 23"
+else
+    echo "Transcoding to MP4 with CPU (libx264)..."
+    VIDEO_CODEC="-c:v libx264 -preset veryfast -crf 23"
+fi
 
+ffmpeg -i "$VIDEO_PATH" \
+    -vf "subtitles=$SRT_PATH" \
+    $VIDEO_CODEC \
+    -c:a aac -b:a 128k \
+    -movflags +faststart \
+    -y \
+    "$MP4_PATH"
 echo "Captions created: $SRT_PATH"
 
 # Step 2: Transcode to MP4 with burned-in subtitles
