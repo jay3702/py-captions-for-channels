@@ -391,11 +391,7 @@ async def cancel_execution(job_id: str) -> dict:
         ok = tracker.request_cancel(job_id)
         if not ok:
             return {"error": "Execution not found", "job_id": job_id}
-        if (
-            execution
-            and execution.get("kind") == "reprocess"
-            and execution.get("path")
-        ):
+        if execution and execution.get("kind") == "reprocess" and execution.get("path"):
             state_backend.clear_reprocess_request(execution["path"])
         return {"ok": True, "job_id": job_id}
     except Exception as e:
