@@ -28,19 +28,28 @@ WHISPER_ARGS="${WHISPER_ARGS:-}"
 ORIG_PATH="${VIDEO_PATH}.orig"
 KEEP_ORIGINAL="${KEEP_ORIGINAL:-true}"
 
+
+# Optionally skip caption generation for debugging
+SKIP_CAPTION_GENERATION="${SKIP_CAPTION_GENERATION:-false}"
+
 echo "Whisper model: $WHISPER_MODEL"
 echo "Whisper model dir: $WHISPER_MODEL_DIR"
-
-mkdir -p "$WHISPER_MODEL_DIR"
 echo "Processing: $VIDEO_PATH"
 echo "Keep original: $KEEP_ORIGINAL"
-if ! whisper --model "$WHISPER_MODEL" --model_dir "$WHISPER_MODEL_DIR" --output_format srt --output_dir "$VIDEO_DIR" $WHISPER_ARGS "$VIDEO_PATH"; then
-    echo "ERROR: Whisper failed for $VIDEO_PATH"
-    exit 1
+echo "Skip caption generation: $SKIP_CAPTION_GENERATION"
+
+if [ "$SKIP_CAPTION_GENERATION" != "true" ]; then
+    mkdir -p "$WHISPER_MODEL_DIR"
+    if ! whisper --model "$WHISPER_MODEL" --model_dir "$WHISPER_MODEL_DIR" --output_format srt --output_dir "$VIDEO_DIR" $WHISPER_ARGS "$VIDEO_PATH"; then
+        echo "ERROR: Whisper failed for $VIDEO_PATH"
+        exit 1
+    fi
+    # Step 1: Generate SRT captions
+    echo "Generating captions..."
+    whisper --model medium --output_format srt --output_dir "$VIDEO_DIR" "$VIDEO_PATH"
+else
+    echo "Skipping caption generation as requested."
 fi
-# Step 1: Generate SRT captions
-echo "Generating captions..."
-whisper --model medium --output_format srt --output_dir "$VIDEO_DIR" "$VIDEO_PATH"
 
 if [ ! -f "$SRT_PATH" ]; then
     echo "ERROR: Caption file not created: $SRT_PATH"
@@ -54,6 +63,11 @@ else
     VIDEO_CODEC="-c:v libx264 -preset veryfast -crf 23"
 fi
 
+
+
+# Debug: Show the SRT path and check if it exists
+echo "SRT_PATH: $SRT_PATH"
+ls -l "$SRT_PATH" || echo "SRT file not found at: $SRT_PATH"
 
 # Pass the original, unredacted SRT path to ffmpeg
 ffmpeg -i "$VIDEO_PATH" \
