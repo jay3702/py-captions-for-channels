@@ -70,14 +70,13 @@ fi
 echo "SRT_PATH: $SRT_PATH"
 ls -l "$SRT_PATH" || echo "SRT file not found at: $SRT_PATH"
 
-# Escape SRT path for ffmpeg filter (backslashes, double quotes, and apostrophes)
+# Escape SRT path for ffmpeg filter (backslashes and C-style apostrophes)
 SRT_FILTER_PATH="${SRT_PATH//\\/\\\\}"
-SRT_FILTER_PATH="${SRT_FILTER_PATH//\"/\\\"}"
 SRT_FILTER_PATH="${SRT_FILTER_PATH//\'/\\\'}"
 
-# Use the subtitles filter argument without double quotes
+# Use single quotes for the subtitles filter argument
 ffmpeg -i "$VIDEO_PATH" \
-    -vf "subtitles=${SRT_FILTER_PATH}" \
+    -vf 'subtitles='"${SRT_FILTER_PATH}"'' \
     $VIDEO_CODEC \
     -c:a aac -b:a 128k \
     -movflags +faststart \
