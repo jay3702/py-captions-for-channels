@@ -40,13 +40,11 @@ echo "Skip caption generation: $SKIP_CAPTION_GENERATION"
 
 if [ "$SKIP_CAPTION_GENERATION" != "true" ]; then
     mkdir -p "$WHISPER_MODEL_DIR"
+    echo "Generating captions..."
     if ! whisper --model "$WHISPER_MODEL" --model_dir "$WHISPER_MODEL_DIR" --output_format srt --output_dir "$VIDEO_DIR" $WHISPER_ARGS "$VIDEO_PATH"; then
         echo "ERROR: Whisper failed for $VIDEO_PATH"
         exit 1
     fi
-    # Step 1: Generate SRT captions
-    echo "Generating captions..."
-    whisper --model medium --output_format srt --output_dir "$VIDEO_DIR" "$VIDEO_PATH"
 else
     echo "Skipping caption generation as requested."
 fi
