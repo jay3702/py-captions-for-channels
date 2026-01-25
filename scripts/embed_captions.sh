@@ -66,33 +66,39 @@ fi
 
 
 
-# Debug: Show the SRT path and check if it exists
 echo "SRT_PATH: $SRT_PATH"
 ls -l "$SRT_PATH" || echo "SRT file not found at: $SRT_PATH"
 
-# Escape SRT path for ffmpeg filter (backslashes and C-style apostrophes)
-SRT_FILTER_PATH="${SRT_PATH//\\/\\\\}"
-SRT_FILTER_PATH="${SRT_FILTER_PATH//\'/\\\'}"
+# Workaround for ffmpeg subtitles filter bug with apostrophes in SRT path
+USE_SYMLINK=0
+if [[ "$SRT_PATH" == *"'"* ]]; then
+    SAFE_SRT_SYMLINK="/tmp/ffmpeg_safe_subs_$$.srt"
+    echo "Apostrophe detected in SRT path. Creating symlink: $SAFE_SRT_SYMLINK -> $SRT_PATH"
+    ln -sf "$SRT_PATH" "$SAFE_SRT_SYMLINK"
+    SRT_PATH_FFMPEG="$SAFE_SRT_SYMLINK"
+    USE_SYMLINK=1
+else
+    SRT_PATH_FFMPEG="$SRT_PATH"
+fi
 
-# Use single quotes for the subtitles filter argument
+# Use the safe path for ffmpeg
 ffmpeg -i "$VIDEO_PATH" \
-    -vf 'subtitles='"${SRT_FILTER_PATH}"'' \
+    -vf "subtitles=$SRT_PATH_FFMPEG" \
     $VIDEO_CODEC \
     -c:a aac -b:a 128k \
     -movflags +faststart \
     -y \
     "$MP4_PATH"
+FFMPEG_EXIT_CODE=$?
+if [ $USE_SYMLINK -eq 1 ]; then
+    echo "Removing symlink: $SAFE_SRT_SYMLINK"
+    rm -f "$SAFE_SRT_SYMLINK"
+fi
+if [ $FFMPEG_EXIT_CODE -ne 0 ]; then
+    echo "ffmpeg failed with exit code $FFMPEG_EXIT_CODE"
+    exit $FFMPEG_EXIT_CODE
+fi
 echo "Captions created: $SRT_PATH"
-
-# Step 2: Transcode to MP4 with burned-in subtitles
-echo "Transcoding to MP4 with embedded captions using NVIDIA GPU (this will take 2-3 minutes)..."
-ffmpeg -i "$VIDEO_PATH" \
-    -vf "subtitles=$SRT_PATH" \
-    -c:v h264_nvenc -preset fast -rc:v vbr -cq:v 23 \
-    -c:a aac -b:a 128k \
-    -movflags +faststart \
-    -y \
-    "$MP4_PATH"
 
 if [ ! -f "$MP4_PATH" ]; then
     echo "ERROR: Transcoding failed, MP4 not created"
