@@ -65,13 +65,18 @@ fi
 
 
 
+
 # Debug: Show the SRT path and check if it exists
 echo "SRT_PATH: $SRT_PATH"
 ls -l "$SRT_PATH" || echo "SRT file not found at: $SRT_PATH"
 
-# Pass the original, unredacted SRT path to ffmpeg
+# Escape SRT path for ffmpeg filter (double quotes, escape backslashes and double quotes)
+SRT_FILTER_PATH="${SRT_PATH//\\/\\\\}"
+SRT_FILTER_PATH="${SRT_FILTER_PATH//\"/\\\"}"
+
+# Use double quotes for the subtitles filter argument
 ffmpeg -i "$VIDEO_PATH" \
-    -vf "subtitles='${SRT_PATH}'" \
+    -vf "subtitles=\"${SRT_FILTER_PATH}\"" \
     $VIDEO_CODEC \
     -c:a aac -b:a 128k \
     -movflags +faststart \
