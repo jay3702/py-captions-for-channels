@@ -61,47 +61,7 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                         mpg_path,
                     )
                     shutil.copy2(orig_path, mpg_path)
-                else:
-                    # 2. If .orig does not exist, check for burned-in captions
-                    # Use ffprobe to check for subtitle streams
-                    try:
-                        ffprobe_cmd = [
-                            "ffprobe",
-                            "-v",
-                            "error",
-                            "-select_streams",
-                            "s",
-                            "-show_entries",
-                            "stream=index",
-                            "-of",
-                            "csv=p=0",
-                            mpg_path,
-                        ]
-                        result = subprocess.run(
-                            ffprobe_cmd, capture_output=True, text=True
-                        )
-                        has_subs = bool(result.stdout.strip())
-                    except Exception as e:
-                        LOG.error("ffprobe failed: %s", e)
-                        has_subs = False
-                    if not has_subs:
-                        # No subtitle stream, likely burned-in
-                        LOG.error(
-                            "Cannot reprocess: %s appears to have burned-in captions "
-                            "(no subtitle stream)",
-                            mpg_path,
-                        )
-                        tracker.complete_execution(
-                            job_id,
-                            success=False,
-                            elapsed_seconds=0,
-                            error=(
-                                "File appears to have burned-in captions "
-                                "(no subtitle stream)"
-                            ),
-                        )
-                        state.clear_reprocess_request(path)
-                        continue
+                # If .orig does not exist, proceed with current .mpg (no subtitle check)
 
                 # Create a minimal event from the path
                 filename = path.split("/")[-1]
