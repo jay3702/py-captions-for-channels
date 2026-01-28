@@ -263,6 +263,7 @@ class Pipeline:
 
             try:
                 # Execute command and capture output (cancel-aware)
+                LOG.debug("About to execute command: %s", cmd)
                 proc = subprocess.Popen(
                     cmd,
                     shell=True,
@@ -333,6 +334,12 @@ class Pipeline:
                         event.path,
                         proc.returncode,
                     )
+                    LOG.error("Command attempted: %s", cmd)
+                    if proc.returncode == 126:
+                        LOG.error(
+                            "Exit code 126: Permission denied or not executable. Check permissions and shebang for: %s",
+                            cmd,
+                        )
                     if stderr:
                         LOG.error("stderr: %s", stderr[:500])
                     return PipelineResult(
@@ -386,6 +393,7 @@ class Pipeline:
             except Exception as e:
                 elapsed = time.time() - start_time
                 LOG.error("Exception running caption pipeline: %s", e)
+                LOG.error("Command attempted: %s", cmd)
                 return PipelineResult(
                     success=False,
                     returncode=-1,
