@@ -23,7 +23,7 @@ VIDEO_DIR="$(dirname "$VIDEO_PATH")"
 VIDEO_BASE="$(basename "$VIDEO_PATH" .mpg)"
 
 SRT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.srt"
-TMP_PATH="${VIDEO_PATH}.tmp"
+TMP_PATH="${VIDEO_DIR}/${VIDEO_BASE}.mp4"
 ORIG_PATH="${VIDEO_PATH}.orig"
 
 WHISPER_MODEL="${WHISPER_MODEL:-medium}"
@@ -96,7 +96,7 @@ ffmpeg -i "$VIDEO_PATH" -i "$SRT_PATH" \
   -c:a copy \
   -c:s mov_text \
   -metadata:s:s:0 language=eng \
-  "$TMP_PATH"
+    "$TMP_PATH" 
 
 echo "Remux complete: $TMP_PATH (size: $(du -h "$TMP_PATH" | cut -f1))"
 
@@ -116,5 +116,7 @@ echo "Replacing original with captioned file..."
 mv "$TMP_PATH" "$VIDEO_PATH"
 
 echo "Complete!"
+echo "New file with embedded subtitle stream: $VIDEO_PATH"
+echo "Caption file: $SRT_PATH"
 echo "New file with embedded subtitle stream: $VIDEO_PATH"
 echo "Caption file: $SRT_PATH"
