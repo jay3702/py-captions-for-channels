@@ -111,7 +111,8 @@ else
     echo "Original deleted"
 fi
 
-# Step 4: Atomically replace with new file
+
+# Step 4: Atomically replace with new file, renaming .mp4 to .mpg to match input
 echo "Replacing original with captioned file..."
 mv "$TMP_PATH" "$VIDEO_PATH"
 
