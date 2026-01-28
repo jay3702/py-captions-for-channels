@@ -470,13 +470,22 @@ async def add_to_reprocess_queue(request: Request) -> dict:
         # Optionally trigger reprocess queue immediately (if running in main process)
         try:
             from py_captions_for_channels import watcher
+            from py_captions_for_channels.pipeline import Pipeline
+            from py_captions_for_channels.parser import Parser
+            from py_captions_for_channels.channels_api import ChannelsAPI
+            from py_captions_for_channels.config import CAPTION_COMMAND, DRY_RUN, CHANNELS_API_URL
             import asyncio
+
+            # Initialize required objects
+            pipeline = Pipeline(CAPTION_COMMAND, dry_run=DRY_RUN)
+            parser = Parser()
+            api = ChannelsAPI(CHANNELS_API_URL)
 
             # Fire and forget (non-blocking)
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 loop.create_task(
-                    watcher.process_reprocess_queue(state_backend, None, None, None)
+                    watcher.process_reprocess_queue(state_backend, pipeline, api, parser)
                 )
         except Exception as e:
             LOG.warning(f"Could not auto-trigger reprocess queue: {e}")
