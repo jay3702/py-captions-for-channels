@@ -81,15 +81,22 @@ echo "Remuxing video and replacing subtitle stream..."
 #     -y \
 #     "$TMP_PATH"
 
-ffmpeg -i "$VIDEO_PATH" -i "$SRT_PATH" \
-    -map 0:v -map 0:a -map 1:0 \
-    -c copy \
-    -c:s mov_text \
-    -metadata:s:s:0 language=eng \
-    -f mpegts \
-    -y \
-    "$TMP_PATH"
+# ffmpeg -i "$VIDEO_PATH" -i "$SRT_PATH" \
+#     -map 0:v -map 0:a -map 1:0 \
+#     -c copy \
+#     -c:s mov_text \
+#     -metadata:s:s:0 language=eng \
+#     -f mpegts \
+#     -y \
+#     "$TMP_PATH"
 
+ffmpeg -i "$VIDEO_PATH" -i "$SRT_PATH" \
+  -map 0:v -map 0:a -map 1:0 \
+  -c:v h264_nvenc -preset fast \
+  -c:a copy \
+  -c:s mov_text \
+  -metadata:s:s:0 language=eng \
+  "$TMP_PATH"
 
 echo "Remux complete: $TMP_PATH (size: $(du -h "$TMP_PATH" | cut -f1))"
 
