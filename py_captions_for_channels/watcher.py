@@ -3,7 +3,6 @@ import logging
 from datetime import datetime, timezone
 
 import shutil
-import subprocess
 import os
 
 from .logging_config import set_job_id
