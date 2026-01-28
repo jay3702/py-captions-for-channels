@@ -95,7 +95,10 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                             job_id,
                             success=False,
                             elapsed_seconds=0,
-                            error="File appears to have burned-in captions (no subtitle stream)",
+                            error=(
+                                "File appears to have burned-in captions "
+                                "(no subtitle stream)"
+                            ),
                         )
                         state.clear_reprocess_request(path)
                         continue
