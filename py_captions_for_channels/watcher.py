@@ -2,6 +2,10 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+import shutil
+import subprocess
+import os
+
 from .logging_config import set_job_id
 from .channels_api import ChannelsAPI
 from .parser import Parser
@@ -47,14 +51,14 @@ async def process_reprocess_queue(state, pipeline, api, parser):
 
             try:
                 LOG.info("Reprocessing: %s", path)
-                import shutil, subprocess, os
-
                 mpg_path = path
                 orig_path = path + ".orig"
                 # 1. If .orig exists, restore it
                 if os.path.exists(orig_path):
                     LOG.info(
-                        "Restoring original from .orig: %s -> %s", orig_path, mpg_path
+                        "Restoring original from .orig: %s -> %s",
+                        orig_path,
+                        mpg_path,
                     )
                     shutil.copy2(orig_path, mpg_path)
                 else:
@@ -83,7 +87,8 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                     if not has_subs:
                         # No subtitle stream, likely burned-in
                         LOG.error(
-                            "Cannot reprocess: %s appears to have burned-in captions (no subtitle stream)",
+                            "Cannot reprocess: %s appears to have burned-in captions "
+                            "(no subtitle stream)",
                             mpg_path,
                         )
                         tracker.complete_execution(
