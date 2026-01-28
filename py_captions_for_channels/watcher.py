@@ -47,57 +47,87 @@ async def process_reprocess_queue(state, pipeline, api, parser):
 
             try:
                 LOG.info("Reprocessing: %s", path)
-                try:
-                    # Create a minimal event from the path
-                    # Use the filename as title for logging
-                    filename = path.split("/")[-1]
-                    title = f"Reprocess: {filename}"
-                    event = Parser().from_channelwatch(
-                        type(
-                            "PartialEvent",
-                            (),
-                            {
-                                "timestamp": datetime.now(timezone.utc),
-                                "title": filename,
-                                "start_time": datetime.now(timezone.utc),
-                            },
-                        )(),
-                        path,
-                    )
-
-                    # Start tracking execution
-                    existing = tracker.get_execution(job_id)
-                    if existing and existing.get("status") in ("running", "canceling"):
-                        LOG.info("Reprocess already running: %s", path)
+                import shutil, subprocess, os
+                mpg_path = path
+                orig_path = path + ".orig"
+                # 1. If .orig exists, restore it
+                if os.path.exists(orig_path):
+                    LOG.info("Restoring original from .orig: %s -> %s", orig_path, mpg_path)
+                    shutil.copy2(orig_path, mpg_path)
+                else:
+                    # 2. If .orig does not exist, check for burned-in captions
+                    # Use ffprobe to check for subtitle streams
+                    try:
+                        ffprobe_cmd = [
+                            "ffprobe", "-v", "error", "-select_streams", "s",
+                            "-show_entries", "stream=index", "-of", "csv=p=0", mpg_path
+                        ]
+                        result = subprocess.run(ffprobe_cmd, capture_output=True, text=True)
+                        has_subs = bool(result.stdout.strip())
+                    except Exception as e:
+                        LOG.error("ffprobe failed: %s", e)
+                        has_subs = False
+                    if not has_subs:
+                        # No subtitle stream, likely burned-in
+                        LOG.error("Cannot reprocess: %s appears to have burned-in captions (no subtitle stream)", mpg_path)
+                        tracker.complete_execution(
+                            job_id,
+                            success=False,
+                            elapsed_seconds=0,
+                            error="File appears to have burned-in captions (no subtitle stream)",
+                        )
+                        state.clear_reprocess_request(path)
                         continue
 
-                    exec_id = tracker.start_execution(
-                        job_id,
-                        title,
-                        path,
-                        event.timestamp.isoformat(),
-                        status="running",
-                        kind="reprocess",
-                    )
+                # Create a minimal event from the path
+                filename = path.split("/")[-1]
+                title = f"Reprocess: {filename}"
+                event = Parser().from_channelwatch(
+                    type(
+                        "PartialEvent",
+                        (),
+                        {
+                            "timestamp": datetime.now(timezone.utc),
+                            "title": filename,
+                            "start_time": datetime.now(timezone.utc),
+                        },
+                    )(),
+                    path,
+                )
 
-                    result = pipeline.run(
-                        event,
-                        job_id_override=job_id,
-                        cancel_check=lambda: tracker.is_cancel_requested(job_id),
-                    )
+                # Start tracking execution
+                existing = tracker.get_execution(job_id)
+                if existing and existing.get("status") in ("running", "canceling"):
+                    LOG.info("Reprocess already running: %s", path)
+                    continue
 
-                    # Add pipeline output to execution logs
-                    if result.stdout:
-                        for line in result.stdout.strip().split("\n"):
-                            if line.strip():
-                                tracker.add_log(job_id, f"[stdout] {line}")
-                    if result.stderr:
-                        for line in result.stderr.strip().split("\n"):
-                            if line.strip():
-                                tracker.add_log(job_id, f"[stderr] {line}")
+                exec_id = tracker.start_execution(
+                    job_id,
+                    title,
+                    path,
+                    event.timestamp.isoformat(),
+                    status="running",
+                    kind="reprocess",
+                )
 
-                    # Complete execution tracking
-                    tracker.complete_execution(
+                result = pipeline.run(
+                    event,
+                    job_id_override=job_id,
+                    cancel_check=lambda: tracker.is_cancel_requested(job_id),
+                )
+
+                # Add pipeline output to execution logs
+                if result.stdout:
+                    for line in result.stdout.strip().split("\n"):
+                        if line.strip():
+                            tracker.add_log(job_id, f"[stdout] {line}")
+                if result.stderr:
+                    for line in result.stderr.strip().split("\n"):
+                        if line.strip():
+                            tracker.add_log(job_id, f"[stderr] {line}")
+
+                # Complete execution tracking
+                tracker.complete_execution(
                         job_id,
                         success=result.success,
                         elapsed_seconds=result.elapsed_seconds,

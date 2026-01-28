@@ -467,6 +467,17 @@ async def add_to_reprocess_queue(request: Request) -> dict:
                     kind="reprocess",
                 )
 
+        # Optionally trigger reprocess queue immediately (if running in main process)
+        try:
+            from py_captions_for_channels import watcher
+            import asyncio
+            # Fire and forget (non-blocking)
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(watcher.process_reprocess_queue(state_backend, None, None, None))
+        except Exception as e:
+            LOG.warning(f"Could not auto-trigger reprocess queue: {e}")
+
         return {
             "added": len(paths),
             "timestamp": datetime.now().isoformat(),
