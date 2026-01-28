@@ -337,7 +337,8 @@ class Pipeline:
                     LOG.error("Command attempted: %s", cmd)
                     if proc.returncode == 126:
                         LOG.error(
-                            "Exit code 126: Permission denied or not executable. Check permissions and shebang for: %s",
+                            "Exit code 126: Permission denied or not executable. "
+                            "Check permissions and shebang for: %s",
                             cmd,
                         )
                     if stderr:
