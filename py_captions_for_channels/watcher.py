@@ -128,35 +128,35 @@ async def process_reprocess_queue(state, pipeline, api, parser):
 
                 # Complete execution tracking
                 tracker.complete_execution(
-                        job_id,
-                        success=result.success,
-                        elapsed_seconds=result.elapsed_seconds,
-                        error=(
-                            None
-                            if result.success
-                            else (
-                                "Canceled"
-                                if result.returncode == -2
-                                else f"Exit code {result.returncode}"
-                            )
-                        ),
-                    )
+                    job_id,
+                    success=result.success,
+                    elapsed_seconds=result.elapsed_seconds,
+                    error=(
+                        None
+                        if result.success
+                        else (
+                            "Canceled"
+                            if result.returncode == -2
+                            else f"Exit code {result.returncode}"
+                        )
+                    ),
+                )
 
-                    if result.success:
-                        LOG.info("Reprocessing succeeded: %s", path)
-                        pipeline._log_job_statistics(result, job_id)
-                        state.clear_reprocess_request(path)
-                    else:
-                        LOG.error(
-                            "Reprocessing failed: %s (exit code %d)",
-                            path,
-                            result.returncode,
-                        )
-                        state.clear_reprocess_request(path)
-                        LOG.warning(
-                            "Removed failed reprocess request after retry: %s",
-                            path,
-                        )
+                if result.success:
+                    LOG.info("Reprocessing succeeded: %s", path)
+                    pipeline._log_job_statistics(result, job_id)
+                    state.clear_reprocess_request(path)
+                else:
+                    LOG.error(
+                        "Reprocessing failed: %s (exit code %d)",
+                        path,
+                        result.returncode,
+                    )
+                    state.clear_reprocess_request(path)
+                    LOG.warning(
+                        "Removed failed reprocess request after retry: %s",
+                        path,
+                    )
                 except Exception as e:
                     LOG.error(
                         "Error during reprocessing of %s: %s", path, e, exc_info=True
