@@ -48,28 +48,44 @@ async def process_reprocess_queue(state, pipeline, api, parser):
             try:
                 LOG.info("Reprocessing: %s", path)
                 import shutil, subprocess, os
+
                 mpg_path = path
                 orig_path = path + ".orig"
                 # 1. If .orig exists, restore it
                 if os.path.exists(orig_path):
-                    LOG.info("Restoring original from .orig: %s -> %s", orig_path, mpg_path)
+                    LOG.info(
+                        "Restoring original from .orig: %s -> %s", orig_path, mpg_path
+                    )
                     shutil.copy2(orig_path, mpg_path)
                 else:
                     # 2. If .orig does not exist, check for burned-in captions
                     # Use ffprobe to check for subtitle streams
                     try:
                         ffprobe_cmd = [
-                            "ffprobe", "-v", "error", "-select_streams", "s",
-                            "-show_entries", "stream=index", "-of", "csv=p=0", mpg_path
+                            "ffprobe",
+                            "-v",
+                            "error",
+                            "-select_streams",
+                            "s",
+                            "-show_entries",
+                            "stream=index",
+                            "-of",
+                            "csv=p=0",
+                            mpg_path,
                         ]
-                        result = subprocess.run(ffprobe_cmd, capture_output=True, text=True)
+                        result = subprocess.run(
+                            ffprobe_cmd, capture_output=True, text=True
+                        )
                         has_subs = bool(result.stdout.strip())
                     except Exception as e:
                         LOG.error("ffprobe failed: %s", e)
                         has_subs = False
                     if not has_subs:
                         # No subtitle stream, likely burned-in
-                        LOG.error("Cannot reprocess: %s appears to have burned-in captions (no subtitle stream)", mpg_path)
+                        LOG.error(
+                            "Cannot reprocess: %s appears to have burned-in captions (no subtitle stream)",
+                            mpg_path,
+                        )
                         tracker.complete_execution(
                             job_id,
                             success=False,
@@ -158,9 +174,7 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                         path,
                     )
             except Exception as e:
-                LOG.error(
-                    "Error during reprocessing of %s: %s", path, e, exc_info=True
-                )
+                LOG.error("Error during reprocessing of %s: %s", path, e, exc_info=True)
                 if exec_id:
                     tracker.complete_execution(
                         job_id, success=False, elapsed_seconds=0, error=str(e)
