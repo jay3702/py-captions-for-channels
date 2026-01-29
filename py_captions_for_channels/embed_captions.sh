@@ -16,7 +16,7 @@
 #   CLAMP_EPS_MS: epsilon margin in ms when clamping (default: 1)
 #
 # This script:
-# 1. Generates .srt captions with whisper (optional)
+# 1. Generates .srt captions with whisper
 # 2. Clamps SRT so subtitles never outlive A/V duration (Android/ExoPlayer reliability)
 # 3. Muxes into MP4 with mov_text subs + normalization flags
 # 4. Atomically swaps file so Channels keeps identity
@@ -24,12 +24,17 @@
 
 set -euo pipefail
 
-VIDEO_PATH="$1"
+VIDEO_PATH="${1:-}"
+if [ -z "$VIDEO_PATH" ]; then
+  echo "Usage: $0 /path/to/video.mpg"
+  exit 2
+fi
+
 VIDEO_DIR="$(dirname "$VIDEO_PATH")"
 VIDEO_BASE="$(basename "$VIDEO_PATH" .mpg)"
 
 SRT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.srt"
-# Use unique temp names to avoid collisions and make failures less destructive
+# Unique temp names to avoid collisions and make failures less destructive
 TMP_MP4_PATH="${VIDEO_DIR}/${VIDEO_BASE}.$$.mp4"
 TMP_SRT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.$$.clamped.srt"
 ORIG_PATH="${VIDEO_PATH}.orig"
@@ -59,25 +64,25 @@ echo "Keep original: $KEEP_ORIGINAL"
 echo "Skip caption generation: $SKIP_CAPTION_GENERATION"
 
 if [ "$SKIP_CAPTION_GENERATION" != "true" ]; then
-    mkdir -p "$WHISPER_MODEL_DIR"
-    echo "Generating captions..."
-    if ! whisper --model "$WHISPER_MODEL" \
-                 --model_dir "$WHISPER_MODEL_DIR" \
-                 --language English \
-                 --output_format srt \
-                 --output_dir "$VIDEO_DIR" \
-                 $WHISPER_ARGS \
-                 "$VIDEO_PATH"; then
-        echo "ERROR: Whisper failed for $VIDEO_PATH"
-        exit 1
-    fi
+  mkdir -p "$WHISPER_MODEL_DIR"
+  echo "Generating captions..."
+  if ! whisper --model "$WHISPER_MODEL" \
+               --model_dir "$WHISPER_MODEL_DIR" \
+               --language English \
+               --output_format srt \
+               --output_dir "$VIDEO_DIR" \
+               $WHISPER_ARGS \
+               "$VIDEO_PATH"; then
+    echo "ERROR: Whisper failed for $VIDEO_PATH"
+    exit 1
+  fi
 else
-    echo "Skipping caption generation as requested."
+  echo "Skipping caption generation as requested."
 fi
 
 if [ ! -f "$SRT_PATH" ]; then
-    echo "ERROR: Caption file not created: $SRT_PATH"
-    exit 1
+  echo "ERROR: Caption file not created: $SRT_PATH"
+  exit 1
 fi
 
 echo "SRT_PATH: $SRT_PATH"
@@ -87,9 +92,9 @@ ls -l "$SRT_PATH"
 
 echo "Computing media duration (max(video,audio))..."
 V_DUR="$("$FFPROBE" -v error -select_streams v:0 -show_entries stream=duration \
-  -of default=nw=1:nk=1 "$VIDEO_PATH" || true)"
+  -of default=nw=1:nk=1 "$VIDEO_PATH" | tr -d '\r' | tr -d ' ')"
 A_DUR="$("$FFPROBE" -v error -select_streams a:0 -show_entries stream=duration \
-  -of default=nw=1:nk=1 "$VIDEO_PATH" || true)"
+  -of default=nw=1:nk=1 "$VIDEO_PATH" | tr -d '\r' | tr -d ' ')"
 
 # Some sources can produce N/A; treat missing audio as 0
 if [ -z "${V_DUR}" ] || [ "${V_DUR}" = "N/A" ]; then
@@ -101,7 +106,7 @@ if [ -z "${A_DUR}" ] || [ "${A_DUR}" = "N/A" ]; then
 fi
 
 MEDIA_END="$(
-python3 - <<'PY'
+V_DUR="$V_DUR" A_DUR="$A_DUR" python3 - <<'PY'
 import os
 v=float(os.environ["V_DUR"])
 a=float(os.environ["A_DUR"])
@@ -159,7 +164,7 @@ for b in blocks:
     tline_i = 1 if re.fullmatch(r'\d+', lines[0].strip()) else 0
     m = time_re.match(lines[tline_i].strip())
     if not m:
-        # pass through unknown blocks? safer to drop to avoid weirdness
+        # Safer to drop unknown blocks than pass through potentially invalid timing
         continue
 
     start = to_sec(m.group(1))
@@ -188,22 +193,15 @@ sys.stdout.write("\n".join(out).rstrip() + "\n")
 sys.stderr.write(f"Clamped SRT: dropped={dropped}, clamped={clamped}, end={end}, eps={eps}\n")
 PY
 
-# Show clamp summary (stderr from python will appear here)
 echo "Clamped SRT written: $TMP_SRT_PATH"
 ls -l "$TMP_SRT_PATH"
-
-# Optional: verify last subtitle end time vs media end (for confidence)
-echo "Verifying last subtitle packet end time..."
-LAST_LINE="$("$FFPROBE" -v error -select_streams s:0 \
-  -show_entries packet=pts_time,duration_time -of csv=p=0 "$TMP_MP4_PATH" 2>/dev/null | tail -n 1 || true)"
-# We can't probe TMP_MP4_PATH yet (not created). Instead, probe the clamped SRT after mux, below.
 
 # --- Step 3: Mux with normalization flags ---
 
 if [ -e /dev/nvidia0 ]; then
-    echo "GPU detected (NVENC expected to be usable at runtime)."
+  echo "GPU detected (NVENC expected to be usable at runtime)."
 else
-    echo "No GPU detected (NVENC may fail if used; current command still requests NVENC)."
+  echo "No GPU detected (NVENC may fail if used; current command still requests NVENC)."
 fi
 
 echo "Muxing video + audio + clamped subtitles..."
@@ -235,13 +233,13 @@ echo "Last subtitle packets (tail):"
 # --- Step 4: Swap-in while preserving Channels filename identity ---
 
 if [ "$KEEP_ORIGINAL" = "true" ]; then
-    echo "Archiving original..."
-    mv "$VIDEO_PATH" "$ORIG_PATH"
-    echo "Original archived as: $ORIG_PATH"
+  echo "Archiving original..."
+  mv "$VIDEO_PATH" "$ORIG_PATH"
+  echo "Original archived as: $ORIG_PATH"
 else
-    echo "Deleting original (KEEP_ORIGINAL=false)..."
-    rm -f "$VIDEO_PATH"
-    echo "Original deleted"
+  echo "Deleting original (KEEP_ORIGINAL=false)..."
+  rm -f "$VIDEO_PATH"
+  echo "Original deleted"
 fi
 
 echo "Replacing original with captioned file (renaming .mp4 back to .mpg)..."
