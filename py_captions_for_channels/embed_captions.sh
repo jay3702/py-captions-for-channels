@@ -91,10 +91,14 @@ ls -l "$SRT_PATH"
 # --- Step 2: Compute A/V end time and clamp SRT deterministically ---
 
 echo "Computing media duration (max(video,audio))..."
-V_DUR="$("$FFPROBE" -v error -select_streams v:0 -show_entries stream=duration \
-  -of default=nw=1:nk=1 "$VIDEO_PATH" | tr -d '\r' | tr -d ' ')"
-A_DUR="$("$FFPROBE" -v error -select_streams a:0 -show_entries stream=duration \
-  -of default=nw=1:nk=1 "$VIDEO_PATH" | tr -d '\r' | tr -d ' ')"
+
+V_DUR="$("$FFPROBE" -v error -select_streams v:0 \
+  -show_entries stream=duration -of default=nw=1:nk=1 "$VIDEO_PATH" \
+  | tr -d '\r' | sed -n '1p')"
+
+A_DUR="$("$FFPROBE" -v error -select_streams a:0 \
+  -show_entries stream=duration -of default=nw=1:nk=1 "$VIDEO_PATH" \
+  | tr -d '\r' | sed -n '1p')"
 
 # Some sources can produce N/A; treat missing audio as 0
 if [ -z "${V_DUR}" ] || [ "${V_DUR}" = "N/A" ]; then
