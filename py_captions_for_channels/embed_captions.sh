@@ -91,14 +91,13 @@ ls -l "$SRT_PATH"
 # --- Step 2: Compute A/V end time and clamp SRT deterministically ---
 
 echo "Computing media duration (max(video,audio))..."
-
 V_DUR="$("$FFPROBE" -v error -select_streams v:0 \
   -show_entries stream=duration -of default=nw=1:nk=1 "$VIDEO_PATH" \
-  | tr -d '\r' | sed -n '1p')"
+  | tr -d '\r' | sed -n '1p' | xargs || true)"
 
 A_DUR="$("$FFPROBE" -v error -select_streams a:0 \
   -show_entries stream=duration -of default=nw=1:nk=1 "$VIDEO_PATH" \
-  | tr -d '\r' | sed -n '1p')"
+  | tr -d '\r' | sed -n '1p' | xargs || true)"
 
 # Some sources can produce N/A; treat missing audio as 0
 if [ -z "${V_DUR}" ] || [ "${V_DUR}" = "N/A" ]; then
@@ -123,11 +122,17 @@ echo "Audio duration: $A_DUR"
 echo "Clamp END (max A/V): $MEDIA_END"
 
 echo "Clamping SRT to media duration..."
-END="$MEDIA_END" CLAMP_EPS_MS="$CLAMP_EPS_MS" python3 - <<'PY' < "$SRT_PATH" > "$TMP_SRT_PATH"
+END="$MEDIA_END" CLAMP_EPS_MS="$CLAMP_EPS_MS" \
+python3 - "$SRT_PATH" > "$TMP_SRT_PATH" <<'PY'
 import os, re, sys
 
+if len(sys.argv) != 2:
+    sys.exit("Usage: clamp.py input.srt")
+
+srt_path = sys.argv[1]
+
 end = float(os.environ["END"])
-eps_ms = int(os.environ.get("CLAMP_EPS_MS","1"))
+eps_ms = int(os.environ.get("CLAMP_EPS_MS", "1"))
 eps = eps_ms / 1000.0
 
 def to_sec(ts: str) -> float:
@@ -140,7 +145,6 @@ def to_ts(x: float) -> str:
     h = int(x//3600); x -= h*3600
     m = int(x//60);   x -= m*60
     s = int(x);       ms = int(round((x - s)*1000))
-    # carry
     if ms == 1000:
         s += 1; ms = 0
     if s == 60:
@@ -149,31 +153,32 @@ def to_ts(x: float) -> str:
         h += 1; m = 0
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
-src = sys.stdin.read().replace('\r\n','\n')
+with open(srt_path, "r", encoding="utf-8") as f:
+    src = f.read().replace('\r\n', '\n')
+
 blocks = re.split(r'\n\s*\n', src.strip(), flags=re.M)
 out = []
 idx = 1
-
-time_re = re.compile(r'(\d\d:\d\d:\d\d,\d\d\d)\s*-->\s*(\d\d:\d\d:\d\d,\d\d\d)(.*)')
-
 dropped = 0
 clamped = 0
+
+time_re = re.compile(
+    r'(\d\d:\d\d:\d\d,\d\d\d)\s*-->\s*(\d\d:\d\d:\d\d,\d\d\d)(.*)'
+)
 
 for b in blocks:
     lines = b.splitlines()
     if len(lines) < 2:
         continue
 
-    # Optional numeric index line
-    tline_i = 1 if re.fullmatch(r'\d+', lines[0].strip()) else 0
+    tline_i = 1 if lines[0].strip().isdigit() else 0
     m = time_re.match(lines[tline_i].strip())
     if not m:
-        # Safer to drop unknown blocks than pass through potentially invalid timing
         continue
 
     start = to_sec(m.group(1))
     stop  = to_sec(m.group(2))
-    tail  = m.group(3)  # keep any suffix (positioning, etc.)
+    tail  = m.group(3)
 
     if start >= end:
         dropped += 1
@@ -193,8 +198,8 @@ for b in blocks:
     out.append("")
     idx += 1
 
+sys.stderr.write(f"Clamped SRT: dropped={dropped}, clamped={clamped}, end={end}\n")
 sys.stdout.write("\n".join(out).rstrip() + "\n")
-sys.stderr.write(f"Clamped SRT: dropped={dropped}, clamped={clamped}, end={end}, eps={eps}\n")
 PY
 
 echo "Clamped SRT written: $TMP_SRT_PATH"
