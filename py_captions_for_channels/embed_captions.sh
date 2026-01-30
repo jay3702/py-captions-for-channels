@@ -6,30 +6,24 @@
 # Key behaviors:
 # - Preserves the first-seen original once as .mpg.orig (copy, never overwrite)
 # - Always processes from .mpg.orig when present (idempotent reprocessing)
-# - Uses a TWO-STEP pipeline for Android reliability:
+# - TWO-STEP pipeline for Android reliability:
 #     1) Encode A/V only (NVENC + audio copy) -> av_only temp mp4
 #     2) Probe encoded A/V duration, clamp SRT to that duration
 #     3) Mux subtitles into av_only with -c copy (no re-encode) -> final temp mp4
 # - Writes temp outputs in the SAME DIRECTORY as the target to allow atomic mv swap
-# - Atomically replaces the target .mpg (prevents partial-write "corrupted" errors)
+# - Atomically replaces the target .mpg
 #
 # Environment variables:
-#   WHISPER_MODEL: whisper model size (default: medium)
-#   WHISPER_MODEL_DIR: cache dir for whisper models (default: /app/data/whisper)
-#   WHISPER_ARGS: extra args to pass to whisper
-#   SKIP_CAPTION_GENERATION: true to skip whisper step
+#   WHISPER_MODEL (default: medium)
+#   WHISPER_MODEL_DIR (default: /app/data/whisper)
+#   WHISPER_ARGS (default: empty)
+#   SKIP_CAPTION_GENERATION (default: false)
 #
 # Optional overrides:
-#   FFMPEG: path to ffmpeg (default: ffmpeg)
-#   FFPROBE: path to ffprobe (default: ffprobe)
-#   CLAMP_EPS_MS: epsilon margin in ms when clamping (default: 1)
-#   KEEP_ORIG: true/false (default: true) — if false, removes .orig after successful run (not recommended)
-#
-# Exit codes:
-#   2 usage error
-#   3 input missing
-#   4 ffprobe duration failure
-#   5 mux verification failure
+#   FFMPEG (default: ffmpeg)
+#   FFPROBE (default: ffprobe)
+#   CLAMP_EPS_MS (default: 1)
+#   KEEP_ORIG (default: true)  # if false, removes .orig after successful run (not recommended)
 
 set -euo pipefail
 
@@ -46,6 +40,7 @@ fi
 VIDEO_DIR="$(dirname "$VIDEO_PATH")"
 VIDEO_BASE="$(basename "$VIDEO_PATH" .mpg)"
 
+# We ALWAYS want captions at: <basename>.srt (no .mpg.srt nonsense)
 SRT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.srt"
 ORIG_PATH="${VIDEO_PATH}.orig"
 
@@ -59,9 +54,10 @@ FFPROBE="${FFPROBE:-ffprobe}"
 CLAMP_EPS_MS="${CLAMP_EPS_MS:-1}"
 KEEP_ORIG="${KEEP_ORIG:-true}"
 
-# Temp files are created IN THE TARGET DIRECTORY for atomic replacement.
 PID="$$"
 TS="$(date +%s)"
+
+# Temp files in same directory as target for atomic replace
 TMP_AV_PATH="${VIDEO_DIR}/${VIDEO_BASE}.tmp.${TS}.${PID}.av.mp4"
 TMP_SRT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.tmp.${TS}.${PID}.clamped.srt"
 TMP_OUT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.tmp.${TS}.${PID}.final.mp4"
@@ -88,10 +84,9 @@ else
   echo "Original already preserved: $ORIG_PATH"
 fi
 
-# Always process from the preserved original when available
+# Always process from preserved original
 INPUT_FOR_PROCESSING="$ORIG_PATH"
 if [ ! -f "$INPUT_FOR_PROCESSING" ]; then
-  # Fallback (shouldn't happen if cp succeeded)
   INPUT_FOR_PROCESSING="$VIDEO_PATH"
 fi
 echo "Input used for processing: $INPUT_FOR_PROCESSING"
@@ -110,6 +105,44 @@ if [ "$SKIP_CAPTION_GENERATION" != "true" ]; then
     echo "ERROR: Whisper failed for $INPUT_FOR_PROCESSING"
     exit 1
   fi
+
+  # Whisper names output based on input filename, which may be *.mpg.orig -> *.mpg.orig.srt
+  # Normalize to $SRT_PATH (basename.srt) and remove the odd variant(s).
+  CANDIDATES=(
+    "${INPUT_FOR_PROCESSING}.srt"          # e.g. X.mpg.orig.srt
+    "${VIDEO_PATH}.srt"                   # e.g. X.mpg.srt (if whisper was run on X.mpg)
+    "${VIDEO_DIR}/${VIDEO_BASE}.mpg.srt"  # e.g. X.mpg.srt (alternate pattern)
+    "${SRT_PATH}"
+  )
+
+  FOUND=""
+  for c in "${CANDIDATES[@]}"; do
+    if [ -f "$c" ]; then
+      FOUND="$c"
+      break
+    fi
+  done
+
+  if [ -z "$FOUND" ]; then
+    echo "ERROR: Whisper did not produce an SRT we can find."
+    echo "Tried:"
+    printf '  %s\n' "${CANDIDATES[@]}"
+    exit 1
+  fi
+
+  if [ "$FOUND" != "$SRT_PATH" ]; then
+    echo "Normalizing Whisper output:"
+    echo "  from: $FOUND"
+    echo "  to:   $SRT_PATH"
+    mv -f "$FOUND" "$SRT_PATH"
+  fi
+
+  # Clean up any lingering variants so we only keep *.srt
+  for c in "${CANDIDATES[@]}"; do
+    if [ -f "$c" ] && [ "$c" != "$SRT_PATH" ]; then
+      rm -f "$c" 2>/dev/null || true
+    fi
+  done
 else
   echo "Skipping caption generation as requested."
 fi
@@ -257,12 +290,11 @@ echo "Step 3: Muxing clamped subs into A/V -> $TMP_OUT_PATH"
   -movflags +faststart \
   "$TMP_OUT_PATH"
 
-# --- Verification: ensure subs do not outlive A/V in the FINAL output ---
+# --- Verification: ensure subs do not outlive A/V in FINAL output ---
 echo "Verifying final durations..."
 FV="$("$FFPROBE" -v error -select_streams v:0 -show_entries stream=duration -of default=nw=1:nk=1 "$TMP_OUT_PATH" | sed -n '1p' | xargs || true)"
 FA="$("$FFPROBE" -v error -select_streams a:0 -show_entries stream=duration -of default=nw=1:nk=1 "$TMP_OUT_PATH" | sed -n '1p' | xargs || true)"
 FS="$("$FFPROBE" -v error -select_streams s:0 -show_entries stream=duration -of default=nw=1:nk=1 "$TMP_OUT_PATH" | sed -n '1p' | xargs || true)"
-
 if [ -z "$FV" ] || [ "$FV" = "N/A" ]; then FV="0"; fi
 if [ -z "$FA" ] || [ "$FA" = "N/A" ]; then FA="0"; fi
 if [ -z "$FS" ] || [ "$FS" = "N/A" ]; then FS="0"; fi
@@ -284,7 +316,6 @@ MAX_AV="$MAX_AV" FS="$FS" python3 - <<'PY'
 import os
 max_av=float(os.environ["MAX_AV"])
 fs=float(os.environ["FS"])
-# allow 2ms tolerance
 print("yes" if fs <= max_av + 0.002 else "no")
 PY
 )"
@@ -299,10 +330,8 @@ fi
 
 # --- Atomic replace of the target .mpg ---
 echo "Atomically replacing target file..."
-# Write is complete already; mv within same directory is atomic.
 mv -f "$TMP_OUT_PATH" "$VIDEO_PATH"
 
-# Optionally remove temps and clamped file, keep original SRT
 rm -f "$TMP_AV_PATH" "$TMP_SRT_PATH" 2>/dev/null || true
 
 if [ "$KEEP_ORIG" = "false" ]; then
@@ -310,7 +339,6 @@ if [ "$KEEP_ORIG" = "false" ]; then
   rm -f "$ORIG_PATH" 2>/dev/null || true
 fi
 
-# Success: prevent cleanup trap from deleting anything we still want
 trap - EXIT
 
 echo "Complete!"
