@@ -67,7 +67,10 @@ LOG = logging.getLogger(__name__)
 
 # --- Service Health Check Helper ---
 def check_service_health(url: str):
-    """Check if a service at the given URL is reachable. Returns (healthy: bool, message: str)."""
+    """
+    Check if a service at the given URL is reachable.
+    Returns (healthy: bool, message: str).
+    """
     import requests
 
     try:
