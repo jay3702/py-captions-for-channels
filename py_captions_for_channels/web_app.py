@@ -127,9 +127,10 @@ def load_settings():
         ),
         "whitelist": "",
     }
-    # Read whitelist
+    # Always read whitelist from project root whitelist.txt
+    whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
     try:
-        with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
+        with open(whitelist_path, "r", encoding="utf-8") as f:
             settings["whitelist"] = f.read()
     except Exception:
         settings["whitelist"] = ""
@@ -156,7 +157,8 @@ def save_settings(settings: dict):
         f.writelines(env_lines)
     # Whitelist is managed separately
     if "whitelist" in settings:
-        with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
+        whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
+        with open(whitelist_path, "w", encoding="utf-8") as f:
             f.write(settings["whitelist"])
 
 
