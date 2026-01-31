@@ -1,3 +1,20 @@
+#!/usr/bin/env python3
+"""
+embed_captions.py
+Safely replace embedded/delayed captions in Channels DVR recordings with externally
+generated SRT captions.
+Preserves Channels’ database identity and Android compatibility.
+"""
+
+import os
+import sys
+import time
+import shutil
+import subprocess
+import logging
+from pathlib import Path
+
+
 def probe_muxed_durations(muxed_path):
     """Return (video_duration, audio_duration, subtitle_duration) for muxed file."""
 
@@ -26,24 +43,11 @@ def probe_muxed_durations(muxed_path):
     a_dur = get_stream_duration("a:0")
     s_dur = get_stream_duration("s:0")
     log.info(
-        f"Muxed durations: video={v_dur:.3f}s, audio={a_dur:.3f}s, subtitle={s_dur:.3f}s"
+        f"Muxed durations: video={v_dur:.3f}s, audio={a_dur:.3f}s, "
+        f"subtitle={s_dur:.3f}s"
     )
     return v_dur, a_dur, s_dur
 
-
-#!/usr/bin/env python3
-"""
-embed_captions.py
-Safely replace embedded/delayed captions in Channels DVR recordings with externally generated SRT captions.
-Preserves Channels’ database identity and Android compatibility.
-"""
-import os
-import sys
-import time
-import shutil
-import subprocess
-import logging
-from pathlib import Path
 
 # --- CONFIGURABLE ---
 STABLE_INTERVAL = 10  # seconds between file size checks
@@ -63,7 +67,7 @@ def wait_for_file_stability(
 ):
     """
     Wait until file size is stable for N consecutive checks, or abort after timeout.
-    Logs size progression for debugging.
+    # Logs size progression for debugging.
     """
     log.info(f"Waiting for file stability: {path}")
     last_size = -1
@@ -89,7 +93,8 @@ def wait_for_file_stability(
         elapsed += interval
         if elapsed >= timeout:
             log.error(
-                f"File did not stabilize after {timeout} seconds. Last size: {size}. Aborting."
+                f"File did not stabilize after {timeout} seconds. "
+                f"Last size: {size}. Aborting."
             )
             sys.exit(1)
 
@@ -445,7 +450,8 @@ def main():
         log.info("Caption embedding complete.")
     else:
         log.error(
-            f"Verification failed: subtitle_duration={s_dur:.3f}s > max_av+0.050={max_av+0.050:.3f}s. Not replacing target file."
+            f"Verification failed: subtitle_duration={s_dur:.3f}s > "
+            f"max_av+0.050={max_av+0.050:.3f}s. Not replacing target file."
         )
         log.error(f"Temp files kept for inspection: {temp_av}, {temp_muxed}")
         sys.exit(1)
