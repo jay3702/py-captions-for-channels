@@ -1,5 +1,5 @@
 import asyncio
-from .logging.structured_logger import get_logger, setup_logging
+from .logging.structured_logger import get_logger
 from datetime import datetime, timezone
 
 import shutil
@@ -32,7 +32,7 @@ from .logging_config import set_verbosity, get_verbosity
 import json
 from pathlib import Path
 
-setup_logging()
+LOG = get_logger("watcher")
 LOG = get_logger("watcher")
 
 
