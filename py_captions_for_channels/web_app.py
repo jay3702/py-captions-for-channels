@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 import logging
+import threading
 from .config import (
     STATE_FILE,
     DRY_RUN,
@@ -94,8 +95,6 @@ def check_service_health(url: str):
         return False, f"Error: {str(e)}"
 
 
-import threading
-
 SETTINGS_PATH = BASE_DIR / "data" / "settings.json"
 SETTINGS_LOCK = threading.Lock()
 
@@ -144,12 +143,16 @@ def save_settings(settings: dict):
         json.dump(settings, f, indent=2)
     # Also update .env as backup
     env_path = Path(__file__).parent.parent / ".env"
+    log_verbosity = settings.get('log_verbosity', 'NORMAL').upper()
+    transcode_firetv = (
+        'true' if settings.get('transcode_for_firetv') else 'false'
+    )
     env_lines = [
         f"DRY_RUN={'true' if settings.get('dry_run') else 'false'}\n",
         f"KEEP_ORIGINAL={'true' if settings.get('keep_original') else 'false'}\n",
-        f"TRANSCODE_FOR_FIRETV={'true' if settings.get('transcode_for_firetv') else 'false'}\n",
-        f"LOG_VERBOSITY={settings.get('log_verbosity','NORMAL').upper()}\n",
-        f"WHISPER_MODEL={settings.get('whisper_model','medium')}\n",
+        f"TRANSCODE_FOR_FIRETV={transcode_firetv}\n",
+        f"LOG_VERBOSITY={log_verbosity}\n",
+        f"WHISPER_MODEL={settings.get('whisper_model', 'medium')}\n",
     ]
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(env_lines)
