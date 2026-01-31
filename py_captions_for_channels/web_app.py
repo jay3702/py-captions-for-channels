@@ -143,10 +143,8 @@ def save_settings(settings: dict):
         json.dump(settings, f, indent=2)
     # Also update .env as backup
     env_path = Path(__file__).parent.parent / ".env"
-    log_verbosity = settings.get('log_verbosity', 'NORMAL').upper()
-    transcode_firetv = (
-        'true' if settings.get('transcode_for_firetv') else 'false'
-    )
+    log_verbosity = settings.get("log_verbosity", "NORMAL").upper()
+    transcode_firetv = "true" if settings.get("transcode_for_firetv") else "false"
     env_lines = [
         f"DRY_RUN={'true' if settings.get('dry_run') else 'false'}\n",
         f"KEEP_ORIGINAL={'true' if settings.get('keep_original') else 'false'}\n",
