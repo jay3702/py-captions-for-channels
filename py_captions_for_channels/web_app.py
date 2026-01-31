@@ -7,9 +7,11 @@ try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
     ZoneInfo = None
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Body
+from fastapi import FastAPI, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+import logging
 from .config import (
     STATE_FILE,
     DRY_RUN,
@@ -55,7 +57,9 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Templates
+
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+LOG = logging.getLogger(__name__)
 
 
 # --- Pipeline Settings API ---
@@ -135,9 +139,6 @@ async def set_settings(data: dict = Body(...)) -> dict:
         return {"ok": True}
     except Exception as e:
         return {"error": str(e)}
-    except Exception as e:
-        msg = str(e)[:50]
-        return (True, f"Health check skipped: {msg}")
 
 
 def _get_local_tz():
