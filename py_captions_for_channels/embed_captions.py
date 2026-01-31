@@ -1,10 +1,18 @@
 def probe_muxed_durations(muxed_path):
     """Return (video_duration, audio_duration, subtitle_duration) for muxed file."""
+
     def get_stream_duration(stream_type):
         cmd = [
-            "ffprobe", "-v", "error", "-select_streams", stream_type,
-            "-show_entries", "stream=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1", muxed_path
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            stream_type,
+            "-show_entries",
+            "stream=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            muxed_path,
         ]
         try:
             out = subprocess.check_output(cmd, text=True)
@@ -13,11 +21,16 @@ def probe_muxed_durations(muxed_path):
         except Exception as e:
             log.warning(f"ffprobe failed for {stream_type}: {e}")
             return 0.0
+
     v_dur = get_stream_duration("v:0")
     a_dur = get_stream_duration("a:0")
     s_dur = get_stream_duration("s:0")
-    log.info(f"Muxed durations: video={v_dur:.3f}s, audio={a_dur:.3f}s, subtitle={s_dur:.3f}s")
+    log.info(
+        f"Muxed durations: video={v_dur:.3f}s, audio={a_dur:.3f}s, subtitle={s_dur:.3f}s"
+    )
     return v_dur, a_dur, s_dur
+
+
 #!/usr/bin/env python3
 """
 embed_captions.py
@@ -40,6 +53,7 @@ LOGLEVEL = os.environ.get("LOGLEVEL", "INFO").upper()
 
 logging.basicConfig(level=LOGLEVEL, format="[%(asctime)s] %(levelname)s: %(message)s")
 log = logging.getLogger("embed_captions")
+
 
 def wait_for_file_stability(
     path,
@@ -79,11 +93,18 @@ def wait_for_file_stability(
             )
             sys.exit(1)
 
+
 def probe_duration(path):
     """Return duration in seconds using ffprobe."""
     cmd = [
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", path
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        path,
     ]
     try:
         out = subprocess.check_output(cmd, text=True)
@@ -91,6 +112,7 @@ def probe_duration(path):
     except Exception as e:
         log.warning(f"ffprobe failed for {path}: {e}")
         return 0.0
+
 
 def preserve_original(mpg_path):
     orig_path = mpg_path + ".orig"
@@ -111,7 +133,9 @@ def preserve_original(mpg_path):
         orig_dur = probe_duration(orig_path)
         mpg_dur = probe_duration(mpg_path)
         if orig_dur < 0.95 * mpg_dur:
-            log.warning(f".orig is stale (duration {orig_dur:.2f}s < 95% of {mpg_dur:.2f}s)")
+            log.warning(
+                f".orig is stale (duration {orig_dur:.2f}s < 95% of {mpg_dur:.2f}s)"
+            )
             needs_refresh = True
     if needs_refresh:
         log.info(f"Refreshing .orig atomically: {mpg_path} -> {orig_path}")
@@ -120,15 +144,24 @@ def preserve_original(mpg_path):
     else:
         log.info(".orig already exists and is up to date.")
 
+
 def srt_exists_and_valid(srt_path):
     return os.path.exists(srt_path) and os.path.getsize(srt_path) > 0
+
 
 def probe_media_end_time(mpg_path):
     """Return max end time (seconds) of video/audio streams using ffprobe."""
     cmd = [
-        "ffprobe", "-v", "error", "-select_streams", "v:a",
-        "-show_entries", "stream=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", mpg_path
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:a",
+        "-show_entries",
+        "stream=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        mpg_path,
     ]
     try:
         out = subprocess.check_output(cmd, text=True)
@@ -138,9 +171,11 @@ def probe_media_end_time(mpg_path):
         log.error(f"ffprobe failed: {e}")
         return 0.0
 
+
 def probe_srt_end_time(srt_path):
     """Return end time (seconds) of last subtitle in SRT."""
     import re
+
     last_end = 0.0
     timepat = re.compile(r"\d{2}:\d{2}:\d{2},\d{3} --> (\d{2}):(\d{2}):(\d{2}),(\d{3})")
     with open(srt_path, encoding="utf-8") as f:
@@ -148,14 +183,16 @@ def probe_srt_end_time(srt_path):
             m = timepat.search(line)
             if m:
                 h, m_, s, ms = map(int, m.groups())
-                end = h*3600 + m_*60 + s + ms/1000.0
+                end = h * 3600 + m_ * 60 + s + ms / 1000.0
                 if end > last_end:
                     last_end = end
     return last_end
 
+
 def validate_and_trim_srt(srt_path, max_end_time):
     """Trim last subtitle if it exceeds max_end_time."""
     import re
+
     lines = []
     timepat = re.compile(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})")
     with open(srt_path, encoding="utf-8") as f:
@@ -163,8 +200,8 @@ def validate_and_trim_srt(srt_path, max_end_time):
             m = timepat.match(line)
             if m:
                 start, end = m.groups()
-                h, m_, s, ms = map(int, re.split('[:,]', end))
-                end_sec = h*3600 + m_*60 + s + ms/1000.0
+                h, m_, s, ms = map(int, re.split("[:,]", end))
+                end_sec = h * 3600 + m_ * 60 + s + ms / 1000.0
                 if end_sec > max_end_time:
                     # Clamp end time
                     end_sec = max_end_time
@@ -184,9 +221,25 @@ def encode_av_only(mpg_orig, temp_av):
     """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs."""
     # Try NVENC first
     cmd_nvenc = [
-        "ffmpeg", "-y", "-i", mpg_orig,
-        "-c:v", "h264_nvenc", "-preset", "fast", "-c:a", "copy", "-analyzeduration", "2147483647", "-probesize", "2147483647",
-        "-map", "0:v", "-map", "0:a?", temp_av
+        "ffmpeg",
+        "-y",
+        "-i",
+        mpg_orig,
+        "-c:v",
+        "h264_nvenc",
+        "-preset",
+        "fast",
+        "-c:a",
+        "copy",
+        "-analyzeduration",
+        "2147483647",
+        "-probesize",
+        "2147483647",
+        "-map",
+        "0:v",
+        "-map",
+        "0:a?",
+        temp_av,
     ]
     log.info(f"Trying NVENC encode: {' '.join(cmd_nvenc)}")
     try:
@@ -196,9 +249,25 @@ def encode_av_only(mpg_orig, temp_av):
         log.warning("NVENC failed, falling back to CPU (libx264)")
     # Fallback to CPU
     cmd_cpu = [
-        "ffmpeg", "-y", "-i", mpg_orig,
-        "-c:v", "libx264", "-preset", "fast", "-c:a", "copy", "-analyzeduration", "2147483647", "-probesize", "2147483647",
-        "-map", "0:v", "-map", "0:a?", temp_av
+        "ffmpeg",
+        "-y",
+        "-i",
+        mpg_orig,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-c:a",
+        "copy",
+        "-analyzeduration",
+        "2147483647",
+        "-probesize",
+        "2147483647",
+        "-map",
+        "0:v",
+        "-map",
+        "0:a?",
+        temp_av,
     ]
     log.info(f"Trying CPU encode: {' '.join(cmd_cpu)}")
     try:
@@ -207,13 +276,22 @@ def encode_av_only(mpg_orig, temp_av):
         log.error(f"ffmpeg failed: {e}")
         sys.exit(1)
 
+
 def probe_av_end(temp_av):
     """Step 2: Probe encoded A/V duration, return END = max(video, audio) - 0.050"""
+
     def get_stream_duration(stream_type):
         cmd = [
-            "ffprobe", "-v", "error", "-select_streams", stream_type,
-            "-show_entries", "stream=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1", temp_av
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            stream_type,
+            "-show_entries",
+            "stream=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            temp_av,
         ]
         try:
             out = subprocess.check_output(cmd, text=True)
@@ -222,25 +300,35 @@ def probe_av_end(temp_av):
         except Exception as e:
             log.warning(f"ffprobe failed for {stream_type}: {e}")
             return 0.0
+
     v_dur = get_stream_duration("v:0")
     a_dur = get_stream_duration("a:0")
     end = max(v_dur, a_dur) - 0.050
-    log.info(f"Probed durations: video={v_dur:.3f}s, audio={a_dur:.3f}s, END={end:.3f}s")
+    log.info(
+        f"Probed durations: video={v_dur:.3f}s, audio={a_dur:.3f}s, END={end:.3f}s"
+    )
     return max(end, 0.0)
+
 
 def clamp_srt_to_end(srt_path, end_time):
     """Step 3: Clamp SRT cues to END, drop cues starting after END."""
     import re
+
     lines = []
-    timepat = re.compile(r"(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})")
+    timepat = re.compile(
+        r"(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})"
+    )
+
     def to_sec(h, m, s, ms):
-        return int(h)*3600 + int(m)*60 + int(s) + int(ms)/1000.0
+        return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
     def to_srt_time(sec):
         h = int(sec // 3600)
         m = int((sec % 3600) // 60)
         s = int(sec % 60)
         ms = int((sec - int(sec)) * 1000)
         return f"{h:02}:{m:02}:{s:02},{ms:03}"
+
     with open(srt_path, encoding="utf-8") as f:
         cue = []
         for line in f:
@@ -265,12 +353,31 @@ def clamp_srt_to_end(srt_path, end_time):
         f.writelines(lines)
     log.info(f"Clamped SRT to END={end_time:.3f}s")
 
+
 def mux_subs(av_path, srt_path, output_path):
     """Step 4: Mux subtitles into MP4 with mov_text, +faststart."""
     cmd = [
-        "ffmpeg", "-y", "-i", av_path, "-i", srt_path,
-        "-c:v", "copy", "-c:a", "copy", "-c:s", "mov_text",
-        "-map", "0:v", "-map", "0:a?", "-map", "1", "-movflags", "+faststart", output_path
+        "ffmpeg",
+        "-y",
+        "-i",
+        av_path,
+        "-i",
+        srt_path,
+        "-c:v",
+        "copy",
+        "-c:a",
+        "copy",
+        "-c:s",
+        "mov_text",
+        "-map",
+        "0:v",
+        "-map",
+        "0:a?",
+        "-map",
+        "1",
+        "-movflags",
+        "+faststart",
+        output_path,
     ]
     log.info(f"Muxing subs: {' '.join(cmd)}")
     try:
@@ -278,6 +385,7 @@ def mux_subs(av_path, srt_path, output_path):
     except subprocess.CalledProcessError as e:
         log.error(f"ffmpeg mux failed: {e}")
         sys.exit(1)
+
 
 def atomic_replace(src, dst):
     """
@@ -299,6 +407,7 @@ def atomic_replace(src, dst):
         log.info(f"Replaced {dst} atomically using os.rename.")
     except Exception as e:
         log.error(f"Atomic replacement failed: {e}")
+
 
 def main():
     if len(sys.argv) != 3:
@@ -335,9 +444,12 @@ def main():
                 pass
         log.info("Caption embedding complete.")
     else:
-        log.error(f"Verification failed: subtitle_duration={s_dur:.3f}s > max_av+0.050={max_av+0.050:.3f}s. Not replacing target file.")
+        log.error(
+            f"Verification failed: subtitle_duration={s_dur:.3f}s > max_av+0.050={max_av+0.050:.3f}s. Not replacing target file."
+        )
         log.error(f"Temp files kept for inspection: {temp_av}, {temp_muxed}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
