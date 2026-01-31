@@ -37,7 +37,8 @@ def get_log_level():
 
 
 def get_log_path():
-    return os.environ.get("LOG_PATH", "/data/logs/pipeline.log")
+    # Use a relative path for portability and CI compatibility
+    return os.environ.get("LOG_PATH", "./logs/pipeline.log")
 
 
 def get_logger(name="pipeline", job_id=None):
