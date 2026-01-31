@@ -93,8 +93,10 @@ async def get_settings() -> dict:
             "dry_run": DRY_RUN,
             "keep_original": os.getenv("KEEP_ORIGINAL", "true").lower()
             in ("true", "1", "yes", "on"),
-            "transcode_for_firetv": os.getenv("TRANSCODE_FOR_FIRETV", "false").lower()
-            in ("true", "1", "yes", "on"),
+            "transcode_for_firetv": (
+                os.getenv("TRANSCODE_FOR_FIRETV", "false").lower()
+                in ("true", "1", "yes", "on")
+            ),
             "log_verbosity": LOG_VERBOSITY,
             "whisper_model": os.getenv("WHISPER_MODEL", "medium"),
         }
