@@ -11,8 +11,9 @@ import sys
 import time
 import shutil
 import subprocess
-import logging
+
 from pathlib import Path
+from py_captions_for_channels.logging.structured_logger import get_logger
 
 
 def probe_muxed_durations(muxed_path):
@@ -49,14 +50,15 @@ def probe_muxed_durations(muxed_path):
     return v_dur, a_dur, s_dur
 
 
+
 # --- CONFIGURABLE ---
 STABLE_INTERVAL = 10  # seconds between file size checks
 STABLE_CONSECUTIVE = 3  # number of consecutive stable checks required
 STABLE_TIMEOUT = 300  # max seconds to wait for stability (5 minutes)
-LOGLEVEL = os.environ.get("LOGLEVEL", "INFO").upper()
 
-logging.basicConfig(level=LOGLEVEL, format="[%(asctime)s] %(levelname)s: %(message)s")
-log = logging.getLogger("embed_captions")
+def extract_job_id_from_path(path):
+    # Example: /mnt/recordings/12345_20260131_120000.mpg → 12345_20260131_120000
+    return Path(path).stem
 
 
 def wait_for_file_stability(
@@ -418,8 +420,12 @@ def main():
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} /path/to/video.mpg /path/to/captions.srt")
         sys.exit(2)
+
     mpg_path = sys.argv[1]
     srt_path = sys.argv[2]
+    job_id = extract_job_id_from_path(mpg_path)
+    log = get_logger("embed_captions", job_id=job_id)
+
     wait_for_file_stability(mpg_path)
     preserve_original(mpg_path)
     if not srt_exists_and_valid(srt_path):
