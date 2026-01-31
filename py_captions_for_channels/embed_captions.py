@@ -280,10 +280,25 @@ def mux_subs(av_path, srt_path, output_path):
         sys.exit(1)
 
 def atomic_replace(src, dst):
-    log.info(f"Replacing {dst} atomically.")
-    tmp = dst + ".tmp"
-    shutil.move(src, tmp)
-    os.replace(tmp, dst)
+    """
+    Atomically replace dst with src using os.rename (same filesystem only).
+    Abort if dst is missing before replacement. Never recreate or restore.
+    """
+    log.info(f"Preparing to atomically replace {dst} with {src}")
+    dst_path = Path(dst)
+    src_path = Path(src)
+    if not dst_path.exists():
+        log.error(f"Target file {dst} disappeared before replacement. Aborting safely.")
+        return
+    # Ensure both files are in the same directory
+    if dst_path.parent != src_path.parent:
+        log.error(f"Temp file {src} is not in the same directory as {dst}. Aborting.")
+        return
+    try:
+        os.rename(src, dst)
+        log.info(f"Replaced {dst} atomically using os.rename.")
+    except Exception as e:
+        log.error(f"Atomic replacement failed: {e}")
 
 def main():
     if len(sys.argv) != 3:
