@@ -31,10 +31,26 @@
           <td class="status-label">Server Timezone:</td>
           <td class="status-value" id="timezone">—</td>
         </tr>
-        <tr>
-          <td class="status-label">Dry Run:</td>
-          <td class="status-value" id="dry-run">—</td>
-        </tr>
+           <tr>
+             <td class="status-label">Dry Run:</td>
+             <td class="status-value" id="dry-run">—</td>
+           </tr>
+           <tr>
+             <td class="status-label">Keep Original:</td>
+             <td class="status-value" id="keep-original">—</td>
+           </tr>
+           <tr>
+             <td class="status-label">Transcode for Fire TV:</td>
+             <td class="status-value" id="transcode-for-firetv">—</td>
+           </tr>
+           <tr>
+             <td class="status-label">Log Verbosity:</td>
+             <td class="status-value" id="log-verbosity">—</td>
+           </tr>
+           <tr>
+             <td class="status-label">Whisper Model:</td>
+             <td class="status-value" id="whisper-model">—</td>
+           </tr>
         <tr>
           <td class="status-label">Last Processed:</td>
           <td class="status-value value-sub" id="last-processed">—</td>
@@ -61,7 +77,7 @@
     <section class="card">
       <div class="card-head">
         <h2>Pipeline Settings</h2>
-        <span id="webui-version" class="pill pill-muted" style="margin-left:10px;">webui v2026-01-31</span>
+           <span id="webui-version" class="pill pill-muted" style="margin-left:10px;">webui v2026-01-31+build1</span>
       </div>
       <form id="settings-form" onsubmit="saveSettings(event)">
         <div class="settings-group">

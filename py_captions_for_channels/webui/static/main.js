@@ -19,6 +19,10 @@ async function fetchStatus() {
     document.getElementById('app-version').textContent = data.version || '—';
     document.getElementById('timezone').textContent = data.timezone || '—';
     document.getElementById('dry-run').textContent = data.dry_run ? 'YES' : 'NO';
+    document.getElementById('keep-original').textContent = data.keep_original ? 'YES' : 'NO';
+    document.getElementById('transcode-for-firetv').textContent = data.transcode_for_firetv ? 'YES' : 'NO';
+    document.getElementById('log-verbosity').textContent = data.log_verbosity ? data.log_verbosity : '—';
+    document.getElementById('whisper-model').textContent = data.whisper_model ? data.whisper_model : '—';
     document.getElementById('last-processed').textContent = data.last_processed 
       ? new Date(data.last_processed).toLocaleString() 
       : 'never';
