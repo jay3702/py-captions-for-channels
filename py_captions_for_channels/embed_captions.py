@@ -50,11 +50,11 @@ def probe_muxed_durations(muxed_path):
     return v_dur, a_dur, s_dur
 
 
-
 # --- CONFIGURABLE ---
 STABLE_INTERVAL = 10  # seconds between file size checks
 STABLE_CONSECUTIVE = 3  # number of consecutive stable checks required
 STABLE_TIMEOUT = 300  # max seconds to wait for stability (5 minutes)
+
 
 def extract_job_id_from_path(path):
     # Example: /mnt/recordings/12345_20260131_120000.mpg → 12345_20260131_120000

@@ -13,7 +13,6 @@ from .config import (
 )
 
 
-
 class PipelineResult:
     """Result of a pipeline execution."""
 
