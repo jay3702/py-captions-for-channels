@@ -1,5 +1,5 @@
 import asyncio
-import logging
+from .logging.structured_logger import get_logger, setup_logging
 from datetime import datetime, timezone
 
 import shutil
@@ -32,7 +32,8 @@ from .logging_config import set_verbosity, get_verbosity
 import json
 from pathlib import Path
 
-LOG = logging.getLogger(__name__)
+setup_logging()
+LOG = get_logger("watcher")
 
 
 async def process_reprocess_queue(state, pipeline, api, parser):
