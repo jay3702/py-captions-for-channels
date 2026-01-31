@@ -16,7 +16,7 @@ from pathlib import Path
 from py_captions_for_channels.logging.structured_logger import get_logger
 
 
-def probe_muxed_durations(muxed_path):
+def probe_muxed_durations(muxed_path, log):
     """Return (video_duration, audio_duration, subtitle_duration) for muxed file."""
 
     def get_stream_duration(stream_type):
@@ -63,6 +63,7 @@ def extract_job_id_from_path(path):
 
 def wait_for_file_stability(
     path,
+    log,
     interval=STABLE_INTERVAL,
     consecutive=STABLE_CONSECUTIVE,
     timeout=STABLE_TIMEOUT,
@@ -101,7 +102,7 @@ def wait_for_file_stability(
             sys.exit(1)
 
 
-def probe_duration(path):
+def probe_duration(path, log):
     """Return duration in seconds using ffprobe."""
     cmd = [
         "ffprobe",
@@ -121,7 +122,7 @@ def probe_duration(path):
         return 0.0
 
 
-def preserve_original(mpg_path):
+def preserve_original(mpg_path, log):
     orig_path = mpg_path + ".orig"
     tmp_path = orig_path + ".tmp"
     needs_refresh = False
@@ -137,8 +138,8 @@ def preserve_original(mpg_path):
         log.warning(f".orig is stale (size {orig_size} < 95% of {mpg_size})")
         needs_refresh = True
     else:
-        orig_dur = probe_duration(orig_path)
-        mpg_dur = probe_duration(mpg_path)
+        orig_dur = probe_duration(orig_path, log)
+        mpg_dur = probe_duration(mpg_path, log)
         if orig_dur < 0.95 * mpg_dur:
             log.warning(
                 f".orig is stale (duration {orig_dur:.2f}s < 95% of {mpg_dur:.2f}s)"
@@ -426,8 +427,8 @@ def main():
     job_id = extract_job_id_from_path(mpg_path)
     log = get_logger("embed_captions", job_id=job_id)
 
-    wait_for_file_stability(mpg_path)
-    preserve_original(mpg_path)
+    wait_for_file_stability(mpg_path, log)
+    preserve_original(mpg_path, log)
     if not srt_exists_and_valid(srt_path):
         log.error("Missing or invalid SRT file.")
         sys.exit(1)
@@ -443,7 +444,7 @@ def main():
     # Step 4: Mux subtitles
     mux_subs(temp_av, srt_path, temp_muxed)
     # Final verification for Android compatibility
-    v_dur, a_dur, s_dur = probe_muxed_durations(temp_muxed)
+    v_dur, a_dur, s_dur = probe_muxed_durations(temp_muxed, log)
     max_av = max(v_dur, a_dur)
     if s_dur <= max_av + 0.050:
         atomic_replace(temp_muxed, mpg_path)
