@@ -177,6 +177,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 # Templates
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+
 # --- Pipeline Settings API ---
 @app.get("/api/settings")
 async def get_settings() -> dict:
@@ -254,10 +255,6 @@ async def set_settings(data: dict = Body(...)) -> dict:
         return {"ok": True}
     except Exception as e:
         return {"error": str(e)}
-            except requests.exceptions.Timeout:
-                return (True, "Responding but slow (timeout)")
-            except requests.exceptions.ConnectionError as e:
-                return (False, f"Connection error: {str(e)[:50]}")
     except Exception as e:
         msg = str(e)[:50]
         return (True, f"Health check skipped: {msg}")
