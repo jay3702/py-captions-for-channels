@@ -94,54 +94,84 @@ def check_service_health(url: str):
         return False, f"Error: {str(e)}"
 
 
+import threading
+
+SETTINGS_PATH = BASE_DIR / "data" / "settings.json"
+SETTINGS_LOCK = threading.Lock()
+
+
+def load_settings():
+    # Try to load from settings.json
+    if SETTINGS_PATH.exists():
+        with SETTINGS_LOCK, open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    # Fallback: initialize from .env/defaults
+    env_path = Path(__file__).parent.parent / ".env"
+    env_vars = {}
+    if env_path.exists():
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip() and not line.strip().startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    env_vars[k.strip()] = v.strip()
+
+    def env_bool(key, default):
+        return env_vars.get(key, str(default)).lower() in ("true", "1", "yes", "on")
+
+    settings = {
+        "dry_run": env_bool("DRY_RUN", DRY_RUN),
+        "keep_original": env_bool("KEEP_ORIGINAL", True),
+        "transcode_for_firetv": env_bool("TRANSCODE_FOR_FIRETV", False),
+        "log_verbosity": env_vars.get("LOG_VERBOSITY", LOG_VERBOSITY),
+        "whisper_model": env_vars.get(
+            "WHISPER_MODEL", os.getenv("WHISPER_MODEL", "medium")
+        ),
+        "whitelist": "",
+    }
+    # Read whitelist
+    try:
+        with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
+            settings["whitelist"] = f.read()
+    except Exception:
+        settings["whitelist"] = ""
+    # Save to settings.json for future use
+    save_settings(settings)
+    return settings
+
+
+def save_settings(settings: dict):
+    with SETTINGS_LOCK, open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+    # Also update .env as backup
+    env_path = Path(__file__).parent.parent / ".env"
+    env_lines = [
+        f"DRY_RUN={'true' if settings.get('dry_run') else 'false'}\n",
+        f"KEEP_ORIGINAL={'true' if settings.get('keep_original') else 'false'}\n",
+        f"TRANSCODE_FOR_FIRETV={'true' if settings.get('transcode_for_firetv') else 'false'}\n",
+        f"LOG_VERBOSITY={settings.get('log_verbosity','NORMAL').upper()}\n",
+        f"WHISPER_MODEL={settings.get('whisper_model','medium')}\n",
+    ]
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(env_lines)
+    # Whitelist is managed separately
+    if "whitelist" in settings:
+        with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
+            f.write(settings["whitelist"])
+
+
 @app.get("/api/settings")
 async def get_settings() -> dict:
-    """Get pipeline settings and whitelist, always reloading .env from disk."""
+    """Get pipeline settings and whitelist from settings.json."""
     try:
-        # Reload .env values from disk
-        env_path = Path(__file__).parent.parent / ".env"
-        env_vars = {}
-        if env_path.exists():
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if (
-                        line.strip()
-                        and not line.strip().startswith("#")
-                        and "=" in line
-                    ):
-                        k, v = line.split("=", 1)
-                        env_vars[k.strip()] = v.strip()
-
-        def env_bool(key, default):
-            return env_vars.get(key, str(default)).lower() in ("true", "1", "yes", "on")
-
-        settings = {
-            "dry_run": env_bool("DRY_RUN", DRY_RUN),
-            "keep_original": env_bool("KEEP_ORIGINAL", True),
-            "transcode_for_firetv": env_bool("TRANSCODE_FOR_FIRETV", False),
-            "log_verbosity": env_vars.get("LOG_VERBOSITY", LOG_VERBOSITY),
-            "whisper_model": env_vars.get(
-                "WHISPER_MODEL", os.getenv("WHISPER_MODEL", "medium")
-            ),
-        }
-        # Read whitelist
-        whitelist = ""
-        try:
-            with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
-                whitelist = f.read()
-        except Exception:
-            whitelist = ""
-        settings["whitelist"] = whitelist
-        return settings
+        return load_settings()
     except Exception as e:
         return {"error": str(e)}
 
 
 @app.post("/api/settings")
 async def set_settings(data: dict = Body(...)) -> dict:
-    """Update pipeline settings and whitelist."""
+    """Update pipeline settings and whitelist in settings.json and .env."""
     try:
-        # Only allow updating known settings
         allowed = {
             "dry_run",
             "keep_original",
@@ -150,39 +180,11 @@ async def set_settings(data: dict = Body(...)) -> dict:
             "whisper_model",
             "whitelist",
         }
-        updates = {k: v for k, v in data.items() if k in allowed}
-        # Update .env file (append or replace lines)
-        env_path = Path(__file__).parent.parent / ".env"
-        env_lines = []
-        if env_path.exists():
-            with open(env_path, "r", encoding="utf-8") as f:
-                env_lines = f.readlines()
-        env_dict = {}
-        for line in env_lines:
-            if line.strip() and not line.strip().startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                env_dict[k.strip()] = v.strip()
-        # Update values
-        if "dry_run" in updates:
-            env_dict["DRY_RUN"] = "true" if updates["dry_run"] else "false"
-        if "keep_original" in updates:
-            env_dict["KEEP_ORIGINAL"] = "true" if updates["keep_original"] else "false"
-        if "transcode_for_firetv" in updates:
-            env_dict["TRANSCODE_FOR_FIRETV"] = (
-                "true" if updates["transcode_for_firetv"] else "false"
-            )
-        if "log_verbosity" in updates:
-            env_dict["LOG_VERBOSITY"] = updates["log_verbosity"].upper()
-        if "whisper_model" in updates:
-            env_dict["WHISPER_MODEL"] = updates["whisper_model"]
-        # Write back .env
-        with open(env_path, "w", encoding="utf-8") as f:
-            for k, v in env_dict.items():
-                f.write(f"{k}={v}\n")
-        # Update whitelist file
-        if "whitelist" in updates:
-            with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
-                f.write(updates["whitelist"])
+        current = load_settings()
+        for k in allowed:
+            if k in data:
+                current[k] = data[k]
+        save_settings(current)
         return {"ok": True}
     except Exception as e:
         return {"error": str(e)}
