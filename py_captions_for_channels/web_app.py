@@ -1,5 +1,7 @@
 from fastapi import Body
 from .config import WHITELIST_FILE
+
+
 # --- Pipeline Settings API ---
 @app.get("/api/settings")
 async def get_settings() -> dict:
@@ -8,8 +10,10 @@ async def get_settings() -> dict:
         # Read .env-driven settings
         settings = {
             "dry_run": DRY_RUN,
-            "keep_original": os.getenv("KEEP_ORIGINAL", "true").lower() in ("true", "1", "yes", "on"),
-            "transcode_for_firetv": os.getenv("TRANSCODE_FOR_FIRETV", "false").lower() in ("true", "1", "yes", "on"),
+            "keep_original": os.getenv("KEEP_ORIGINAL", "true").lower()
+            in ("true", "1", "yes", "on"),
+            "transcode_for_firetv": os.getenv("TRANSCODE_FOR_FIRETV", "false").lower()
+            in ("true", "1", "yes", "on"),
             "log_verbosity": LOG_VERBOSITY,
             "whisper_model": os.getenv("WHISPER_MODEL", "medium"),
         }
@@ -25,12 +29,20 @@ async def get_settings() -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+
 @app.post("/api/settings")
 async def set_settings(data: dict = Body(...)) -> dict:
     """Update pipeline settings and whitelist."""
     try:
         # Only allow updating known settings
-        allowed = {"dry_run", "keep_original", "transcode_for_firetv", "log_verbosity", "whisper_model", "whitelist"}
+        allowed = {
+            "dry_run",
+            "keep_original",
+            "transcode_for_firetv",
+            "log_verbosity",
+            "whisper_model",
+            "whitelist",
+        }
         updates = {k: v for k, v in data.items() if k in allowed}
         # Update .env file (append or replace lines)
         env_path = Path(__file__).parent.parent / ".env"
@@ -49,7 +61,9 @@ async def set_settings(data: dict = Body(...)) -> dict:
         if "keep_original" in updates:
             env_dict["KEEP_ORIGINAL"] = "true" if updates["keep_original"] else "false"
         if "transcode_for_firetv" in updates:
-            env_dict["TRANSCODE_FOR_FIRETV"] = "true" if updates["transcode_for_firetv"] else "false"
+            env_dict["TRANSCODE_FOR_FIRETV"] = (
+                "true" if updates["transcode_for_firetv"] else "false"
+            )
         if "log_verbosity" in updates:
             env_dict["LOG_VERBOSITY"] = updates["log_verbosity"].upper()
         if "whisper_model" in updates:
@@ -65,6 +79,8 @@ async def set_settings(data: dict = Body(...)) -> dict:
         return {"ok": True}
     except Exception as e:
         return {"error": str(e)}
+
+
 import json
 import logging
 import os
@@ -125,6 +141,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Templates
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
 
 # --- WebSocket endpoint for real-time log streaming ---
 @app.websocket("/ws/logs")
