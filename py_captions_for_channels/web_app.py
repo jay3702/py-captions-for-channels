@@ -111,7 +111,7 @@ def load_settings():
         except Exception:
             settings["whitelist"] = ""
         return settings
-    # Fallback: initialize from .env/defaults
+    # If missing, initialize from .env and whitelist.txt
     env_path = Path(__file__).parent.parent / ".env"
     env_vars = {}
     if env_path.exists():
@@ -142,6 +142,7 @@ def load_settings():
     except Exception:
         settings["whitelist"] = ""
     # Save to settings.json for future use
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     save_settings(settings)
     return settings
 
