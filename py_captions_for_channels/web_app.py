@@ -1,7 +1,5 @@
 import json
-import logging
 import os
-import socket
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,15 +7,9 @@ try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
     ZoneInfo = None
-
-import requests
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-import asyncio
-
 from .config import (
     STATE_FILE,
     DRY_RUN,
@@ -28,7 +20,28 @@ from .config import (
     CHANNELWATCH_URL,
     LOG_VERBOSITY,
     LOG_VERBOSITY_FILE,
+    WHITELIST_FILE,
 )
+from .state import StateBackend
+from .execution_tracker import build_reprocess_job_id, get_tracker
+from .logging_config import get_verbosity, set_verbosity
+
+BASE_DIR = Path(__file__).parent
+WEB_ROOT = BASE_DIR / "webui"
+TEMPLATES_DIR = WEB_ROOT / "templates"
+STATIC_DIR = WEB_ROOT / "static"
+
+app = FastAPI(title="Py Captions Web GUI", version="0.8.0-dev")
+state_backend = StateBackend(STATE_FILE)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 app.add_middleware(
     CORSMiddleware,
