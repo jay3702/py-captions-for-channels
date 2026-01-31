@@ -59,19 +59,46 @@ def wait_for_file_stability(
             )
             sys.exit(1)
 
+def probe_duration(path):
+    """Return duration in seconds using ffprobe."""
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", path
+    ]
+    try:
+        out = subprocess.check_output(cmd, text=True)
+        return float(out.strip())
+    except Exception as e:
+        log.warning(f"ffprobe failed for {path}: {e}")
+        return 0.0
+
 def preserve_original(mpg_path):
     orig_path = mpg_path + ".orig"
+    tmp_path = orig_path + ".tmp"
+    needs_refresh = False
     if not os.path.exists(orig_path):
         log.info(f"Preserving original: {mpg_path} -> {orig_path}")
-        shutil.copy2(mpg_path, orig_path)
+        shutil.copy2(mpg_path, tmp_path)
+        os.replace(tmp_path, orig_path)
+        return
+    # Check for staleness
+    orig_size = os.path.getsize(orig_path)
+    mpg_size = os.path.getsize(mpg_path)
+    if orig_size < 0.95 * mpg_size:
+        log.warning(f".orig is stale (size {orig_size} < 95% of {mpg_size})")
+        needs_refresh = True
     else:
-        orig_size = os.path.getsize(orig_path)
-        mpg_size = os.path.getsize(mpg_path)
-        if orig_size < mpg_size:
-            log.warning(f"Refreshing stale .orig: {mpg_path} -> {orig_path}")
-            shutil.copy2(mpg_path, orig_path)
-        else:
-            log.info(".orig already exists and is up to date.")
+        orig_dur = probe_duration(orig_path)
+        mpg_dur = probe_duration(mpg_path)
+        if orig_dur < 0.95 * mpg_dur:
+            log.warning(f".orig is stale (duration {orig_dur:.2f}s < 95% of {mpg_dur:.2f}s)")
+            needs_refresh = True
+    if needs_refresh:
+        log.info(f"Refreshing .orig atomically: {mpg_path} -> {orig_path}")
+        shutil.copy2(mpg_path, tmp_path)
+        os.replace(tmp_path, orig_path)
+    else:
+        log.info(".orig already exists and is up to date.")
 
 def srt_exists_and_valid(srt_path):
     return os.path.exists(srt_path) and os.path.getsize(srt_path) > 0
@@ -161,12 +188,13 @@ def main():
     if not srt_exists_and_valid(srt_path):
         log.error("Missing or invalid SRT file.")
         sys.exit(1)
-    media_end = probe_media_end_time(mpg_path + ".orig")
+    orig_path = mpg_path + ".orig"
+    media_end = probe_media_end_time(orig_path)
     srt_end = probe_srt_end_time(srt_path)
     if srt_end > media_end:
         validate_and_trim_srt(srt_path, media_end)
     output_path = mpg_path + ".new"
-    remux_with_ffmpeg(mpg_path + ".orig", srt_path, output_path)
+    remux_with_ffmpeg(orig_path, srt_path, output_path)
     atomic_replace(output_path, mpg_path)
     log.info("Caption embedding complete.")
 
