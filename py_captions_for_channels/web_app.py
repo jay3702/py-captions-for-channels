@@ -29,56 +29,6 @@ from .config import (
     LOG_VERBOSITY,
     LOG_VERBOSITY_FILE,
 )
-from .state import StateBackend
-from .execution_tracker import build_reprocess_job_id, get_tracker
-
-import json
-import logging
-import os
-import socket
-from datetime import datetime, timezone
-from pathlib import Path
-
-try:
-    from zoneinfo import ZoneInfo  # Python 3.9+
-except Exception:
-    ZoneInfo = None
-
-import requests
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Body
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-import asyncio
-
-from .config import (
-    STATE_FILE,
-    DRY_RUN,
-    LOG_FILE,
-    CAPTION_COMMAND,
-    STALE_EXECUTION_SECONDS,
-    CHANNELS_API_URL,
-    CHANNELWATCH_URL,
-    LOG_VERBOSITY,
-    LOG_VERBOSITY_FILE,
-    WHITELIST_FILE,
-)
-from .state import StateBackend
-from .execution_tracker import build_reprocess_job_id, get_tracker
-from .logging_config import get_verbosity, set_verbosity
-
-LOG = logging.getLogger(__name__)
-
-BASE_DIR = Path(__file__).parent
-WEB_ROOT = BASE_DIR / "webui"
-TEMPLATES_DIR = WEB_ROOT / "templates"
-STATIC_DIR = WEB_ROOT / "static"
-
-app = FastAPI(title="Py Captions Web GUI", version="0.8.0-dev")
-
-# Initialize state backend for reading pipeline state
-state_backend = StateBackend(STATE_FILE)
 
 app.add_middleware(
     CORSMiddleware,
