@@ -96,19 +96,33 @@ def check_service_health(url: str):
 
 @app.get("/api/settings")
 async def get_settings() -> dict:
-    """Get pipeline settings and whitelist."""
+    """Get pipeline settings and whitelist, always reloading .env from disk."""
     try:
-        # Read .env-driven settings
+        # Reload .env values from disk
+        env_path = Path(__file__).parent.parent / ".env"
+        env_vars = {}
+        if env_path.exists():
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if (
+                        line.strip()
+                        and not line.strip().startswith("#")
+                        and "=" in line
+                    ):
+                        k, v = line.split("=", 1)
+                        env_vars[k.strip()] = v.strip()
+
+        def env_bool(key, default):
+            return env_vars.get(key, str(default)).lower() in ("true", "1", "yes", "on")
+
         settings = {
-            "dry_run": DRY_RUN,
-            "keep_original": os.getenv("KEEP_ORIGINAL", "true").lower()
-            in ("true", "1", "yes", "on"),
-            "transcode_for_firetv": (
-                os.getenv("TRANSCODE_FOR_FIRETV", "false").lower()
-                in ("true", "1", "yes", "on")
+            "dry_run": env_bool("DRY_RUN", DRY_RUN),
+            "keep_original": env_bool("KEEP_ORIGINAL", True),
+            "transcode_for_firetv": env_bool("TRANSCODE_FOR_FIRETV", False),
+            "log_verbosity": env_vars.get("LOG_VERBOSITY", LOG_VERBOSITY),
+            "whisper_model": env_vars.get(
+                "WHISPER_MODEL", os.getenv("WHISPER_MODEL", "medium")
             ),
-            "log_verbosity": LOG_VERBOSITY,
-            "whisper_model": os.getenv("WHISPER_MODEL", "medium"),
         }
         # Read whitelist
         whitelist = ""
