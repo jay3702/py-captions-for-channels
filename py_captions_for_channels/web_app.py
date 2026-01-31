@@ -103,7 +103,15 @@ def load_settings():
     # Try to load from settings.json
     if SETTINGS_PATH.exists():
         with SETTINGS_LOCK, open(SETTINGS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            settings = json.load(f)
+        # Always update whitelist from project root whitelist.txt
+        whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
+        try:
+            with open(whitelist_path, "r", encoding="utf-8") as f:
+                settings["whitelist"] = f.read()
+        except Exception:
+            settings["whitelist"] = ""
+        return settings
     # Fallback: initialize from .env/defaults
     env_path = Path(__file__).parent.parent / ".env"
     env_vars = {}
