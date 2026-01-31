@@ -1,3 +1,23 @@
+def probe_muxed_durations(muxed_path):
+    """Return (video_duration, audio_duration, subtitle_duration) for muxed file."""
+    def get_stream_duration(stream_type):
+        cmd = [
+            "ffprobe", "-v", "error", "-select_streams", stream_type,
+            "-show_entries", "stream=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", muxed_path
+        ]
+        try:
+            out = subprocess.check_output(cmd, text=True)
+            durs = [float(x) for x in out.strip().splitlines() if x.strip()]
+            return max(durs) if durs else 0.0
+        except Exception as e:
+            log.warning(f"ffprobe failed for {stream_type}: {e}")
+            return 0.0
+    v_dur = get_stream_duration("v:0")
+    a_dur = get_stream_duration("a:0")
+    s_dur = get_stream_duration("s:0")
+    log.info(f"Muxed durations: video={v_dur:.3f}s, audio={a_dur:.3f}s, subtitle={s_dur:.3f}s")
+    return v_dur, a_dur, s_dur
 #!/usr/bin/env python3
 """
 embed_captions.py
@@ -287,14 +307,22 @@ def main():
     clamp_srt_to_end(srt_path, end_time)
     # Step 4: Mux subtitles
     mux_subs(temp_av, srt_path, temp_muxed)
-    atomic_replace(temp_muxed, mpg_path)
-    # Clean up temp files
-    for f in [temp_av]:
-        try:
-            os.remove(f)
-        except Exception:
-            pass
-    log.info("Caption embedding complete.")
+    # Final verification for Android compatibility
+    v_dur, a_dur, s_dur = probe_muxed_durations(temp_muxed)
+    max_av = max(v_dur, a_dur)
+    if s_dur <= max_av + 0.050:
+        atomic_replace(temp_muxed, mpg_path)
+        # Clean up temp files
+        for f in [temp_av]:
+            try:
+                os.remove(f)
+            except Exception:
+                pass
+        log.info("Caption embedding complete.")
+    else:
+        log.error(f"Verification failed: subtitle_duration={s_dur:.3f}s > max_av+0.050={max_av+0.050:.3f}s. Not replacing target file.")
+        log.error(f"Temp files kept for inspection: {temp_av}, {temp_muxed}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
