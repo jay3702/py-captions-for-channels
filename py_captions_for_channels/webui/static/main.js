@@ -354,14 +354,139 @@ async function submitReprocessing() {
   }
 }
 
+
+// --- Real-time log streaming via WebSocket ---
+let logSocket = null;
+let logSocketActive = false;
+let logLines = [];
+const MAX_LOG_LINES = 500;
+
+function startLogWebSocket() {
+  if (logSocketActive) return;
+  logSocketActive = true;
+  logLines = [];
+  const logList = document.getElementById('log-list');
+  const logCount = document.getElementById('log-count');
+  logList.innerHTML = '<li class="muted">Connecting to log stream...</li>';
+  logSocket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/logs');
+  logSocket.onopen = () => {
+    logList.innerHTML = '';
+    logCount.textContent = '(streaming)';
+  };
+  logSocket.onmessage = (event) => {
+    if (typeof event.data === 'string') {
+      logLines.push(event.data);
+      if (logLines.length > MAX_LOG_LINES) logLines.shift();
+      logList.innerHTML = logLines.map(line => `<li><code>${escapeHtml(line)}</code></li>`).join('');
+      logCount.textContent = `(${logLines.length} lines)`;
+    }
+  };
+  logSocket.onerror = (event) => {
+    logList.innerHTML = '<li class="muted">Log stream error</li>';
+    logCount.textContent = '(error)';
+  };
+  logSocket.onclose = () => {
+    logSocketActive = false;
+    logList.innerHTML += '<li class="muted">Log stream closed</li>';
+    logCount.textContent = '(disconnected)';
+  };
+}
+
+function stopLogWebSocket() {
+  if (logSocket) {
+    logSocket.close();
+    logSocket = null;
+  }
+  logSocketActive = false;
+}
+
+// --- Tab switching logic: activate WebSocket only for logs tab ---
+function switchTab(tabName) {
+  // Update tab buttons
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  event.target.classList.add('active');
+  // Update tab content
+  document.querySelectorAll('.tab-content').forEach(content => {
+    content.classList.remove('active');
+  });
+  document.getElementById(`${tabName}-tab`).classList.add('active');
+  // Handle log streaming
+  if (tabName === 'logs') {
+    stopLogPolling();
+    startLogWebSocket();
+  } else {
+    stopLogWebSocket();
+    startLogPolling();
+  }
+}
+
+// --- Fallback polling for logs if not using WebSocket ---
+let logPollInterval = null;
+function startLogPolling() {
+  if (logPollInterval) return;
+  fetchLogs();
+  logPollInterval = setInterval(fetchLogs, 5000);
+}
+function stopLogPolling() {
+  if (logPollInterval) {
+    clearInterval(logPollInterval);
+    logPollInterval = null;
+  }
+}
+
+
+// --- Pipeline Settings UI ---
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    if (!res.ok) throw new Error('Failed to load settings');
+    const data = await res.json();
+    document.getElementById('dry-run-toggle').checked = !!data.dry_run;
+    document.getElementById('keep-original-toggle').checked = !!data.keep_original;
+    document.getElementById('transcode-toggle').checked = !!data.transcode_for_firetv;
+    document.getElementById('log-verbosity-select').value = (data.log_verbosity || 'NORMAL').toUpperCase();
+    document.getElementById('whisper-model-select').value = data.whisper_model || 'medium';
+    document.getElementById('whitelist-editor').value = data.whitelist || '';
+  } catch (err) {
+    alert('Failed to load settings: ' + err.message);
+  }
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const payload = {
+    dry_run: document.getElementById('dry-run-toggle').checked,
+    keep_original: document.getElementById('keep-original-toggle').checked,
+    transcode_for_firetv: document.getElementById('transcode-toggle').checked,
+    log_verbosity: document.getElementById('log-verbosity-select').value,
+    whisper_model: document.getElementById('whisper-model-select').value,
+    whitelist: document.getElementById('whitelist-editor').value,
+  };
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'Failed to save settings');
+    alert('Settings saved!');
+    fetchStatus();
+  } catch (err) {
+    alert('Failed to save settings: ' + err.message);
+  }
+}
+
 // Initial fetch
 fetchStatus();
 fetchExecutions();
-fetchLogs();
+startLogPolling();
+loadSettings();
 
-// Poll every 5 seconds
+// Poll status and executions every 5 seconds
 setInterval(fetchStatus, 5000);
 setInterval(fetchExecutions, 5000);
-setInterval(fetchLogs, 5000);
 
 

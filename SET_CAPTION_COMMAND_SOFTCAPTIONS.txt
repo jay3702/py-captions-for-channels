@@ -1,0 +1,12 @@
+# To use the new soft-caption pipeline, set this in your .env or docker-compose.yml:
+#
+# CAPTION_COMMAND=/app/py_captions_for_channels/embed_captions.sh {path}
+#
+# This ensures the pipeline uses the updated script for soft subtitle replacement.
+#
+# After updating, run:
+#   docker compose down
+#   docker compose build --no-cache
+#   docker compose up -d
+#
+# Check logs for the executed command to confirm the script is used.
