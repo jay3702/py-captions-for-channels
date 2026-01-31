@@ -24,7 +24,6 @@ from .config import (
     CHANNELWATCH_URL,
     LOG_VERBOSITY,
     LOG_VERBOSITY_FILE,
-    WHITELIST_FILE,
 )
 from .state import StateBackend
 from .execution_tracker import build_reprocess_job_id, get_tracker
