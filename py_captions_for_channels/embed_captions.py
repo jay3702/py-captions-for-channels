@@ -159,16 +159,104 @@ def validate_and_trim_srt(srt_path, max_end_time):
         f.writelines(lines)
     log.info(f"Trimmed SRT to {max_end_time:.2f}s for Android compatibility.")
 
-def remux_with_ffmpeg(mpg_orig, srt_path, output_path):
-    cmd = [
-        "ffmpeg", "-y", "-i", mpg_orig, "-i", srt_path,
-        "-map", "0", "-map", "1", "-c", "copy", "-scodec", "mov_text", output_path
+
+def encode_av_only(mpg_orig, temp_av):
+    """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs."""
+    # Try NVENC first
+    cmd_nvenc = [
+        "ffmpeg", "-y", "-i", mpg_orig,
+        "-c:v", "h264_nvenc", "-preset", "fast", "-c:a", "copy", "-analyzeduration", "2147483647", "-probesize", "2147483647",
+        "-map", "0:v", "-map", "0:a?", temp_av
     ]
-    log.info(f"Running ffmpeg: {' '.join(cmd)}")
+    log.info(f"Trying NVENC encode: {' '.join(cmd_nvenc)}")
+    try:
+        subprocess.check_call(cmd_nvenc)
+        return
+    except subprocess.CalledProcessError:
+        log.warning("NVENC failed, falling back to CPU (libx264)")
+    # Fallback to CPU
+    cmd_cpu = [
+        "ffmpeg", "-y", "-i", mpg_orig,
+        "-c:v", "libx264", "-preset", "fast", "-c:a", "copy", "-analyzeduration", "2147483647", "-probesize", "2147483647",
+        "-map", "0:v", "-map", "0:a?", temp_av
+    ]
+    log.info(f"Trying CPU encode: {' '.join(cmd_cpu)}")
+    try:
+        subprocess.check_call(cmd_cpu)
+    except subprocess.CalledProcessError as e:
+        log.error(f"ffmpeg failed: {e}")
+        sys.exit(1)
+
+def probe_av_end(temp_av):
+    """Step 2: Probe encoded A/V duration, return END = max(video, audio) - 0.050"""
+    def get_stream_duration(stream_type):
+        cmd = [
+            "ffprobe", "-v", "error", "-select_streams", stream_type,
+            "-show_entries", "stream=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", temp_av
+        ]
+        try:
+            out = subprocess.check_output(cmd, text=True)
+            durs = [float(x) for x in out.strip().splitlines() if x.strip()]
+            return max(durs) if durs else 0.0
+        except Exception as e:
+            log.warning(f"ffprobe failed for {stream_type}: {e}")
+            return 0.0
+    v_dur = get_stream_duration("v:0")
+    a_dur = get_stream_duration("a:0")
+    end = max(v_dur, a_dur) - 0.050
+    log.info(f"Probed durations: video={v_dur:.3f}s, audio={a_dur:.3f}s, END={end:.3f}s")
+    return max(end, 0.0)
+
+def clamp_srt_to_end(srt_path, end_time):
+    """Step 3: Clamp SRT cues to END, drop cues starting after END."""
+    import re
+    lines = []
+    timepat = re.compile(r"(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})")
+    def to_sec(h, m, s, ms):
+        return int(h)*3600 + int(m)*60 + int(s) + int(ms)/1000.0
+    def to_srt_time(sec):
+        h = int(sec // 3600)
+        m = int((sec % 3600) // 60)
+        s = int(sec % 60)
+        ms = int((sec - int(sec)) * 1000)
+        return f"{h:02}:{m:02}:{s:02},{ms:03}"
+    with open(srt_path, encoding="utf-8") as f:
+        cue = []
+        for line in f:
+            m = timepat.match(line)
+            if m:
+                start = to_sec(*m.groups()[:4])
+                end = to_sec(*m.groups()[4:])
+                if start > end_time:
+                    cue = []  # drop this cue
+                    continue
+                if end > end_time:
+                    end = end_time
+                new_line = f"{to_srt_time(start)} --> {to_srt_time(end)}\n"
+                cue = [new_line]
+            elif line.strip() == "" and cue:
+                lines.extend(cue)
+                lines.append(line)
+                cue = []
+            elif cue:
+                cue.append(line)
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+    log.info(f"Clamped SRT to END={end_time:.3f}s")
+
+def mux_subs(av_path, srt_path, output_path):
+    """Step 4: Mux subtitles into MP4 with mov_text, +faststart."""
+    cmd = [
+        "ffmpeg", "-y", "-i", av_path, "-i", srt_path,
+        "-c:v", "copy", "-c:a", "copy", "-c:s", "mov_text",
+        "-map", "0:v", "-map", "0:a?", "-map", "1", "-movflags", "+faststart", output_path
+    ]
+    log.info(f"Muxing subs: {' '.join(cmd)}")
     try:
         subprocess.check_call(cmd)
     except subprocess.CalledProcessError as e:
-        log.error(f"ffmpeg failed: {e}")
+        log.error(f"ffmpeg mux failed: {e}")
         sys.exit(1)
 
 def atomic_replace(src, dst):
@@ -189,13 +277,23 @@ def main():
         log.error("Missing or invalid SRT file.")
         sys.exit(1)
     orig_path = mpg_path + ".orig"
-    media_end = probe_media_end_time(orig_path)
-    srt_end = probe_srt_end_time(srt_path)
-    if srt_end > media_end:
-        validate_and_trim_srt(srt_path, media_end)
-    output_path = mpg_path + ".new"
-    remux_with_ffmpeg(orig_path, srt_path, output_path)
-    atomic_replace(output_path, mpg_path)
+    temp_av = mpg_path + ".av.mp4"
+    temp_muxed = mpg_path + ".muxed.mp4"
+    # Step 1: Encode A/V only
+    encode_av_only(orig_path, temp_av)
+    # Step 2: Probe encoded A/V duration
+    end_time = probe_av_end(temp_av)
+    # Step 3: Clamp SRT
+    clamp_srt_to_end(srt_path, end_time)
+    # Step 4: Mux subtitles
+    mux_subs(temp_av, srt_path, temp_muxed)
+    atomic_replace(temp_muxed, mpg_path)
+    # Clean up temp files
+    for f in [temp_av]:
+        try:
+            os.remove(f)
+        except Exception:
+            pass
     log.info("Caption embedding complete.")
 
 if __name__ == "__main__":
