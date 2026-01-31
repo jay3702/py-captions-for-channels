@@ -63,6 +63,27 @@ LOG = logging.getLogger(__name__)
 
 
 # --- Pipeline Settings API ---
+
+
+# --- Service Health Check Helper ---
+def check_service_health(url: str):
+    """Check if a service at the given URL is reachable. Returns (healthy: bool, message: str)."""
+    import requests
+
+    try:
+        resp = requests.get(url, timeout=3)
+        resp.raise_for_status()
+        return True, f"HTTP {resp.status_code} OK"
+    except requests.exceptions.Timeout:
+        return False, "Timeout"
+    except requests.exceptions.ConnectionError:
+        return False, "Connection error"
+    except requests.exceptions.HTTPError as e:
+        return False, f"HTTP error: {e.response.status_code}"
+    except Exception as e:
+        return False, f"Error: {str(e)}"
+
+
 @app.get("/api/settings")
 async def get_settings() -> dict:
     """Get pipeline settings and whitelist."""
