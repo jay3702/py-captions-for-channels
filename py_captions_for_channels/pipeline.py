@@ -1,4 +1,4 @@
-import logging
+from py_captions_for_channels.logging.structured_logger import get_logger
 import re
 import subprocess
 from typing import Callable, Optional
@@ -11,9 +11,7 @@ from .config import (
     LOG_STATS_ENABLED,
     PIPELINE_TIMEOUT,
 )
-from .logging_config import set_job_id
 
-LOG = logging.getLogger(__name__)
 
 
 class PipelineResult:
@@ -147,7 +145,7 @@ class Pipeline:
         except Exception:
             return 0.0
 
-    def _log_job_statistics(self, result: PipelineResult, job_id: str) -> None:
+    def _log_job_statistics(self, result: PipelineResult, job_id: str, log):
         """Log job completion statistics with visual divider.
 
         Args:
@@ -212,7 +210,7 @@ class Pipeline:
 
         # Log as single info message (job ID will be added by formatter)
         if LOG_STATS_ENABLED:
-            LOG.info("\n" + "\n".join(stats_lines))
+            log.info("\n" + "\n".join(stats_lines))
 
     def run(
         self,
@@ -232,7 +230,7 @@ class Pipeline:
         timestamp = getattr(event, "timestamp", None)
         timestamp_str = timestamp.strftime("%H:%M:%S") if timestamp else "UNKNOWN"
         job_id = job_id_override or f"{event.title} @ {timestamp_str}"
-        set_job_id(job_id)
+        log = get_logger("pipeline", job_id=job_id)
 
         start_time = time.time()
         try:
@@ -246,8 +244,8 @@ class Pipeline:
             cmd = self.command_template.format(path=safe_path)
 
             if self.dry_run:
-                LOG.info("[DRY-RUN] Would execute: %s", cmd)
-                LOG.info("[DRY-RUN] Event: %s (path=%s)", event.title, event.path)
+                log.info("[DRY-RUN] Would execute: %s", cmd)
+                log.info("[DRY-RUN] Event: %s (path=%s)", event.title, event.path)
                 return PipelineResult(
                     success=True,
                     returncode=0,
@@ -258,12 +256,12 @@ class Pipeline:
 
             # Visual divider at job start (configurable)
             if LOG_STATS_ENABLED:
-                LOG.info("\n" + (LOG_DIVIDER_CHAR * LOG_DIVIDER_LENGTH))
-            LOG.info("Running caption pipeline: %s", cmd)
+                log.info("\n" + (LOG_DIVIDER_CHAR * LOG_DIVIDER_LENGTH))
+            log.info("Running caption pipeline: %s", cmd)
 
             try:
                 # Execute command and capture output (cancel-aware)
-                LOG.debug("About to execute command: %s", cmd)
+                log.debug("About to execute command: %s", cmd)
                 proc = subprocess.Popen(
                     cmd,
                     shell=True,
@@ -277,7 +275,7 @@ class Pipeline:
                 while True:
                     # Cancel request check
                     if cancel_check and cancel_check():
-                        LOG.warning(
+                        log.warning(
                             "Cancel requested; terminating pipeline for %s", event.path
                         )
                         proc.terminate()
@@ -302,7 +300,7 @@ class Pipeline:
 
                     # Timeout check
                     if (time.time() - start_time) > PIPELINE_TIMEOUT:
-                        LOG.error("Caption pipeline timed out for %s", event.path)
+                        log.error("Caption pipeline timed out for %s", event.path)
                         proc.kill()
                         try:
                             stdout, stderr = proc.communicate(timeout=5)
@@ -329,20 +327,20 @@ class Pipeline:
 
                 if proc.returncode != 0:
                     elapsed = time.time() - start_time
-                    LOG.error(
+                    log.error(
                         "Caption pipeline failed for %s (exit code %d)",
                         event.path,
                         proc.returncode,
                     )
-                    LOG.error("Command attempted: %s", cmd)
+                    log.error("Command attempted: %s", cmd)
                     if proc.returncode == 126:
-                        LOG.error(
+                        log.error(
                             "Exit code 126: Permission denied or not executable. "
                             "Check permissions and shebang for: %s",
                             cmd,
                         )
                     if stderr:
-                        LOG.error("stderr: %s", stderr[:500])
+                        log.error("stderr: %s", stderr[:500])
                     return PipelineResult(
                         success=False,
                         returncode=proc.returncode,
@@ -353,12 +351,12 @@ class Pipeline:
                         input_path=event.path,
                     )
                 else:
-                    LOG.info("Caption pipeline completed for %s", event.path)
+                    log.info("Caption pipeline completed for %s", event.path)
                     # Log whisper's output for debugging
                     if stdout:
-                        LOG.debug("stdout: %s", stdout[-1000:])
+                        log.debug("stdout: %s", stdout[-1000:])
                     if stderr:
-                        LOG.info("whisper output: %s", stderr[-500:])
+                        log.info("whisper output: %s", stderr[-500:])
 
                     # Collect output file statistics
                     elapsed = time.time() - start_time
@@ -387,14 +385,14 @@ class Pipeline:
 
                     # If ffmpeg speed parsed, log it for reference
                     if ffmpeg_speed is not None:
-                        LOG.info(
+                        log.info(
                             "Transcode speed reported by ffmpeg: %.2fx", ffmpeg_speed
                         )
 
             except Exception as e:
                 elapsed = time.time() - start_time
-                LOG.error("Exception running caption pipeline: %s", e)
-                LOG.error("Command attempted: %s", cmd)
+                log.error("Exception running caption pipeline: %s", e)
+                log.error("Command attempted: %s", cmd)
                 return PipelineResult(
                     success=False,
                     returncode=-1,
@@ -405,5 +403,4 @@ class Pipeline:
                     input_path=event.path,
                 )
         finally:
-            # Clear job ID after processing
-            set_job_id(None)
+            pass  # No job_id context to clear with new logger
