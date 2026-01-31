@@ -1,3 +1,12 @@
+from fastapi.responses import HTMLResponse
+
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    """Serve the main dashboard UI (index.html) at the root URL."""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
 import json
 import os
 from datetime import datetime, timezone
