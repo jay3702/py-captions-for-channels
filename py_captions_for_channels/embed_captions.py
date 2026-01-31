@@ -157,7 +157,7 @@ def srt_exists_and_valid(srt_path):
     return os.path.exists(srt_path) and os.path.getsize(srt_path) > 0
 
 
-def probe_media_end_time(mpg_path):
+def probe_media_end_time(mpg_path, log):
     """Return max end time (seconds) of video/audio streams using ffprobe."""
     cmd = [
         "ffprobe",
@@ -197,7 +197,7 @@ def probe_srt_end_time(srt_path):
     return last_end
 
 
-def validate_and_trim_srt(srt_path, max_end_time):
+def validate_and_trim_srt(srt_path, max_end_time, log):
     """Trim last subtitle if it exceeds max_end_time."""
     import re
 
@@ -225,7 +225,7 @@ def validate_and_trim_srt(srt_path, max_end_time):
     log.info(f"Trimmed SRT to {max_end_time:.2f}s for Android compatibility.")
 
 
-def encode_av_only(mpg_orig, temp_av):
+def encode_av_only(mpg_orig, temp_av, log):
     """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs."""
     # Try NVENC first
     cmd_nvenc = [
@@ -285,7 +285,7 @@ def encode_av_only(mpg_orig, temp_av):
         sys.exit(1)
 
 
-def probe_av_end(temp_av):
+def probe_av_end(temp_av, log):
     """Step 2: Probe encoded A/V duration, return END = max(video, audio) - 0.050"""
 
     def get_stream_duration(stream_type):
@@ -318,7 +318,7 @@ def probe_av_end(temp_av):
     return max(end, 0.0)
 
 
-def clamp_srt_to_end(srt_path, end_time):
+def clamp_srt_to_end(srt_path, end_time, log):
     """Step 3: Clamp SRT cues to END, drop cues starting after END."""
     import re
 
@@ -362,7 +362,7 @@ def clamp_srt_to_end(srt_path, end_time):
     log.info(f"Clamped SRT to END={end_time:.3f}s")
 
 
-def mux_subs(av_path, srt_path, output_path):
+def mux_subs(av_path, srt_path, output_path, log):
     """Step 4: Mux subtitles into MP4 with mov_text, +faststart."""
     cmd = [
         "ffmpeg",
@@ -395,7 +395,7 @@ def mux_subs(av_path, srt_path, output_path):
         sys.exit(1)
 
 
-def atomic_replace(src, dst):
+def atomic_replace(src, dst, log):
     """
     Atomically replace dst with src using os.rename (same filesystem only).
     Abort if dst is missing before replacement. Never recreate or restore.
@@ -436,18 +436,18 @@ def main():
     temp_av = mpg_path + ".av.mp4"
     temp_muxed = mpg_path + ".muxed.mp4"
     # Step 1: Encode A/V only
-    encode_av_only(orig_path, temp_av)
+    encode_av_only(orig_path, temp_av, log)
     # Step 2: Probe encoded A/V duration
-    end_time = probe_av_end(temp_av)
+    end_time = probe_av_end(temp_av, log)
     # Step 3: Clamp SRT
-    clamp_srt_to_end(srt_path, end_time)
+    clamp_srt_to_end(srt_path, end_time, log)
     # Step 4: Mux subtitles
-    mux_subs(temp_av, srt_path, temp_muxed)
+    mux_subs(temp_av, srt_path, temp_muxed, log)
     # Final verification for Android compatibility
     v_dur, a_dur, s_dur = probe_muxed_durations(temp_muxed, log)
     max_av = max(v_dur, a_dur)
     if s_dur <= max_av + 0.050:
-        atomic_replace(temp_muxed, mpg_path)
+        atomic_replace(temp_muxed, mpg_path, log)
         # Clean up temp files
         for f in [temp_av]:
             try:
