@@ -1,3 +1,70 @@
+from fastapi import Body
+from .config import WHITELIST_FILE
+# --- Pipeline Settings API ---
+@app.get("/api/settings")
+async def get_settings() -> dict:
+    """Get pipeline settings and whitelist."""
+    try:
+        # Read .env-driven settings
+        settings = {
+            "dry_run": DRY_RUN,
+            "keep_original": os.getenv("KEEP_ORIGINAL", "true").lower() in ("true", "1", "yes", "on"),
+            "transcode_for_firetv": os.getenv("TRANSCODE_FOR_FIRETV", "false").lower() in ("true", "1", "yes", "on"),
+            "log_verbosity": LOG_VERBOSITY,
+            "whisper_model": os.getenv("WHISPER_MODEL", "medium"),
+        }
+        # Read whitelist
+        whitelist = ""
+        try:
+            with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
+                whitelist = f.read()
+        except Exception:
+            whitelist = ""
+        settings["whitelist"] = whitelist
+        return settings
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/settings")
+async def set_settings(data: dict = Body(...)) -> dict:
+    """Update pipeline settings and whitelist."""
+    try:
+        # Only allow updating known settings
+        allowed = {"dry_run", "keep_original", "transcode_for_firetv", "log_verbosity", "whisper_model", "whitelist"}
+        updates = {k: v for k, v in data.items() if k in allowed}
+        # Update .env file (append or replace lines)
+        env_path = Path(__file__).parent.parent / ".env"
+        env_lines = []
+        if env_path.exists():
+            with open(env_path, "r", encoding="utf-8") as f:
+                env_lines = f.readlines()
+        env_dict = {}
+        for line in env_lines:
+            if line.strip() and not line.strip().startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                env_dict[k.strip()] = v.strip()
+        # Update values
+        if "dry_run" in updates:
+            env_dict["DRY_RUN"] = "true" if updates["dry_run"] else "false"
+        if "keep_original" in updates:
+            env_dict["KEEP_ORIGINAL"] = "true" if updates["keep_original"] else "false"
+        if "transcode_for_firetv" in updates:
+            env_dict["TRANSCODE_FOR_FIRETV"] = "true" if updates["transcode_for_firetv"] else "false"
+        if "log_verbosity" in updates:
+            env_dict["LOG_VERBOSITY"] = updates["log_verbosity"].upper()
+        if "whisper_model" in updates:
+            env_dict["WHISPER_MODEL"] = updates["whisper_model"]
+        # Write back .env
+        with open(env_path, "w", encoding="utf-8") as f:
+            for k, v in env_dict.items():
+                f.write(f"{k}={v}\n")
+        # Update whitelist file
+        if "whitelist" in updates:
+            with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
+                f.write(updates["whitelist"])
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
 import json
 import logging
 import os
@@ -11,11 +78,12 @@ except Exception:
     ZoneInfo = None
 
 import requests
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import asyncio
 
 from .config import (
     STATE_FILE,
@@ -57,6 +125,37 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Templates
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+# --- WebSocket endpoint for real-time log streaming ---
+@app.websocket("/ws/logs")
+async def websocket_logs(websocket: WebSocket):
+    """WebSocket endpoint to stream new log lines in real time."""
+    await websocket.accept()
+    log_path = Path(LOG_FILE)
+    last_size = 0
+    try:
+        while True:
+            if log_path.exists():
+                try:
+                    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                        f.seek(0, 2)  # Move to end of file
+                        file_size = f.tell()
+                        if file_size < last_size:
+                            # Log rotated or truncated
+                            last_size = 0
+                        if file_size > last_size:
+                            f.seek(last_size)
+                            new_lines = f.read().splitlines()
+                            for line in new_lines:
+                                await websocket.send_text(line)
+                            last_size = f.tell()
+                except Exception as e:
+                    await websocket.send_text(f"[Log stream error] {e}")
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        LOG.warning(f"WebSocket log stream error: {e}")
 
 
 @app.get("/", response_class=HTMLResponse)

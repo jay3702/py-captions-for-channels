@@ -128,7 +128,7 @@ async def process_reprocess_queue(state, pipeline, api, parser):
 
                 if result.success:
                     LOG.info("Reprocessing succeeded: %s", path)
-                    pipeline._log_job_statistics(result, job_id)
+                    pipeline._log_job_statistics(result, job_id, LOG)
                     state.clear_reprocess_request(path)
                 else:
                     LOG.error(

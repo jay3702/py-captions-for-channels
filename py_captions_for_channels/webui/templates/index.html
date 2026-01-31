@@ -58,14 +58,49 @@
     </section>
 
     <section class="card">
+    <section class="card">
       <div class="card-head">
-        <h2>Next steps</h2>
+        <h2>Pipeline Settings</h2>
       </div>
-      <ol class="next-steps">
-        <li>Wire /api/status to live pipeline metrics.</li>
-        <li>Add log streaming via WebSocket or SSE.</li>
-        <li>Expose controls for whitelist and processing toggles.</li>
-      </ol>
+      <form id="settings-form" onsubmit="saveSettings(event)">
+        <div class="settings-group">
+          <label for="dry-run-toggle">Dry Run</label>
+          <input type="checkbox" id="dry-run-toggle" name="dry_run">
+        </div>
+        <div class="settings-group">
+          <label for="keep-original-toggle">Keep Original</label>
+          <input type="checkbox" id="keep-original-toggle" name="keep_original">
+        </div>
+        <div class="settings-group">
+          <label for="transcode-toggle">Transcode for Fire TV/Android</label>
+          <input type="checkbox" id="transcode-toggle" name="transcode_for_firetv">
+        </div>
+        <div class="settings-group">
+          <label for="log-verbosity-select">Log Verbosity</label>
+          <select id="log-verbosity-select" name="log_verbosity">
+            <option value="MINIMAL">Minimal</option>
+            <option value="NORMAL">Normal</option>
+            <option value="VERBOSE">Verbose</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="whisper-model-select">Whisper Model</label>
+          <select id="whisper-model-select" name="whisper_model">
+            <option value="tiny">tiny</option>
+            <option value="base">base</option>
+            <option value="small">small</option>
+            <option value="medium">medium</option>
+            <option value="large">large</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="whitelist-editor">Whitelist</label>
+          <textarea id="whitelist-editor" name="whitelist" rows="8" style="width:100%"></textarea>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
+          <button type="submit" class="btn-primary">Save Settings</button>
+        </div>
+      </form>
     </section>
   </main>
 
