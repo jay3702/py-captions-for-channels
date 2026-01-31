@@ -253,11 +253,16 @@ async def status() -> dict:
         channels_healthy, channels_msg = check_service_health(CHANNELS_API_URL)
         channelwatch_healthy, channelwatch_msg = check_service_health(CHANNELWATCH_URL)
 
+        settings = load_settings()
         return {
             "app": "py-captions-for-channels",
             "version": "0.8.0-dev",
             "status": "running",
-            "dry_run": DRY_RUN,
+            "dry_run": settings.get("dry_run", False),
+            "keep_original": settings.get("keep_original", True),
+            "transcode_for_firetv": settings.get("transcode_for_firetv", False),
+            "log_verbosity": settings.get("log_verbosity", "NORMAL"),
+            "whisper_model": settings.get("whisper_model", "medium"),
             "last_processed": last_ts.isoformat() if last_ts else None,
             "reprocess_queue_size": len(reprocess_queue),
             "caption_command": (
