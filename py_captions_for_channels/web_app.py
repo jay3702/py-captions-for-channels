@@ -94,7 +94,7 @@ def check_service_health(url: str):
         return False, f"Error: {str(e)}"
 
 
-SETTINGS_PATH = BASE_DIR / "data" / "settings.json"
+SETTINGS_PATH = Path(__file__).parent.parent / "data" / "settings.json"
 SETTINGS_LOCK = threading.Lock()
 
 
