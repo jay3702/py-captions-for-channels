@@ -1,12 +1,3 @@
-from fastapi.responses import HTMLResponse
-
-
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    """Serve the main dashboard UI (index.html) at the root URL."""
-    return templates.TemplateResponse("index.html", {"request": request})
-
-
 import json
 import os
 from datetime import datetime, timezone
@@ -20,6 +11,7 @@ from fastapi import FastAPI, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
 import logging
 from .config import (
     STATE_FILE,
@@ -66,9 +58,15 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Templates
-
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 LOG = logging.getLogger(__name__)
+
+
+# --- Root Route for Web UI ---
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    """Serve the main dashboard UI (index.html) at the root URL."""
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 # --- Pipeline Settings API ---
