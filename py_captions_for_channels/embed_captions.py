@@ -417,18 +417,31 @@ def atomic_replace(src, dst, log):
         log.error(f"Atomic replacement failed: {e}")
 
 
-def main():
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} /path/to/video.mpg /path/to/captions.srt")
-        sys.exit(2)
 
-    mpg_path = sys.argv[1]
-    srt_path = sys.argv[2]
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Embed captions into Channels DVR recordings.")
+    parser.add_argument("--input", required=True, help="Path to video file (.mpg)")
+    parser.add_argument("--srt", required=True, help="Path to SRT captions file")
+    parser.add_argument("--model", default=os.getenv("WHISPER_MODEL", "medium"), help="Whisper model to use")
+    parser.add_argument("--skip-caption-generation", action="store_true", help="Skip caption generation step (assume SRT exists)")
+    parser.add_argument("--verbosity", default=os.getenv("LOG_VERBOSITY", "NORMAL"), help="Log verbosity (MINIMAL, NORMAL, VERBOSE)")
+    # Add more options as needed
+    args = parser.parse_args()
+
+    mpg_path = args.input
+    srt_path = args.srt
     job_id = extract_job_id_from_path(mpg_path)
     log = get_logger("embed_captions", job_id=job_id)
 
+    # Set verbosity if needed (optional)
+    # from py_captions_for_channels.logging_config import set_verbosity
+    # set_verbosity(args.verbosity)
+
     wait_for_file_stability(mpg_path, log)
     preserve_original(mpg_path, log)
+    if args.skip_caption_generation:
+        log.info("Skipping caption generation step (using existing SRT)")
     if not srt_exists_and_valid(srt_path):
         log.error("Missing or invalid SRT file.")
         sys.exit(1)
