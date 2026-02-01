@@ -42,6 +42,10 @@ pip install -r requirements-dev.txt
 # Copy and edit configuration
 cp .env.example .env
 
+# Setup pre-commit hooks (optional but recommended)
+./setup-hooks.sh  # Linux/Mac
+.\setup-hooks.ps1  # Windows
+
 # Run tests
 pytest
 
