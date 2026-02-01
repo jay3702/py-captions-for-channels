@@ -111,9 +111,6 @@ def check_log_file() -> bool:
         return False
 
 
-
-
-
 def check_ffprobe() -> bool:
     """Check if ffprobe is available (used for media duration probing).
 
@@ -161,7 +158,6 @@ async def run_health_checks(api: ChannelsAPI) -> bool:
         ("Channels DVR API", await check_channels_dvr(api)),
         ("State file", check_state_file()),
         ("Log file", check_log_file()),
-
         ("ffprobe", check_ffprobe()),
         ("ffmpeg", check_ffmpeg()),
     ]
