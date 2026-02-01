@@ -20,7 +20,6 @@ async function fetchStatus() {
     document.getElementById('timezone').textContent = data.timezone || '—';
     document.getElementById('dry-run').textContent = data.dry_run ? 'YES' : 'NO';
     document.getElementById('keep-original').textContent = data.keep_original ? 'YES' : 'NO';
-    document.getElementById('transcode-for-firetv').textContent = data.transcode_for_firetv ? 'YES' : 'NO';
     document.getElementById('log-verbosity').textContent = data.log_verbosity ? data.log_verbosity : '—';
     document.getElementById('whisper-model').textContent = data.whisper_model ? data.whisper_model : '—';
     document.getElementById('skip-caption-generation').textContent = data.skip_caption_generation ? 'YES' : 'NO';
@@ -311,23 +310,6 @@ async function showReprocessModal() {
   }
 }
 
-async function updateLogVerbosity() {
-  const verbositySelect = document.getElementById('log-verbosity');
-  const verbosity = verbositySelect.value;
-  try {
-    const res = await fetch('/api/logging/verbosity', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ verbosity })
-    });
-    if (!res.ok) throw new Error('Failed to update verbosity');
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-  } catch (err) {
-    alert('Failed to update log verbosity: ' + err.message);
-  }
-}
-
 function closeReprocessModal() {
   document.getElementById('reprocess-modal').style.display = 'none';
 }
@@ -341,11 +323,18 @@ async function submitReprocessing() {
     return;
   }
   
+  const skipCaptionGeneration = document.getElementById('reprocess-skip-caption').checked;
+  const logVerbosity = document.getElementById('reprocess-log-verbosity').value;
+  
   try {
     const res = await fetch('/api/reprocess/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths })
+      body: JSON.stringify({ 
+        paths, 
+        skip_caption_generation: skipCaptionGeneration,
+        log_verbosity: logVerbosity
+      })
     });
     
     if (!res.ok) throw new Error('Failed to add to reprocess queue');
@@ -482,10 +471,8 @@ async function loadSettings() {
     const data = await res.json();
     document.getElementById('dry-run-toggle').checked = !!data.dry_run;
     document.getElementById('keep-original-toggle').checked = !!data.keep_original;
-    document.getElementById('transcode-toggle').checked = !!data.transcode_for_firetv;
     document.getElementById('log-verbosity-select').value = (data.log_verbosity || 'NORMAL').toUpperCase();
     document.getElementById('whisper-model-select').value = data.whisper_model || 'medium';
-    document.getElementById('skip-caption-generation-toggle').checked = !!data.skip_caption_generation;
     document.getElementById('whitelist-editor').value = data.whitelist || '';
   } catch (err) {
     alert('Failed to load settings: ' + err.message);
@@ -497,10 +484,8 @@ async function saveSettings(event) {
   const payload = {
     dry_run: document.getElementById('dry-run-toggle').checked,
     keep_original: document.getElementById('keep-original-toggle').checked,
-    transcode_for_firetv: document.getElementById('transcode-toggle').checked,
     log_verbosity: document.getElementById('log-verbosity-select').value,
     whisper_model: document.getElementById('whisper-model-select').value,
-    skip_caption_generation: document.getElementById('skip-caption-generation-toggle').checked,
     whitelist: document.getElementById('whitelist-editor').value,
   };
   try {

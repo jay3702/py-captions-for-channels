@@ -127,12 +127,10 @@ def load_settings():
     settings = {
         "dry_run": env_bool("DRY_RUN", DRY_RUN),
         "keep_original": env_bool("KEEP_ORIGINAL", True),
-        "transcode_for_firetv": env_bool("TRANSCODE_FOR_FIRETV", False),
         "log_verbosity": env_vars.get("LOG_VERBOSITY", LOG_VERBOSITY),
         "whisper_model": env_vars.get(
             "WHISPER_MODEL", os.getenv("WHISPER_MODEL", "medium")
         ),
-        "skip_caption_generation": env_bool("SKIP_CAPTION_GENERATION", False),
         "whitelist": "",
     }
     # Always read whitelist from project root whitelist.txt
@@ -154,11 +152,9 @@ def save_settings(settings: dict):
     # Also update .env as backup
     env_path = Path(__file__).parent.parent / ".env"
     log_verbosity = settings.get("log_verbosity", "NORMAL").upper()
-    transcode_firetv = "true" if settings.get("transcode_for_firetv") else "false"
     env_lines = [
         f"DRY_RUN={'true' if settings.get('dry_run') else 'false'}\n",
         f"KEEP_ORIGINAL={'true' if settings.get('keep_original') else 'false'}\n",
-        f"TRANSCODE_FOR_FIRETV={transcode_firetv}\n",
         f"LOG_VERBOSITY={log_verbosity}\n",
         f"WHISPER_MODEL={settings.get('whisper_model', 'medium')}\n",
     ]
@@ -187,10 +183,8 @@ async def set_settings(data: dict = Body(...)) -> dict:
         allowed = {
             "dry_run",
             "keep_original",
-            "transcode_for_firetv",
             "log_verbosity",
             "whisper_model",
-            "skip_caption_generation",
             "whitelist",
         }
         current = load_settings()
@@ -272,7 +266,6 @@ async def status() -> dict:
             "status": "running",
             "dry_run": settings.get("dry_run", False),
             "keep_original": settings.get("keep_original", True),
-            "transcode_for_firetv": settings.get("transcode_for_firetv", False),
             "log_verbosity": settings.get("log_verbosity", "NORMAL"),
             "whisper_model": settings.get("whisper_model", "medium"),
             "last_processed": last_ts.isoformat() if last_ts else None,
@@ -522,20 +515,22 @@ async def get_reprocess_candidates() -> dict:
 async def add_to_reprocess_queue(request: Request) -> dict:
     """Add paths to the reprocess queue.
 
-    Expects JSON body: {"paths": ["path1", "path2", ...]}
+    Expects JSON body: {"paths": ["path1", "path2", ...], "skip_caption_generation": bool, "log_verbosity": str}
     """
     try:
         data = await request.json()
         paths = data.get("paths", [])
+        skip_caption_generation = data.get("skip_caption_generation", False)
+        log_verbosity = data.get("log_verbosity", "NORMAL")
 
         if not paths:
             return {"error": "No paths provided", "added": 0}
 
         tracker = get_tracker()
 
-        # Add paths to reprocess queue
+        # Add paths to reprocess queue with settings
         for path in paths:
-            state_backend.mark_for_reprocess(path)
+            state_backend.mark_for_reprocess(path, skip_caption_generation, log_verbosity)
             filename = path.split("/")[-1]
             title = f"Reprocess: {filename}"
             job_id = build_reprocess_job_id(path)
@@ -603,12 +598,12 @@ async def remove_from_reprocess_queue(request: Request) -> dict:
         # Clear from state backend
         state_backend.clear_reprocess_request(path)
 
-        # Cancel execution if pending
+        # Remove execution if pending (completely delete it)
         tracker = get_tracker()
         job_id = build_reprocess_job_id(path)
         execution = tracker.get_execution(job_id)
         if execution and execution.get("status") == "pending":
-            tracker.request_cancel(job_id)
+            tracker.remove_execution(job_id)
 
         return {
             "removed": True,

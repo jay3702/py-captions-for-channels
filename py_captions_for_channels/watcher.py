@@ -67,10 +67,8 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                 filename = path.split("/")[-1]
                 title = f"Reprocess: {filename}"
 
-                # Load current settings for the event
-                from .web_app import load_settings
-
-                settings = load_settings()
+                # Load per-item settings for this reprocess request
+                item_settings = state.get_reprocess_settings(path)
 
                 event = Parser().from_channelwatch(
                     type(
@@ -85,10 +83,15 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                     path,
                 )
 
+                # Load global settings for model, but use per-item settings for skip/verbosity
+                from .web_app import load_settings
+
+                global_settings = load_settings()
+
                 # Add settings to event for pipeline
-                event.whisper_model = settings.get("whisper_model", "medium")
-                event.log_verbosity = settings.get("log_verbosity", "NORMAL")
-                event.skip_caption_generation = settings.get(
+                event.whisper_model = global_settings.get("whisper_model", "medium")
+                event.log_verbosity = item_settings.get("log_verbosity", "NORMAL")
+                event.skip_caption_generation = item_settings.get(
                     "skip_caption_generation", False
                 )
                 event.srt_path = None  # Let pipeline compute default
