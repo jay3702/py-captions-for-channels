@@ -11,7 +11,6 @@ from pathlib import Path
 
 from .channels_api import ChannelsAPI
 from .config import (
-    CAPTION_COMMAND,
     CHANNELS_API_URL,
     LOG_FILE,
     STATE_FILE,
@@ -112,35 +111,7 @@ def check_log_file() -> bool:
         return False
 
 
-def check_caption_command() -> bool:
-    """Check if caption command tool is available.
 
-    For Whisper, verifies 'whisper' command exists.
-    Returns True if tool is available, False otherwise.
-    """
-    try:
-        LOG.info("Checking caption command: %s", CAPTION_COMMAND[:60])
-
-        # Extract the tool name from the command (first token)
-        command_parts = CAPTION_COMMAND.split()
-        tool_name = command_parts[0] if command_parts else ""
-
-        # Handle special cases
-        if tool_name in ("bash", "sh", "/bin/bash", "/bin/sh"):
-            # Command is a shell invocation, can't verify easily
-            LOG.info("  Caption command is shell-based (cannot pre-verify)")
-            return True
-
-        # Check if tool exists in PATH
-        if shutil.which(tool_name):
-            LOG.info("✓ Caption command tool is available: %s", tool_name)
-            return True
-
-        LOG.warning("✗ Caption command tool not found in PATH: %s", tool_name)
-        return False
-    except Exception as e:
-        LOG.warning("  Could not verify caption command: %s", str(e))
-        return True  # Don't fail on this
 
 
 def check_ffprobe() -> bool:
@@ -190,7 +161,7 @@ async def run_health_checks(api: ChannelsAPI) -> bool:
         ("Channels DVR API", await check_channels_dvr(api)),
         ("State file", check_state_file()),
         ("Log file", check_log_file()),
-        ("Caption command", check_caption_command()),
+
         ("ffprobe", check_ffprobe()),
         ("ffmpeg", check_ffmpeg()),
     ]
