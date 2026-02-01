@@ -248,13 +248,15 @@ class Pipeline:
             if not srt_path:
                 # Default SRT path: same dir as input, basename.srt
                 import os
+
                 base = os.path.splitext(os.path.basename(safe_path))[0]
                 srt_path = os.path.join(os.path.dirname(safe_path), f"{base}.srt")
+
             # Helper to shell-quote arguments
             def shell_quote(val):
                 if val is None:
                     return "''"
-                return '"' + str(val).replace('"', '\"') + '"'
+                return '"' + str(val).replace('"', '"') + '"'
 
             options = [
                 f"--input {shell_quote(safe_path)}",
