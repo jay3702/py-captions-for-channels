@@ -66,11 +66,12 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                 # Create a minimal event from the path with settings
                 filename = path.split("/")[-1]
                 title = f"Reprocess: {filename}"
-                
+
                 # Load current settings for the event
                 from .settings_manager import load_settings
+
                 settings = load_settings()
-                
+
                 event = Parser().from_channelwatch(
                     type(
                         "PartialEvent",
@@ -83,11 +84,13 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                     )(),
                     path,
                 )
-                
+
                 # Add settings to event for pipeline
                 event.whisper_model = settings.get("whisper_model", "medium")
                 event.log_verbosity = settings.get("log_verbosity", "NORMAL")
-                event.skip_caption_generation = settings.get("skip_caption_generation", False)
+                event.skip_caption_generation = settings.get(
+                    "skip_caption_generation", False
+                )
                 event.srt_path = None  # Let pipeline compute default
 
                 # Start tracking execution
