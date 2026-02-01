@@ -83,7 +83,8 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                     path,
                 )
 
-                # Load global settings for model, but use per-item settings for skip/verbosity
+                # Load global settings for model,
+                # but use per-item settings for skip/verbosity
                 from .web_app import load_settings
 
                 global_settings = load_settings()
