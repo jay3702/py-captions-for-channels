@@ -132,6 +132,7 @@ def load_settings():
         "whisper_model": env_vars.get(
             "WHISPER_MODEL", os.getenv("WHISPER_MODEL", "medium")
         ),
+        "skip_caption_generation": env_bool("SKIP_CAPTION_GENERATION", False),
         "whitelist": "",
     }
     # Always read whitelist from project root whitelist.txt
@@ -189,6 +190,7 @@ async def set_settings(data: dict = Body(...)) -> dict:
             "transcode_for_firetv",
             "log_verbosity",
             "whisper_model",
+            "skip_caption_generation",
             "whitelist",
         }
         current = load_settings()

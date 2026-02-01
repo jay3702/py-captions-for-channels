@@ -51,6 +51,10 @@
              <td class="status-label">Whisper Model:</td>
              <td class="status-value" id="whisper-model">—</td>
            </tr>
+           <tr>
+             <td class="status-label">Skip Caption Generation:</td>
+             <td class="status-value" id="skip-caption-generation">—</td>
+           </tr>
         <tr>
           <td class="status-label">Last Processed:</td>
           <td class="status-value value-sub" id="last-processed">—</td>
@@ -113,6 +117,10 @@
         <div class="settings-group">
           <label for="whitelist-editor">Whitelist</label>
           <textarea id="whitelist-editor" name="whitelist" rows="8" style="width:100%"></textarea>
+        </div>
+        <div class="settings-group">
+          <label for="skip-caption-generation-toggle">Skip Caption Generation</label>
+          <input type="checkbox" id="skip-caption-generation-toggle" name="skip_caption_generation">
         </div>
         <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
           <button type="submit" class="btn-primary">Save Settings</button>

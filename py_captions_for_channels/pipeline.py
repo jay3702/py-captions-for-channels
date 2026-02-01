@@ -240,7 +240,21 @@ class Pipeline:
                 safe_path = shlex.quote(event.path)
             except Exception:
                 safe_path = event.path  # fallback
-            cmd = self.command_template.format(path=safe_path)
+            # Build command with settings from event or config
+            whisper_model = getattr(event, "whisper_model", "medium")
+            log_verbosity = getattr(event, "log_verbosity", "NORMAL")
+            skip_caption_generation = getattr(event, "skip_caption_generation", False)
+            srt_path = getattr(event, "srt_path", None)
+            # Build options
+            options = [
+                f"--input {safe_path}",
+                f"--srt {srt_path}" if srt_path else "",
+                f"--model {whisper_model}" if whisper_model else "",
+                f"--verbosity {log_verbosity}" if log_verbosity else "",
+                "--skip-caption-generation" if skip_caption_generation else "",
+            ]
+            options_str = " ".join([opt for opt in options if opt])
+            cmd = f"python -m py_captions_for_channels.embed_captions {options_str}"
 
             if self.dry_run:
                 log.info("[DRY-RUN] Would execute: %s", cmd)

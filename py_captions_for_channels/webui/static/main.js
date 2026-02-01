@@ -23,6 +23,7 @@ async function fetchStatus() {
     document.getElementById('transcode-for-firetv').textContent = data.transcode_for_firetv ? 'YES' : 'NO';
     document.getElementById('log-verbosity').textContent = data.log_verbosity ? data.log_verbosity : '—';
     document.getElementById('whisper-model').textContent = data.whisper_model ? data.whisper_model : '—';
+    document.getElementById('skip-caption-generation').textContent = data.skip_caption_generation ? 'YES' : 'NO';
     document.getElementById('last-processed').textContent = data.last_processed 
       ? new Date(data.last_processed).toLocaleString() 
       : 'never';
@@ -452,6 +453,7 @@ async function loadSettings() {
     document.getElementById('transcode-toggle').checked = !!data.transcode_for_firetv;
     document.getElementById('log-verbosity-select').value = (data.log_verbosity || 'NORMAL').toUpperCase();
     document.getElementById('whisper-model-select').value = data.whisper_model || 'medium';
+    document.getElementById('skip-caption-generation-toggle').checked = !!data.skip_caption_generation;
     document.getElementById('whitelist-editor').value = data.whitelist || '';
   } catch (err) {
     alert('Failed to load settings: ' + err.message);
@@ -466,6 +468,7 @@ async function saveSettings(event) {
     transcode_for_firetv: document.getElementById('transcode-toggle').checked,
     log_verbosity: document.getElementById('log-verbosity-select').value,
     whisper_model: document.getElementById('whisper-model-select').value,
+    skip_caption_generation: document.getElementById('skip-caption-generation-toggle').checked,
     whitelist: document.getElementById('whitelist-editor').value,
   };
   try {
