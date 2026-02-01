@@ -13,7 +13,7 @@ class StateBackend:
     def __init__(self, path: str):
         self.path = path
         self.last_ts = None
-        self.reprocess_paths = set()  # Paths marked for reprocessing
+        self.reprocess_paths = {}  # Paths marked for reprocessing -> {skip_caption_generation, log_verbosity}
         self._load()
 
     def _load(self):
@@ -24,12 +24,21 @@ class StateBackend:
                     ts_str = data.get("last_timestamp")
                     if ts_str:
                         self.last_ts = datetime.fromisoformat(ts_str)
-                    # Load reprocess queue if it exists
-                    self.reprocess_paths = set(data.get("reprocess_paths", []))
+                    # Load reprocess queue - handle both old (list) and new (dict) formats
+                    reprocess_data = data.get("reprocess_paths", [])
+                    if isinstance(reprocess_data, list):
+                        # Old format: convert to dict with default settings
+                        self.reprocess_paths = {
+                            path: {"skip_caption_generation": False, "log_verbosity": "NORMAL"}
+                            for path in reprocess_data
+                        }
+                    else:
+                        # New format: dict
+                        self.reprocess_paths = reprocess_data
             except Exception:
                 # Corrupt state file? Reset safely.
                 self.last_ts = None
-                self.reprocess_paths = set()
+                self.reprocess_paths = {}
 
     def should_process(self, ts: datetime) -> bool:
         """
@@ -45,11 +54,14 @@ class StateBackend:
         self.last_ts = ts  # Update in-memory state
         self._persist_state(ts, self.reprocess_paths)
 
-    def mark_for_reprocess(self, path: str):
+    def mark_for_reprocess(self, path: str, skip_caption_generation: bool = False, log_verbosity: str = "NORMAL"):
         """
-        Mark a file path for reprocessing (forced retry).
+        Mark a file path for reprocessing with specific settings.
         """
-        self.reprocess_paths.add(path)
+        self.reprocess_paths[path] = {
+            "skip_caption_generation": skip_caption_generation,
+            "log_verbosity": log_verbosity,
+        }
         self._persist_state(self.last_ts, self.reprocess_paths)
 
     def has_reprocess_request(self, path: str) -> bool:
@@ -58,21 +70,27 @@ class StateBackend:
         """
         return path in self.reprocess_paths
 
+    def get_reprocess_settings(self, path: str) -> dict:
+        """
+        Get reprocess settings for a path.
+        """
+        return self.reprocess_paths.get(path, {"skip_caption_generation": False, "log_verbosity": "NORMAL"})
+
     def clear_reprocess_request(self, path: str):
         """
         Clear a reprocess request after handling it.
         """
         if path in self.reprocess_paths:
-            self.reprocess_paths.discard(path)
+            del self.reprocess_paths[path]
             self._persist_state(self.last_ts, self.reprocess_paths)
 
     def get_reprocess_queue(self) -> list:
         """
         Return list of paths awaiting reprocessing.
         """
-        return list(self.reprocess_paths)
+        return list(self.reprocess_paths.keys())
 
-    def _persist_state(self, ts: datetime, reprocess_paths: set):
+    def _persist_state(self, ts: datetime, reprocess_paths: dict):
         """
         Persist state safely using an atomic write.
         """
@@ -84,7 +102,7 @@ class StateBackend:
         with open(tmp, "w") as f:
             data = {
                 "last_timestamp": ts.isoformat() if ts else None,
-                "reprocess_paths": sorted(list(reprocess_paths)),
+                "reprocess_paths": reprocess_paths,
             }
             json.dump(data, f)
 

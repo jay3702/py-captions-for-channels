@@ -4,14 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Py Captions Dashboard</title>
+  <link rel="icon" type="image/x-icon" href="/static/channels_cc_favicon/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/channels_cc_favicon/icon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/channels_cc_favicon/icon-16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/channels_cc_favicon/icon-180.png" />
+  <link rel="manifest" href="/static/channels_cc_favicon/site.webmanifest" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <header class="hero">
-    <div>
-      <p class="eyebrow">Py Captions</p>
-      <h1>Real-time caption pipeline</h1>
-      <p class="lede">Monitor jobs, logs, and system health from a single place.</p>
+    <div style="display: flex; align-items: center; gap: 1rem;">
+      <img src="/static/channels_cc_favicon/icon-64.png" alt="Py Captions" style="width: 48px; height: 48px;" />
+      <div>
+        <p class="eyebrow">Py Captions</p>
+        <h1>Real-time caption pipeline</h1>
+        <p class="lede">Monitor jobs, logs, and system health from a single place.</p>
+      </div>
     </div>
     <div class="pill">v0.8.0-dev</div>
   </header>
@@ -38,10 +46,6 @@
            <tr>
              <td class="status-label">Keep Original:</td>
              <td class="status-value" id="keep-original">—</td>
-           </tr>
-           <tr>
-             <td class="status-label">Transcode for Fire TV:</td>
-             <td class="status-value" id="transcode-for-firetv">—</td>
            </tr>
            <tr>
              <td class="status-label">Log Verbosity:</td>
@@ -92,10 +96,6 @@
           <input type="checkbox" id="keep-original-toggle" name="keep_original">
         </div>
         <div class="settings-group">
-          <label for="transcode-toggle">Transcode for Fire TV/Android</label>
-          <input type="checkbox" id="transcode-toggle" name="transcode_for_firetv">
-        </div>
-        <div class="settings-group">
           <label for="log-verbosity-select">Log Verbosity</label>
           <select id="log-verbosity-select" name="log_verbosity">
             <option value="MINIMAL">Minimal</option>
@@ -116,10 +116,6 @@
         <div class="settings-group">
           <label for="whitelist-editor">Whitelist</label>
           <textarea id="whitelist-editor" name="whitelist" rows="8" style="width:100%"></textarea>
-        </div>
-        <div class="settings-group">
-          <label for="skip-caption-generation-toggle">Skip Caption Generation</label>
-          <input type="checkbox" id="skip-caption-generation-toggle" name="skip_caption_generation">
         </div>
         <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
           <button type="submit" class="btn-primary">Save Settings</button>
@@ -179,14 +175,21 @@
         <div class="modal-body">
            <div class="reprocess-controls">
              <p class="muted">Select recordings to add to the reprocessing queue:</p>
-             <div class="verbosity-control">
-               <label for="log-verbosity">Log Verbosity</label>
-               <select id="log-verbosity" onchange="updateLogVerbosity()">
-                 <option value="MINIMAL">Minimal</option>
-                 <option value="NORMAL">Normal</option>
-                 <option value="VERBOSE">Verbose</option>
-               </select>
+             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
+               <div class="settings-group">
+                 <label for="reprocess-skip-caption">Skip Caption Generation</label>
+                 <input type="checkbox" id="reprocess-skip-caption" name="skip_caption_generation">
+               </div>
+               <div class="settings-group">
+                 <label for="reprocess-log-verbosity">Log Verbosity</label>
+                 <select id="reprocess-log-verbosity" name="log_verbosity">
+                   <option value="MINIMAL">Minimal</option>
+                   <option value="NORMAL" selected>Normal</option>
+                   <option value="VERBOSE">Verbose</option>
+                 </select>
+               </div>
              </div>
+             <p class="muted" style="font-size: 0.9em; margin-top: -5px;">These settings will apply to all selected items.</p>
            </div>
           <div id="reprocess-list" style="max-height: 400px; overflow-y: auto;">
             <p class="muted">Loading candidates...</p>

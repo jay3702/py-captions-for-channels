@@ -133,6 +133,19 @@ class ExecutionTracker:
             exec_data = self.executions.get(job_id)
             return bool(exec_data and exec_data.get("cancel_requested"))
 
+    def remove_execution(self, job_id: str) -> bool:
+        """Remove an execution from the tracker.
+
+        Returns True if the job existed and was removed.
+        """
+        with self.lock:
+            if job_id in self.executions:
+                del self.executions[job_id]
+                self._save()
+                LOG.info("Removed execution from tracker: %s", job_id)
+                return True
+            return False
+
     def add_log(self, job_id: str, log_line: str):
         """Add a log line to an execution.
 
