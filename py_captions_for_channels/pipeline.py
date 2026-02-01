@@ -254,16 +254,8 @@ class Pipeline:
             def shell_quote(val):
                 if val is None:
                     return "''"
-                return f"'{str(val).replace("'", "'\\''")}'"
+                return '"' + str(val).replace('"', '\"') + '"'
 
-            options = [
-                f"--input {shell_quote(safe_path)}",
-                f"--srt {shell_quote(srt_path)}",
-                f"--model {shell_quote(whisper_model)}" if whisper_model else "",
-                f"--verbosity {shell_quote(log_verbosity)}" if log_verbosity else "",
-                "--skip-caption-generation" if skip_caption_generation else "",
-            ]
-            # Fix: quote only argument values, not the whole argument
             options = [
                 f"--input {shell_quote(safe_path)}",
                 f"--srt {shell_quote(srt_path)}",
