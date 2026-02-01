@@ -417,15 +417,29 @@ def atomic_replace(src, dst, log):
         log.error(f"Atomic replacement failed: {e}")
 
 
-
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Embed captions into Channels DVR recordings.")
+
+    parser = argparse.ArgumentParser(
+        description="Embed captions into Channels DVR recordings."
+    )
     parser.add_argument("--input", required=True, help="Path to video file (.mpg)")
     parser.add_argument("--srt", required=True, help="Path to SRT captions file")
-    parser.add_argument("--model", default=os.getenv("WHISPER_MODEL", "medium"), help="Whisper model to use")
-    parser.add_argument("--skip-caption-generation", action="store_true", help="Skip caption generation step (assume SRT exists)")
-    parser.add_argument("--verbosity", default=os.getenv("LOG_VERBOSITY", "NORMAL"), help="Log verbosity (MINIMAL, NORMAL, VERBOSE)")
+    parser.add_argument(
+        "--model",
+        default=os.getenv("WHISPER_MODEL", "medium"),
+        help="Whisper model to use",
+    )
+    parser.add_argument(
+        "--skip-caption-generation",
+        action="store_true",
+        help="Skip caption generation step (assume SRT exists)",
+    )
+    parser.add_argument(
+        "--verbosity",
+        default=os.getenv("LOG_VERBOSITY", "NORMAL"),
+        help="Log verbosity (MINIMAL, NORMAL, VERBOSE)",
+    )
     # Add more options as needed
     args = parser.parse_args()
 
