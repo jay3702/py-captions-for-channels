@@ -255,8 +255,8 @@ class Pipeline:
             # Helper to shell-quote arguments
             def shell_quote(val):
                 if val is None:
-                    return "''"
-                return '"' + str(val).replace('"', '"') + '"'
+                    return '""'
+                return '"' + str(val).replace('"', '\"') + '"'
 
             options = [
                 f"--input {shell_quote(safe_path)}",
