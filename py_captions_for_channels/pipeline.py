@@ -250,12 +250,17 @@ class Pipeline:
                 import os
                 base = os.path.splitext(os.path.basename(safe_path))[0]
                 srt_path = os.path.join(os.path.dirname(safe_path), f"{base}.srt")
-            # Build options
+            # Helper to shell-quote arguments
+            def shell_quote(val):
+                if val is None:
+                    return "''"
+                return f"'{str(val).replace("'", "'\\''")}'"
+
             options = [
-                f"--input {safe_path}",
-                f"--srt {srt_path}",
-                f"--model {whisper_model}" if whisper_model else "",
-                f"--verbosity {log_verbosity}" if log_verbosity else "",
+                f"--input {shell_quote(safe_path)}",
+                f"--srt {shell_quote(srt_path)}",
+                f"--model {shell_quote(whisper_model)}" if whisper_model else "",
+                f"--verbosity {shell_quote(log_verbosity)}" if log_verbosity else "",
                 "--skip-caption-generation" if skip_caption_generation else "",
             ]
             options_str = " ".join([opt for opt in options if opt])
