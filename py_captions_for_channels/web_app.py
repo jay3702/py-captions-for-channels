@@ -587,6 +587,38 @@ async def add_to_reprocess_queue(request: Request) -> dict:
         return {"error": str(e), "added": 0}
 
 
+@app.post("/api/reprocess/remove")
+async def remove_from_reprocess_queue(request: Request) -> dict:
+    """Remove a path from the reprocess queue.
+
+    Expects JSON body: {"path": "path/to/file.mpg"}
+    """
+    try:
+        data = await request.json()
+        path = data.get("path")
+
+        if not path:
+            return {"error": "No path provided", "removed": False}
+
+        # Clear from state backend
+        state_backend.clear_reprocess_request(path)
+
+        # Cancel execution if pending
+        tracker = get_tracker()
+        job_id = build_reprocess_job_id(path)
+        execution = tracker.get_execution(job_id)
+        if execution and execution.get("status") == "pending":
+            tracker.cancel_execution(job_id)
+
+        return {
+            "removed": True,
+            "path": path,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        return {"error": str(e), "removed": False}
+
+
 @app.get("/api/logging/verbosity")
 async def get_logging_verbosity() -> dict:
     """Get current logging verbosity setting."""

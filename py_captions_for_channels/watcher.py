@@ -68,7 +68,7 @@ async def process_reprocess_queue(state, pipeline, api, parser):
                 title = f"Reprocess: {filename}"
 
                 # Load current settings for the event
-                from .settings_manager import load_settings
+                from .web_app import load_settings
 
                 settings = load_settings()
 
