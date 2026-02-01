@@ -245,10 +245,15 @@ class Pipeline:
             log_verbosity = getattr(event, "log_verbosity", "NORMAL")
             skip_caption_generation = getattr(event, "skip_caption_generation", False)
             srt_path = getattr(event, "srt_path", None)
+            if not srt_path:
+                # Default SRT path: same dir as input, basename.srt
+                import os
+                base = os.path.splitext(os.path.basename(safe_path))[0]
+                srt_path = os.path.join(os.path.dirname(safe_path), f"{base}.srt")
             # Build options
             options = [
                 f"--input {safe_path}",
-                f"--srt {srt_path}" if srt_path else "",
+                f"--srt {srt_path}",
                 f"--model {whisper_model}" if whisper_model else "",
                 f"--verbosity {log_verbosity}" if log_verbosity else "",
                 "--skip-caption-generation" if skip_caption_generation else "",
