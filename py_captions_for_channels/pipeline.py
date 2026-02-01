@@ -241,10 +241,15 @@ class Pipeline:
             except Exception:
                 safe_path = event.path  # fallback
 
-            # Check if we're using the embed_captions.py module (production case)
+            # Check if we're using the embed_captions module (production case)
             # If so, build command dynamically with settings from event
             # Otherwise, use the command_template (for tests and custom commands)
-            if "py_captions_for_channels.embed_captions" in self.command_template:
+            # Match both: "py_captions_for_channels.embed_captions" (module)
+            # and "/path/to/embed_captions.py" (direct script)
+            if (
+                "py_captions_for_channels.embed_captions" in self.command_template
+                or "embed_captions.py" in self.command_template
+            ):
                 # Build command with settings from event or config
                 whisper_model = getattr(event, "whisper_model", "medium")
                 log_verbosity = getattr(event, "log_verbosity", "NORMAL")
