@@ -163,6 +163,11 @@ async function fetchStatus() {
           <p><strong>Duration:</strong> ${exec.elapsed_seconds > 0 ? Math.floor(exec.elapsed_seconds / 60) + 'm ' + (exec.elapsed_seconds % 60).toFixed(1) + 's' : '—'}</p>
           <p><strong>Path:</strong> <code>${escapeHtml(exec.path)}</code></p>
           ${exec.error ? `<p class="error-text"><strong>Error:</strong> ${escapeHtml(exec.error)}</p>` : ''}
+          ${exec.kind === 'reprocess' && exec.status === 'pending' ? `
+            <div style="margin-top: 20px;">
+              <button class="btn-secondary" onclick="removeFromReprocessQueue('${escapeAttr(exec.path)}', '${escapeAttr(exec.id)}')">Remove from Queue</button>
+            </div>
+          ` : ''}
         </div>
         <div class="detail-section">
           <h3>Logs</h3>
@@ -356,6 +361,33 @@ async function submitReprocessing() {
   } catch (err) {
     alert('Error adding to reprocess queue: ' + err.message);
     console.error('Reprocess submit error:', err);
+  }
+}
+
+async function removeFromReprocessQueue(path, execId) {
+  if (!confirm('Remove this item from the reprocess queue?')) return;
+  
+  try {
+    const res = await fetch('/api/reprocess/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    
+    if (!res.ok) throw new Error('Failed to remove from reprocess queue');
+    const data = await res.json();
+    
+    if (data.error) {
+      alert('Error: ' + data.error);
+    } else {
+      alert('Item removed from reprocess queue');
+      closeModal();
+      fetchStatus(); // Refresh to update queue count
+      fetchExecutions(); // Refresh execution list
+    }
+  } catch (err) {
+    alert('Error removing from reprocess queue: ' + err.message);
+    console.error('Remove from reprocess queue error:', err);
   }
 }
 
