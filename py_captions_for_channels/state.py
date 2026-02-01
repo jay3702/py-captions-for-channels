@@ -13,7 +13,9 @@ class StateBackend:
     def __init__(self, path: str):
         self.path = path
         self.last_ts = None
-        self.reprocess_paths = {}  # Paths marked for reprocessing -> {skip_caption_generation, log_verbosity}
+        self.reprocess_paths = (
+            {}
+        )  # Paths marked for reprocessing -> {skip_caption_generation, log_verbosity}
         self._load()
 
     def _load(self):
@@ -29,7 +31,10 @@ class StateBackend:
                     if isinstance(reprocess_data, list):
                         # Old format: convert to dict with default settings
                         self.reprocess_paths = {
-                            path: {"skip_caption_generation": False, "log_verbosity": "NORMAL"}
+                            path: {
+                                "skip_caption_generation": False,
+                                "log_verbosity": "NORMAL",
+                            }
                             for path in reprocess_data
                         }
                     else:
@@ -54,7 +59,12 @@ class StateBackend:
         self.last_ts = ts  # Update in-memory state
         self._persist_state(ts, self.reprocess_paths)
 
-    def mark_for_reprocess(self, path: str, skip_caption_generation: bool = False, log_verbosity: str = "NORMAL"):
+    def mark_for_reprocess(
+        self,
+        path: str,
+        skip_caption_generation: bool = False,
+        log_verbosity: str = "NORMAL",
+    ):
         """
         Mark a file path for reprocessing with specific settings.
         """
@@ -74,7 +84,9 @@ class StateBackend:
         """
         Get reprocess settings for a path.
         """
-        return self.reprocess_paths.get(path, {"skip_caption_generation": False, "log_verbosity": "NORMAL"})
+        return self.reprocess_paths.get(
+            path, {"skip_caption_generation": False, "log_verbosity": "NORMAL"}
+        )
 
     def clear_reprocess_request(self, path: str):
         """
