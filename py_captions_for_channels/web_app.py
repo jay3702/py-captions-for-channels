@@ -530,7 +530,9 @@ async def add_to_reprocess_queue(request: Request) -> dict:
 
         # Add paths to reprocess queue with settings
         for path in paths:
-            state_backend.mark_for_reprocess(path, skip_caption_generation, log_verbosity)
+            state_backend.mark_for_reprocess(
+                path, skip_caption_generation, log_verbosity
+            )
             filename = path.split("/")[-1]
             title = f"Reprocess: {filename}"
             job_id = build_reprocess_job_id(path)
