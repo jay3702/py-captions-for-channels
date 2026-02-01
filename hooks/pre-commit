@@ -1,0 +1,19 @@
+#!/bin/sh
+# Git pre-commit hook to run linters
+
+echo "Running Black formatter..."
+black --check .
+if [ $? -ne 0 ]; then
+    echo "❌ Black formatting failed. Run 'black .' to fix."
+    exit 1
+fi
+
+echo "Running flake8..."
+flake8 . --max-line-length=88 --extend-ignore=E203,W503
+if [ $? -ne 0 ]; then
+    echo "❌ Flake8 checks failed. Fix the errors above."
+    exit 1
+fi
+
+echo "✅ All linters passed!"
+exit 0
