@@ -515,7 +515,9 @@ async def get_reprocess_candidates() -> dict:
 async def add_to_reprocess_queue(request: Request) -> dict:
     """Add paths to the reprocess queue.
 
-    Expects JSON body: {"paths": ["path1", "path2", ...], "skip_caption_generation": bool, "log_verbosity": str}
+    Expects JSON body:
+    {"paths": ["path1", ...], "skip_caption_generation": bool,
+    "log_verbosity": str}
     """
     try:
         data = await request.json()

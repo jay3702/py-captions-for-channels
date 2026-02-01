@@ -26,7 +26,8 @@ class StateBackend:
                     ts_str = data.get("last_timestamp")
                     if ts_str:
                         self.last_ts = datetime.fromisoformat(ts_str)
-                    # Load reprocess queue - handle both old (list) and new (dict) formats
+                    # Load reprocess queue - handle both old (list)
+                    # and new (dict) formats
                     reprocess_data = data.get("reprocess_paths", [])
                     if isinstance(reprocess_data, list):
                         # Old format: convert to dict with default settings
