@@ -608,7 +608,7 @@ async def remove_from_reprocess_queue(request: Request) -> dict:
         job_id = build_reprocess_job_id(path)
         execution = tracker.get_execution(job_id)
         if execution and execution.get("status") == "pending":
-            tracker.cancel_execution(job_id)
+            tracker.request_cancel(job_id)
 
         return {
             "removed": True,
