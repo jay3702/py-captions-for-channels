@@ -277,9 +277,13 @@ class Pipeline:
                     "--skip-caption-generation" if skip_caption_generation else "",
                 ]
                 options_str = " ".join([opt for opt in options if opt])
-                cmd = f"python -m py_captions_for_channels.embed_captions {options_str}"
+                cmd = (
+                    "python -m py_captions_for_channels.embed_captions "
+                    f"{options_str}"
+                )
             else:
-                # Use traditional command template formatting (for tests/custom commands)
+                # Use traditional command template formatting
+                # (for tests/custom commands)
                 cmd = self.command_template.format(path=safe_path)
 
             if self.dry_run:
