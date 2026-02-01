@@ -240,33 +240,41 @@ class Pipeline:
                 safe_path = shlex.quote(event.path)
             except Exception:
                 safe_path = event.path  # fallback
-            # Build command with settings from event or config
-            whisper_model = getattr(event, "whisper_model", "medium")
-            log_verbosity = getattr(event, "log_verbosity", "NORMAL")
-            skip_caption_generation = getattr(event, "skip_caption_generation", False)
-            srt_path = getattr(event, "srt_path", None)
-            if not srt_path:
-                # Default SRT path: same dir as input, basename.srt
-                import os
+            
+            # Check if we're using the embed_captions.py module (production case)
+            # If so, build command dynamically with settings from event
+            # Otherwise, use the command_template (for tests and custom commands)
+            if "py_captions_for_channels.embed_captions" in self.command_template:
+                # Build command with settings from event or config
+                whisper_model = getattr(event, "whisper_model", "medium")
+                log_verbosity = getattr(event, "log_verbosity", "NORMAL")
+                skip_caption_generation = getattr(event, "skip_caption_generation", False)
+                srt_path = getattr(event, "srt_path", None)
+                if not srt_path:
+                    # Default SRT path: same dir as input, basename.srt
+                    import os
 
-                base = os.path.splitext(os.path.basename(safe_path))[0]
-                srt_path = os.path.join(os.path.dirname(safe_path), f"{base}.srt")
+                    base = os.path.splitext(os.path.basename(safe_path))[0]
+                    srt_path = os.path.join(os.path.dirname(safe_path), f"{base}.srt")
 
-            # Helper to shell-quote arguments
-            def shell_quote(val):
-                if val is None:
-                    return '""'
-                return '"' + str(val).replace('"', '"') + '"'
+                # Helper to shell-quote arguments
+                def shell_quote(val):
+                    if val is None:
+                        return '""'
+                    return '"' + str(val).replace('"', '\\"') + '"'
 
-            options = [
-                f"--input {shell_quote(safe_path)}",
-                f"--srt {shell_quote(srt_path)}",
-                f"--model {shell_quote(whisper_model)}" if whisper_model else "",
-                f"--verbosity {shell_quote(log_verbosity)}" if log_verbosity else "",
-                "--skip-caption-generation" if skip_caption_generation else "",
-            ]
-            options_str = " ".join([opt for opt in options if opt])
-            cmd = f"python -m py_captions_for_channels.embed_captions {options_str}"
+                options = [
+                    f"--input {shell_quote(safe_path)}",
+                    f"--srt {shell_quote(srt_path)}",
+                    f"--model {shell_quote(whisper_model)}" if whisper_model else "",
+                    f"--verbosity {shell_quote(log_verbosity)}" if log_verbosity else "",
+                    "--skip-caption-generation" if skip_caption_generation else "",
+                ]
+                options_str = " ".join([opt for opt in options if opt])
+                cmd = f"python -m py_captions_for_channels.embed_captions {options_str}"
+            else:
+                # Use traditional command template formatting (for tests/custom commands)
+                cmd = self.command_template.format(path=safe_path)
 
             if self.dry_run:
                 log.info("[DRY-RUN] Would execute: %s", cmd)
