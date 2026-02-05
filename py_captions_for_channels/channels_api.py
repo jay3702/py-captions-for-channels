@@ -1,9 +1,10 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import requests
+from pathlib import Path
 
-from .config import USE_MOCK
+from .config import USE_MOCK, LOCAL_TEST_DIR
 
 LOG = logging.getLogger(__name__)
 
@@ -23,6 +24,66 @@ class ChannelsAPI:
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._use_local_mock = LOCAL_TEST_DIR is not None
+
+    def _scan_local_recordings(self):
+        """Scan LOCAL_TEST_DIR for .mpg files and return in Channels API format.
+
+        Returns:
+            List of recording dicts matching Channels API /api/v1/all format
+        """
+        if not LOCAL_TEST_DIR:
+            return []
+
+        recordings = []
+        test_dir = Path(LOCAL_TEST_DIR)
+
+        if not test_dir.exists():
+            LOG.warning("LOCAL_TEST_DIR does not exist: %s", LOCAL_TEST_DIR)
+            return []
+
+        # Find all .mpg files recursively
+        for mpg_file in test_dir.rglob("*.mpg"):
+            # Skip backup files
+            if ".orig" in mpg_file.name or ".tmp" in mpg_file.name:
+                continue
+
+            # Get relative path and check if in tmp staging directory
+            relative_path = mpg_file.relative_to(test_dir)
+            if "tmp" in relative_path.parts:
+                continue
+
+            # Get file stats
+            stat = mpg_file.stat()
+            created_timestamp = int(stat.st_mtime * 1000)  # milliseconds
+
+            # Extract title from path
+            # e.g., "TV/CNN News Central/CNN News Central 2026-02-04-1100.mpg"
+            parts = relative_path.parts
+
+            # Title is usually the parent directory name or extracted from filename
+            if len(parts) >= 2:
+                title = parts[-2]  # Parent directory (e.g., "CNN News Central")
+            else:
+                title = mpg_file.stem
+
+            # Generate a mock ID from the file path
+            file_id = f"mock-{mpg_file.stem}"
+
+            recordings.append(
+                {
+                    "id": file_id,
+                    "FileID": file_id,
+                    "title": title,
+                    "path": str(mpg_file),
+                    "created_at": created_timestamp,
+                    "completed": True,  # All files in test dir are considered completed
+                    "duration": 3600000,  # Mock 1 hour duration (milliseconds)
+                }
+            )
+
+        LOG.info("[MOCK] Found %d recordings in %s", len(recordings), LOCAL_TEST_DIR)
+        return recordings
 
     def lookup_recording_path(self, title: str, start_time: datetime) -> str:
         """Look up the file path for a recording.
@@ -40,8 +101,34 @@ class ChannelsAPI:
         Raises:
             RuntimeError: If recording not found or API error
         """
+        # Use local filesystem scanner when LOCAL_TEST_DIR is set
+        if self._use_local_mock:
+            LOG.info("[MOCK] Looking up recording from local test dir: %s", title)
+            recordings = self._scan_local_recordings()
+
+            # Try exact match first
+            for rec in recordings:
+                if rec.get("title") == title:
+                    LOG.info("[MOCK] Exact match found: %s -> %s", title, rec["path"])
+                    return rec["path"]
+
+            # Try case-insensitive match
+            title_lower = title.lower()
+            for rec in recordings:
+                if rec.get("title", "").lower() == title_lower:
+                    LOG.info(
+                        "[MOCK] Case-insensitive match: %s -> %s", title, rec["path"]
+                    )
+                    return rec["path"]
+
+            # No match found
+            available_titles = [r.get("title", "") for r in recordings]
+            raise RuntimeError(
+                f"[MOCK] Recording not found: {title}. Available: {available_titles}"
+            )
+
         if USE_MOCK:
-            # Return a synthetic path for testing
+            # Return a synthetic path for testing (old mock mode)
             safe_title = title.replace(" ", "_")
             mock_path = f"/tmp/{safe_title}.mpg"
             LOG.info("[MOCK] Returning mock path: %s", mock_path)

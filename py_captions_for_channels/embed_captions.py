@@ -339,7 +339,13 @@ def clamp_srt_to_end(srt_path, end_time, log):
 
     with open(srt_path, encoding="utf-8") as f:
         cue = []
+        seq_num = 0
         for line in f:
+            # Check if this is a sequence number line (digit-only)
+            if line.strip().isdigit() and not cue:
+                seq_num = int(line.strip())
+                continue
+
             m = timepat.match(line)
             if m:
                 start = to_sec(*m.groups()[:4])
@@ -349,14 +355,19 @@ def clamp_srt_to_end(srt_path, end_time, log):
                     continue
                 if end > end_time:
                     end = end_time
+                # Write sequence number, then timestamp
                 new_line = f"{to_srt_time(start)} --> {to_srt_time(end)}\n"
-                cue = [new_line]
+                cue = [f"{seq_num}\n", new_line]
             elif line.strip() == "" and cue:
                 lines.extend(cue)
                 lines.append(line)
                 cue = []
             elif cue:
                 cue.append(line)
+    # Write any remaining cue at end of file
+    if cue:
+        lines.extend(cue)
+        lines.append("\n")  # Ensure proper SRT closure
     with open(srt_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
     log.info(f"Clamped SRT to END={end_time:.3f}s")
@@ -453,9 +464,35 @@ def main():
     # set_verbosity(args.verbosity)
 
     wait_for_file_stability(mpg_path, log)
-    preserve_original(mpg_path, log)
+
+    # Generate captions with Whisper if needed (BEFORE preserving original)
     if args.skip_caption_generation:
         log.info("Skipping caption generation step (using existing SRT)")
+    else:
+        log.info(f"Generating captions with Whisper model: {args.model}")
+        whisper_cmd = [
+            "whisper",
+            mpg_path,
+            "--model",
+            args.model,
+            "--output_format",
+            "srt",
+            "--output_dir",
+            str(Path(srt_path).parent),
+            "--language",
+            "en",
+        ]
+        log.info(f"Running Whisper: {' '.join(whisper_cmd)}")
+        try:
+            subprocess.check_call(whisper_cmd)
+            log.info(f"Whisper completed successfully, generated: {srt_path}")
+        except subprocess.CalledProcessError as e:
+            log.error(f"Whisper failed: {e}")
+            sys.exit(1)
+
+    # Now preserve the original AFTER caption generation
+    preserve_original(mpg_path, log)
+
     if not srt_exists_and_valid(srt_path):
         log.error("Missing or invalid SRT file.")
         sys.exit(1)
