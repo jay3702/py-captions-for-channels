@@ -4,6 +4,7 @@ import subprocess
 from typing import Callable, Optional
 import time
 from pathlib import Path
+import sys
 
 from .config import (
     LOG_DIVIDER_CHAR,
@@ -37,6 +38,7 @@ class PipelineResult:
         self.output_files = output_files or {}  # Dict of {filename: size_bytes}
         self.input_size_bytes = input_size_bytes
         self.input_path = input_path
+        self.is_dry_run = False  # Set to True for dry-run executions
 
     def get_total_output_size(self) -> int:
         """Return total size of all output files in bytes."""
@@ -261,17 +263,17 @@ class Pipeline:
                     # Default SRT path: same dir as input, basename.srt
                     import os
 
-                    base = os.path.splitext(os.path.basename(safe_path))[0]
-                    srt_path = os.path.join(os.path.dirname(safe_path), f"{base}.srt")
+                    base = os.path.splitext(os.path.basename(event.path))[0]
+                    srt_path = os.path.join(os.path.dirname(event.path), f"{base}.srt")
 
-                # Helper to shell-quote arguments
+                # Shell-quote arguments safely
                 def shell_quote(val):
-                    if val is None:
-                        return '""'
-                    return '"' + str(val).replace('"', '\\"') + '"'
+                    return shlex.quote(str(val)) if val is not None else "''"
 
+                # Python executable doesn't need quoting for subprocess.run(shell=True)
+                python_exec = sys.executable
                 options = [
-                    f"--input {shell_quote(safe_path)}",
+                    f"--input {shell_quote(event.path)}",
                     f"--srt {shell_quote(srt_path)}",
                     f"--model {shell_quote(whisper_model)}" if whisper_model else "",
                     (
@@ -283,7 +285,7 @@ class Pipeline:
                 ]
                 options_str = " ".join([opt for opt in options if opt])
                 cmd = (
-                    "python -m py_captions_for_channels.embed_captions "
+                    f"{python_exec} -m py_captions_for_channels.embed_captions "
                     f"{options_str}"
                 )
             else:
@@ -294,13 +296,18 @@ class Pipeline:
             if self.dry_run:
                 log.info("[DRY-RUN] Would execute: %s", cmd)
                 log.info("[DRY-RUN] Event: %s (path=%s)", event.title, event.path)
-                return PipelineResult(
+                result = PipelineResult(
                     success=True,
                     returncode=0,
                     stdout="",
                     stderr="",
                     command=cmd,
+                    elapsed_seconds=0.0,
+                    input_path=event.path,
                 )
+                # Mark result as dry-run so tracker can handle it specially
+                result.is_dry_run = True
+                return result
 
             # Visual divider at job start (configurable)
             if LOG_STATS_ENABLED:
@@ -308,70 +315,38 @@ class Pipeline:
             log.info("Running caption pipeline: %s", cmd)
 
             try:
-                # Execute command and capture output (cancel-aware)
+                # Execute command with subprocess.run() which handles timeouts more reliably
+                # than manual polling (especially for processes stuck in D state)
                 log.debug("About to execute command: %s", cmd)
-                proc = subprocess.Popen(
-                    cmd,
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
 
-                stdout = ""
-                stderr = ""
-                while True:
-                    # Cancel request check
-                    if cancel_check and cancel_check():
-                        log.warning(
-                            "Cancel requested; terminating pipeline for %s", event.path
-                        )
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=10)
-                        except Exception:
-                            proc.kill()
-                        try:
-                            stdout, stderr = proc.communicate(timeout=5)
-                        except Exception:
-                            stdout, stderr = "", "Canceled"
-                        elapsed = time.time() - start_time
-                        return PipelineResult(
-                            success=False,
-                            returncode=-2,
-                            stdout=stdout,
-                            stderr=stderr or "Canceled",
-                            command=cmd,
-                            elapsed_seconds=elapsed,
-                            input_path=event.path,
-                        )
-
-                    # Timeout check
-                    if (time.time() - start_time) > PIPELINE_TIMEOUT:
-                        log.error("Caption pipeline timed out for %s", event.path)
-                        proc.kill()
-                        try:
-                            stdout, stderr = proc.communicate(timeout=5)
-                        except Exception:
-                            stdout, stderr = "", "Command timed out"
-                        elapsed = time.time() - start_time
-                        return PipelineResult(
-                            success=False,
-                            returncode=-1,
-                            stdout=stdout,
-                            stderr=(
-                                f"Command timed out after {PIPELINE_TIMEOUT} seconds"
-                            ),
-                            command=cmd,
-                            elapsed_seconds=elapsed,
-                            input_path=event.path,
-                        )
-
-                    try:
-                        stdout, stderr = proc.communicate(timeout=1)
-                        break
-                    except subprocess.TimeoutExpired:
-                        continue
+                try:
+                    proc = subprocess.run(
+                        cmd,
+                        shell=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=PIPELINE_TIMEOUT,
+                    )
+                    stdout = proc.stdout or ""
+                    stderr = proc.stderr or ""
+                    returncode = proc.returncode
+                except subprocess.TimeoutExpired as e:
+                    log.error(
+                        "Caption pipeline timed out for %s after %d seconds",
+                        event.path,
+                        PIPELINE_TIMEOUT,
+                    )
+                    elapsed = time.time() - start_time
+                    return PipelineResult(
+                        success=False,
+                        returncode=-1,
+                        stdout=e.stdout or "",
+                        stderr=f"Command timed out after {PIPELINE_TIMEOUT} seconds",
+                        command=cmd,
+                        elapsed_seconds=elapsed,
+                        input_path=event.path,
+                    )
 
                 if proc.returncode != 0:
                     elapsed = time.time() - start_time

@@ -1,21 +1,21 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class StateBackend:
     """
     Tracks last processed timestamp to ensure idempotency.
-    Also tracks failed/forced reprocessing requests.
+    Also tracks manual processing requests (user-selected recordings).
     Stores state in a JSON file.
     """
 
     def __init__(self, path: str):
         self.path = path
         self.last_ts = None
-        self.reprocess_paths = (
+        self.manual_process_paths = (
             {}
-        )  # Paths marked for reprocessing -> {skip_caption_generation, log_verbosity}
+        )  # Paths marked for manual processing -> {skip_caption_generation, log_verbosity}
         self._load()
 
     def _load(self):
@@ -26,31 +26,46 @@ class StateBackend:
                     ts_str = data.get("last_timestamp")
                     if ts_str:
                         self.last_ts = datetime.fromisoformat(ts_str)
-                    # Load reprocess queue - handle both old (list)
+                    # Load manual process queue - handle both old (reprocess_paths)
+                    # and new (manual_process_paths) naming, and old (list)
                     # and new (dict) formats
-                    reprocess_data = data.get("reprocess_paths", [])
-                    if isinstance(reprocess_data, list):
+                    manual_data = data.get(
+                        "manual_process_paths", data.get("reprocess_paths", [])
+                    )
+                    if isinstance(manual_data, list):
                         # Old format: convert to dict with default settings
-                        self.reprocess_paths = {
+                        self.manual_process_paths = {
                             path: {
                                 "skip_caption_generation": False,
                                 "log_verbosity": "NORMAL",
                             }
-                            for path in reprocess_data
+                            for path in manual_data
                         }
                     else:
                         # New format: dict
-                        self.reprocess_paths = reprocess_data
+                        self.manual_process_paths = manual_data
             except Exception:
                 # Corrupt state file? Reset safely.
                 self.last_ts = None
-                self.reprocess_paths = {}
+                self.manual_process_paths = {}
 
     def should_process(self, ts: datetime) -> bool:
         """
         Returns True if this timestamp is newer than the last processed one.
+        Ensures both timestamps have timezone info for comparison.
         """
-        return self.last_ts is None or ts > self.last_ts
+        if self.last_ts is None:
+            return True
+
+        # Ensure both timestamps are timezone-aware for comparison
+        ts_aware = ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
+        last_ts_aware = (
+            self.last_ts
+            if self.last_ts.tzinfo is not None
+            else self.last_ts.replace(tzinfo=timezone.utc)
+        )
+
+        return ts_aware > last_ts_aware
 
     def update(self, ts: datetime):
         """
@@ -58,52 +73,52 @@ class StateBackend:
         Ensures the directory exists before writing.
         """
         self.last_ts = ts  # Update in-memory state
-        self._persist_state(ts, self.reprocess_paths)
+        self._persist_state(ts, self.manual_process_paths)
 
-    def mark_for_reprocess(
+    def mark_for_manual_process(
         self,
         path: str,
         skip_caption_generation: bool = False,
         log_verbosity: str = "NORMAL",
     ):
         """
-        Mark a file path for reprocessing with specific settings.
+        Mark a file path for manual processing with specific settings.
         """
-        self.reprocess_paths[path] = {
+        self.manual_process_paths[path] = {
             "skip_caption_generation": skip_caption_generation,
             "log_verbosity": log_verbosity,
         }
-        self._persist_state(self.last_ts, self.reprocess_paths)
+        self._persist_state(self.last_ts, self.manual_process_paths)
 
-    def has_reprocess_request(self, path: str) -> bool:
+    def has_manual_process_request(self, path: str) -> bool:
         """
-        Check if a path is marked for reprocessing.
+        Check if a path is marked for manual processing.
         """
-        return path in self.reprocess_paths
+        return path in self.manual_process_paths
 
-    def get_reprocess_settings(self, path: str) -> dict:
+    def get_manual_process_settings(self, path: str) -> dict:
         """
-        Get reprocess settings for a path.
+        Get manual process settings for a path.
         """
-        return self.reprocess_paths.get(
+        return self.manual_process_paths.get(
             path, {"skip_caption_generation": False, "log_verbosity": "NORMAL"}
         )
 
-    def clear_reprocess_request(self, path: str):
+    def clear_manual_process_request(self, path: str):
         """
-        Clear a reprocess request after handling it.
+        Clear a manual process request after handling it.
         """
-        if path in self.reprocess_paths:
-            del self.reprocess_paths[path]
-            self._persist_state(self.last_ts, self.reprocess_paths)
+        if path in self.manual_process_paths:
+            del self.manual_process_paths[path]
+            self._persist_state(self.last_ts, self.manual_process_paths)
 
-    def get_reprocess_queue(self) -> list:
+    def get_manual_process_queue(self) -> list:
         """
-        Return list of paths awaiting reprocessing.
+        Return list of paths awaiting manual processing.
         """
-        return list(self.reprocess_paths.keys())
+        return list(self.manual_process_paths.keys())
 
-    def _persist_state(self, ts: datetime, reprocess_paths: dict):
+    def _persist_state(self, ts: datetime, manual_process_paths: dict):
         """
         Persist state safely using an atomic write.
         """
@@ -115,7 +130,7 @@ class StateBackend:
         with open(tmp, "w") as f:
             data = {
                 "last_timestamp": ts.isoformat() if ts else None,
-                "reprocess_paths": reprocess_paths,
+                "manual_process_paths": manual_process_paths,
             }
             json.dump(data, f)
 
