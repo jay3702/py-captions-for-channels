@@ -63,15 +63,15 @@ def test_reprocess_queue_mark_and_check(tmp_path):
     path = "/tank/AllMedia/Channels/test_recording.mpg"
 
     # Initially should not be in queue
-    assert not sb.has_reprocess_request(path)
+    assert not sb.has_manual_process_request(path)
 
     # Mark for reprocessing
-    sb.mark_for_reprocess(path)
-    assert sb.has_reprocess_request(path)
+    sb.mark_for_manual_process(path)
+    assert sb.has_manual_process_request(path)
 
     # Load from disk and verify persistence
     sb2 = StateBackend(str(p))
-    assert sb2.has_reprocess_request(path)
+    assert sb2.has_manual_process_request(path)
 
 
 def test_reprocess_queue_clear(tmp_path):
@@ -84,16 +84,16 @@ def test_reprocess_queue_clear(tmp_path):
     ]
 
     for path in paths:
-        sb.mark_for_reprocess(path)
+        sb.mark_for_manual_process(path)
 
     # Verify both are in queue
-    assert len(sb.get_reprocess_queue()) == 2
+    assert len(sb.get_manual_process_queue()) == 2
 
     # Clear one
-    sb.clear_reprocess_request(paths[0])
-    assert not sb.has_reprocess_request(paths[0])
-    assert sb.has_reprocess_request(paths[1])
-    assert len(sb.get_reprocess_queue()) == 1
+    sb.clear_manual_process_request(paths[0])
+    assert not sb.has_manual_process_request(paths[0])
+    assert sb.has_manual_process_request(paths[1])
+    assert len(sb.get_manual_process_queue()) == 1
 
 
 def test_reprocess_queue_persistence(tmp_path):
@@ -107,12 +107,12 @@ def test_reprocess_queue_persistence(tmp_path):
     ]
 
     for path in paths:
-        sb.mark_for_reprocess(path)
+        sb.mark_for_manual_process(path)
 
     # Load from disk
     sb2 = StateBackend(str(p))
 
     # Verify all items persisted
-    queue = sb2.get_reprocess_queue()
+    queue = sb2.get_manual_process_queue()
     assert len(queue) == 3
     assert set(queue) == set(paths)
