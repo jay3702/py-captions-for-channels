@@ -1,0 +1,11 @@
+# Quick rebuild using existing py-captions-local image as base
+# This avoids recompiling FFmpeg
+
+FROM py-captions-local:latest
+
+# Just re-copy the Python application code to pick up changes
+COPY py_captions_for_channels/ ./py_captions_for_channels/
+COPY scripts/ ./scripts/
+COPY whitelist.txt ./whitelist.txt
+
+RUN chmod +x ./scripts/*.sh

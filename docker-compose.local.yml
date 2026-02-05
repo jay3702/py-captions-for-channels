@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  py-captions:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    image: py-captions-local:latest
+    container_name: py-captions-local
+    volumes:
+      # Mount entire Channels directory using Docker NFS volume
+      # This bypasses bind mount caching issues
+      - channels-nfs:/tank/AllMedia/Channels:rw
+      # Persistent state and logs
+      - py-captions-data:/app/data
+      - py-captions-logs:/app/logs
+    environment:
+      # Channels DVR API URL (192.168.3.150 for NIU server)
+      - CHANNELS_API_URL=${CHANNELS_API_URL:-http://192.168.3.150:8089}
+      # Whisper model (tiny, base, small, medium, large)
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      # Caption processing command
+      - CAPTION_COMMAND=${CAPTION_COMMAND:-python3 -m py_captions_for_channels.embed_captions}
+      - SKIP_CAPTION_GENERATION=${SKIP_CAPTION_GENERATION:-false}
+      # Use GPU
+      - CUDA_VISIBLE_DEVICES=0
+      # Event source configuration
+      - USE_MOCK=${USE_MOCK:-false}
+      - USE_POLLING=${USE_POLLING:-true}
+      - USE_WEBHOOK=${USE_WEBHOOK:-false}
+      - POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-120}
+      - POLL_LIMIT=${POLL_LIMIT:-50}
+      - POLL_MAX_AGE_HOURS=${POLL_MAX_AGE_HOURS:-2}
+      # Pipeline timeout (default 3600 = 1 hour, increase for large files over network)
+      - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-7200}
+      - STALE_EXECUTION_SECONDS=${STALE_EXECUTION_SECONDS:-7200}
+      # State and logging
+      - STATE_FILE=/app/data/state.json
+      - LOG_FILE=/app/logs/app.log
+      - DRY_RUN=${DRY_RUN:-false}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  py-captions-web:
+    image: py-captions-local:latest
+    container_name: py-captions-web-local
+    depends_on:
+      - py-captions
+    command: uvicorn py_captions_for_channels.web_app:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      # NFS mount for accessing recordings
+      - channels-nfs:/tank/AllMedia/Channels:rw
+      # Shared volumes with watcher
+      - py-captions-data:/app/data
+      - py-captions-logs:/app/logs
+    environment:
+      - STATE_FILE=/app/data/state.json
+      - LOG_FILE=/app/logs/web.log
+      - LOG_FILE_READ=/app/logs/app.log
+      - CHANNELS_API_URL=${CHANNELS_API_URL:-http://192.168.3.150:8089}
+    restart: unless-stopped
+
+volumes:
+  py-captions-data:
+  py-captions-logs:
+  channels-nfs:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.3.150,vers=3,nolock,noacl,rw,soft,timeo=30,retrans=3,intr
+      device: ":/tank/AllMedia/Channels"

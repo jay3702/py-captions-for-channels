@@ -1,0 +1,7 @@
+{
+  "dry_run": false,
+  "keep_original": true,
+  "log_verbosity": "NORMAL",
+  "whisper_model": "medium",
+  "whitelist": "# py-captions-for-channels Whitelist\n# One rule per line. Format:\n#   Simple: ShowName (substring match)\n#   Regex: Pattern (regex if contains regex operators)\n#   Complex: ShowName;DayOfWeek;Channel(s);Time\n#\n# Examples:\n#   News                                  - matches any show containing \"News\"\n#   ^CNN News                             - regex: matches titles starting with \"CNN News\"\n#   News.*(Central|Night)                 - regex: matches \"News\" followed by \"Central\" or \"Night\"\n#   Dateline;Friday;11.1,113;21:00       - only Fridays at 21:00 on channels 11.1 or 113\n#\n# Regex automatically detected by presence of: . * + ? ^ $ { } ( ) [ ] \\ |\n# All patterns are case-insensitive\n\n# Time-specific shows (delayed captions on first run)\nDateline;Friday;11.1,113;21:00\n48 hours;Saturday;5.1;22:00\n20/20;Friday;7.1;21:00\n20/20;Friday;7.1;22:00\n\n# News programs (always benefit from captions)\nNews\nLaura Coates\nEntertainment Tonight\nCNN NewsNight With Abby Phillip\nInside Edition\nThe Source With Kaitlan Collins\nErin Burnett OutFront\nThe Lead With Jake Tapper\nThe Arena With Kasie Hunt\nAmanpour\nInside Politics With Dana Bash\nThe Situation Room\nThe Daily Show\nThe Rachel Maddow Show\nCNN\n60 Minutes\nFareed Zakaria GPS\nSaturday Night Live\nAnderson Cooper\nSmerconish\nThe Late Show With Stephen Colbert\nAll In With Chris Hayes\n\n# Special events\nAwards\n"
+}

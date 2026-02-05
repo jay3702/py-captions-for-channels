@@ -392,6 +392,10 @@ h1 {
     color: var(--muted);
   }
 
+  .exec-dryrun .exec-status {
+    color: var(--accent-2);
+  }
+
   .reprocess-controls {
     display: flex;
     align-items: center;

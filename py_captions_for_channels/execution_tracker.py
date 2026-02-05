@@ -14,9 +14,9 @@ from typing import Dict, List, Optional
 LOG = logging.getLogger(__name__)
 
 
-def build_reprocess_job_id(path: str) -> str:
-    """Build a stable job ID for reprocess executions."""
-    return f"reprocess::{path}"
+def build_manual_process_job_id(path: str) -> str:
+    """Build a stable job ID for manual process executions."""
+    return f"manual_process::{path}"
 
 
 class ExecutionTracker:
@@ -26,6 +26,7 @@ class ExecutionTracker:
         self.storage_path = Path(storage_path)
         self.lock = threading.Lock()
         self.executions: Dict[str, dict] = {}
+        self.execution_counter: int = 0
         self._load()
 
     def _load(self):
@@ -35,20 +36,34 @@ class ExecutionTracker:
                 with open(self.storage_path, "r") as f:
                     data = json.load(f)
                     self.executions = data.get("executions", {})
+                    self.execution_counter = data.get("execution_counter", 0)
                     # Backfill missing IDs for older records
                     for key, val in list(self.executions.items()):
                         if isinstance(val, dict) and "id" not in val:
                             val["id"] = key
+                        # Extract execution number if present
+                        if isinstance(val, dict) and "execution_number" in val:
+                            self.execution_counter = max(
+                                self.execution_counter, val["execution_number"]
+                            )
             except Exception as e:
                 LOG.warning("Failed to load executions: %s", e)
                 self.executions = {}
+                self.execution_counter = 0
 
     def _save(self):
         """Save executions to disk."""
         try:
             self.storage_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.storage_path, "w") as f:
-                json.dump({"executions": self.executions}, f, indent=2)
+                json.dump(
+                    {
+                        "executions": self.executions,
+                        "execution_counter": self.execution_counter,
+                    },
+                    f,
+                    indent=2,
+                )
         except Exception as e:
             LOG.error("Failed to save executions: %s", e)
 
@@ -69,20 +84,49 @@ class ExecutionTracker:
             path: File path
             timestamp: ISO timestamp (defaults to now)
             status: Initial status (pending, running)
+            kind: Execution type (normal, manual_process)
 
         Returns:
             Execution ID
         """
         with self.lock:
-            exec_id = job_id  # Use job_id as execution ID
+            exec_id = job_id
+
+            # Handle reprocessing: If same job_id exists with completed/failed status,
+            # create a new unique ID by appending timestamp
+            existing = self.executions.get(job_id)
+            if existing and existing.get("status") in ("completed", "failed"):
+                now_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+                exec_id = f"{job_id}::{now_ts}"
+                LOG.info(
+                    "Reprocessing existing execution - creating new ID: %s -> %s",
+                    job_id,
+                    exec_id,
+                )
+
+            # Increment execution counter for unique tracking
+            self.execution_counter += 1
+            execution_number = self.execution_counter
+
+            # Ensure started_at has timezone info for correct elapsed time calculation
+            if timestamp:
+                # Parse provided timestamp and ensure it has timezone
+                dt = datetime.fromisoformat(timestamp)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                started_at = dt.isoformat()
+            else:
+                started_at = datetime.now(timezone.utc).isoformat()
+
             self.executions[exec_id] = {
                 "id": exec_id,
+                "execution_number": execution_number,
                 "title": title,
                 "path": path,
                 "kind": kind,
                 "status": status,
                 "cancel_requested": False,
-                "started_at": timestamp or datetime.now(timezone.utc).isoformat(),
+                "started_at": started_at,
                 "completed_at": None,
                 "success": None,
                 "elapsed_seconds": 0.0,
@@ -91,7 +135,8 @@ class ExecutionTracker:
             }
             self._save()
             LOG.info(
-                "Started tracking execution: %s [%s] (total: %d)",
+                "Started tracking execution #%d: %s [%s] (total: %d)",
+                execution_number,
                 exec_id,
                 status,
                 len(self.executions),
@@ -110,6 +155,19 @@ class ExecutionTracker:
                 self.executions[job_id]["status"] = status
                 self._save()
                 LOG.debug("Updated execution status: %s -> %s", job_id, status)
+
+    def update_execution(self, job_id: str, **kwargs):
+        """Update execution fields.
+
+        Args:
+            job_id: Job identifier
+            **kwargs: Fields to update (status, started_at, etc.)
+        """
+        with self.lock:
+            if job_id in self.executions:
+                self.executions[job_id].update(kwargs)
+                self._save()
+                LOG.debug("Updated execution %s: %s", job_id, kwargs)
 
     def request_cancel(self, job_id: str) -> bool:
         """Request cancellation of a running execution.

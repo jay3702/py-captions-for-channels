@@ -13,9 +13,9 @@ class StateBackend:
     def __init__(self, path: str):
         self.path = path
         self.last_ts = None
-        self.manual_process_paths = (
-            {}
-        )  # Paths marked for manual processing -> {skip_caption_generation, log_verbosity}
+        # Paths marked for manual processing with settings
+        # {path: {skip_caption_generation, log_verbosity}}
+        self.manual_process_paths = {}
         self._load()
 
     def _load(self):

@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  py-captions:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: py-captions-dev
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - TZ=America/New_York
+      - CHANNELS_API_URL=${CHANNELS_API_URL}
+      - USE_POLLING=true
+      - USE_WEBHOOK=false
+      - DRY_RUN=${DRY_RUN:-false}
+      - POLL_INTERVAL_SECONDS=120
+      - POLL_LIMIT=50
+      - POLL_MAX_AGE_HOURS=2
+      - LOCAL_TEST_DIR=/recordings
+      - LOG_FILE=/app/logs/app.log
+      - CAPTION_COMMAND=${CAPTION_COMMAND}
+    volumes:
+      # Mount local test directory instead of network share
+      - ./test-recordings:/recordings
+      - ./data-dev:/app/data
+      - ./logs-dev:/app/logs
+    restart: unless-stopped
+    networks:
+      - default
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: py-captions-web-dev
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - TZ=America/New_York
+      - CHANNELS_API_URL=${CHANNELS_API_URL}
+      - LOG_FILE=/app/logs/app.log
+    volumes:
+      - ./test-recordings:/recordings
+      - ./data-dev:/app/data
+      - ./logs-dev:/app/logs
+    ports:
+      - "8001:8000"
+    command: uvicorn py_captions_for_channels.web_app:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+    depends_on:
+      - py-captions
+    networks:
+      - default
+
+networks:
+  default:
+    name: py-captions-dev-network

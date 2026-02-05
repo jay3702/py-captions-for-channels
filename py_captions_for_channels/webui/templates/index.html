@@ -4,24 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Py Captions Dashboard</title>
-  <link rel="icon" type="image/x-icon" href="/static/channels_cc_favicon/favicon.ico" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/channels_cc_favicon/icon-32.png" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/channels_cc_favicon/icon-16.png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/channels_cc_favicon/icon-180.png" />
-  <link rel="manifest" href="/static/channels_cc_favicon/site.webmanifest" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/channels_cc_favicon_big/icon-16.png?v=3">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/channels_cc_favicon_big/icon-32.png?v=3">
+  <link rel="icon" type="image/png" sizes="48x48" href="/static/channels_cc_favicon_big/icon-48.png?v=3">
+  <link rel="icon" type="image/x-icon" href="/static/channels_cc_favicon_big/favicon.ico?v=3">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/channels_cc_favicon_big/icon-180.png">
+  <link rel="manifest" href="/static/channels_cc_favicon_big/site.webmanifest" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <header class="hero">
     <div style="display: flex; align-items: center; gap: 1rem;">
-      <img src="/static/channels_cc_favicon/icon-192.png" alt="Py Captions" style="width: 192px; height: 192px;" />
+      <img src="/static/channels_cc_favicon_big/icon-192.png" alt="Py Captions" style="width: 192px; height: 192px;" />
       <div>
         <p class="eyebrow">Py Captions</p>
         <h1>Real-time caption pipeline</h1>
         <p class="lede">Monitor jobs, logs, and system health from a single place.</p>
       </div>
     </div>
-    <div class="pill">v0.8.0-dev</div>
+    <div class="pill">v0.9.0</div>
   </header>
 
   <main class="grid">
@@ -64,10 +65,10 @@
           <td class="status-value value-sub" id="last-processed">—</td>
         </tr>
         <tr>
-          <td class="status-label">Reprocess Queue:</td>
+          <td class="status-label">Manual Process Queue:</td>
           <td class="status-value">
-            <span id="reprocess-queue">0 items</span>
-            <button onclick="showReprocessModal()" class="btn-small" style="margin-left: 10px;">Manage</button>
+            <span id="manual-process-queue">0 items</span>
+            <button onclick="showManualProcessModal()" class="btn-small" style="margin-left: 10px;">Manage</button>
           </td>
         </tr>
         <tr>
@@ -84,7 +85,7 @@
     <section class="card">
       <div class="card-head">
         <h2>Pipeline Settings</h2>
-           <span id="webui-version" class="pill pill-muted" style="margin-left:10px;">webui v2026-01-31+build1</span>
+           <span id="webui-version" class="pill pill-muted" style="margin-left:10px;">webui v0.9.0+build1</span>
       </div>
       <form id="settings-form" onsubmit="saveSettings(event)">
         <div class="settings-group">
@@ -136,6 +137,10 @@
     <div id="executions-tab" class="tab-content active">
       <div class="tab-header">
         <small class="muted" id="exec-count">(loading)</small>
+        <div style="margin-left:auto; display:flex; gap:8px;">
+          <button class="btn-small" onclick="clearList()">Clear List</button>
+          <button class="btn-small" onclick="clearPendingExecutions()">Clear Pending</button>
+        </div>
       </div>
       <ul class="exec-list" id="exec-list">
         <li class="muted">Loading executions...</li>
@@ -165,24 +170,24 @@
       </div>
     </div>
 
-    <!-- Modal for reprocessing -->
-    <div id="reprocess-modal" class="modal">
+    <!-- Modal for manual processing -->
+    <div id="manual-process-modal" class="modal">
       <div class="modal-content">
         <div class="modal-header">
-          <h2>Manage Reprocessing Queue</h2>
-          <button class="modal-close" onclick="closeReprocessModal()">&times;</button>
+          <h2>Manual Processing</h2>
+          <button class="modal-close" onclick="closeManualProcessModal()">&times;</button>
         </div>
         <div class="modal-body">
-           <div class="reprocess-controls">
-             <p class="muted">Select recordings to add to the reprocessing queue:</p>
+           <div class="manual-process-controls">
+             <p class="muted">Browse recordings from Channels DVR and select items to process:</p>
              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
                <div class="settings-group">
-                 <label for="reprocess-skip-caption">Skip Caption Generation</label>
-                 <input type="checkbox" id="reprocess-skip-caption" name="skip_caption_generation">
+                 <label for="manual-process-skip-caption">Skip Caption Generation</label>
+                 <input type="checkbox" id="manual-process-skip-caption" name="skip_caption_generation">
                </div>
                <div class="settings-group">
-                 <label for="reprocess-log-verbosity">Log Verbosity</label>
-                 <select id="reprocess-log-verbosity" name="log_verbosity">
+                 <label for="manual-process-log-verbosity">Log Verbosity</label>
+                 <select id="manual-process-log-verbosity" name="log_verbosity">
                    <option value="MINIMAL">Minimal</option>
                    <option value="NORMAL" selected>Normal</option>
                    <option value="VERBOSE">Verbose</option>
@@ -191,12 +196,12 @@
              </div>
              <p class="muted" style="font-size: 0.9em; margin-top: -5px;">These settings will apply to all selected items.</p>
            </div>
-          <div id="reprocess-list" style="max-height: 400px; overflow-y: auto;">
+          <div id="manual-process-list" style="max-height: 400px; overflow-y: auto;">
             <p class="muted">Loading candidates...</p>
           </div>
           <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-            <button onclick="closeReprocessModal()" class="btn-secondary">Cancel</button>
-            <button onclick="submitReprocessing()" class="btn-primary">Add Selected to Queue</button>
+            <button onclick="closeManualProcessModal()" class="btn-secondary">Cancel</button>
+            <button onclick="submitManualProcessing()" class="btn-primary">Add Selected to Queue</button>
           </div>
         </div>
       </div>

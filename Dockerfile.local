@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+
+# Simplified Dockerfile for local Windows development with GPU
+# Uses pre-built FFmpeg from Ubuntu repos instead of compiling with NVENC
+# This is faster to build and sufficient for local testing
+
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python, FFmpeg, and system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    ffmpeg \
+    tzdata \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set timezone
+ENV TZ=America/New_York
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+# Install torch with CUDA support first
+RUN pip3 install --no-cache-dir \
+    torch==2.0.1 \
+    torchaudio==2.0.2 \
+    --index-url https://download.pytorch.org/whl/cu118
+
+# Install openai-whisper and other dependencies
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY py_captions_for_channels/ ./py_captions_for_channels/
+COPY scripts/ ./scripts/
+COPY whitelist.txt ./whitelist.txt
+
+# Expose web UI port
+EXPOSE 8000
+
+# Run the application
+CMD ["python3", "-m", "py_captions_for_channels"]

@@ -50,6 +50,10 @@ CHANNELWATCH_URL = os.getenv("CHANNELWATCH_URL", "ws://localhost:8501/events")
 # Channels DVR API endpoint
 CHANNELS_API_URL = os.getenv("CHANNELS_API_URL", "http://localhost:8089")
 
+# Local test directory (for development - overrides network DVR path)
+# When set, uses local sample files instead of network repository
+LOCAL_TEST_DIR = os.getenv("LOCAL_TEST_DIR", None)
+
 # Caption command to run (whisper or other captioning tool)
 CAPTION_COMMAND = os.getenv("CAPTION_COMMAND", 'echo "Would process: {path}"')
 
@@ -62,16 +66,26 @@ LOG_PATH = os.getenv("LOG_PATH", "/var/log/channels-dvr.log")
 # Event source configuration
 USE_MOCK = get_env_bool("USE_MOCK", False)
 USE_WEBHOOK = get_env_bool("USE_WEBHOOK", True)
+USE_POLLING = get_env_bool("USE_POLLING", False)
 
 # Webhook configuration (when USE_WEBHOOK=True)
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "0.0.0.0")
 WEBHOOK_PORT = get_env_int("WEBHOOK_PORT", 9000)
 
+# Polling configuration (when USE_POLLING=True)
+POLL_INTERVAL_SECONDS = get_env_int("POLL_INTERVAL_SECONDS", 120)  # 2 minutes default
+POLL_LIMIT = get_env_int("POLL_LIMIT", 50)  # Fetch 50 most recent recordings
+POLL_MAX_AGE_HOURS = get_env_int(
+    "POLL_MAX_AGE_HOURS", 2
+)  # Only auto-process recent recordings
+
 # Pipeline configuration
-DRY_RUN = get_env_bool("DRY_RUN", True)
+DRY_RUN = get_env_bool("DRY_RUN", False)
 PIPELINE_TIMEOUT = get_env_int("PIPELINE_TIMEOUT", 3600)
-STALE_EXECUTION_SECONDS = get_env_int("STALE_EXECUTION_SECONDS", 900)
-REPROCESS_POLL_SECONDS = get_env_int("REPROCESS_POLL_SECONDS", 10)
+STALE_EXECUTION_SECONDS = get_env_int("STALE_EXECUTION_SECONDS", PIPELINE_TIMEOUT)
+MANUAL_PROCESS_POLL_SECONDS = get_env_int("MANUAL_PROCESS_POLL_SECONDS", 10)
+# Backward compatibility - support old env var name
+REPROCESS_POLL_SECONDS = MANUAL_PROCESS_POLL_SECONDS
 
 # Whitelist configuration
 WHITELIST_FILE = os.getenv("WHITELIST_FILE", "./whitelist.txt")
@@ -85,6 +99,7 @@ LOG_VERBOSITY = os.getenv("LOG_VERBOSITY", "NORMAL")  # MINIMAL, NORMAL, or VERB
 LOG_FILE = os.getenv(
     "LOG_FILE", "./app.log"
 )  # Write logs to file (in addition to stdout)
+LOG_FILE_READ = os.getenv("LOG_FILE_READ", LOG_FILE)
 LOG_VERBOSITY_FILE = os.getenv("LOG_VERBOSITY_FILE", "/app/data/log_verbosity.json")
 
 # Logging visuals and stats
