@@ -36,10 +36,8 @@ def test_params(params, description):
             first = data[0]
             print("\nFirst recording:")
             print(f"  Title: {first.get('title')}")
-            print(
-                f"  Created: "
-                f"{datetime.fromtimestamp(first.get('created_at', 0) / 1000)}"
-            )
+            created_ts = first.get("created_at", 0) / 1000
+            print(f"  Created: {datetime.fromtimestamp(created_ts)}")
             print(f"  Completed: {first.get('completed')}")
             print(f"  Processed: {first.get('processed')}")
 
