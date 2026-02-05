@@ -154,7 +154,7 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     )
                     LOG.debug("Updated pending execution to running: %s", path)
                 else:
-                    exec_id = tracker.start_execution(
+                    _ = tracker.start_execution(
                         job_id,
                         title,
                         path,
@@ -164,7 +164,7 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     )
 
                 # Update job_id to the actual execution ID (may have timestamp for reprocessing)
-                set_job_id(exec_id)
+                set_job_id(job_id)
 
                 # Run pipeline in executor to not block event loop
                 loop = asyncio.get_event_loop()
@@ -542,7 +542,7 @@ async def main():
             )
 
         tracker = get_tracker()
-        exec_id = tracker.start_execution(
+        _ = tracker.start_execution(
             job_id,
             event_partial.title,
             path,

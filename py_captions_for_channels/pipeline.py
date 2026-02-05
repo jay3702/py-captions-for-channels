@@ -330,7 +330,6 @@ class Pipeline:
                     )
                     stdout = proc.stdout or ""
                     stderr = proc.stderr or ""
-                    returncode = proc.returncode
                 except subprocess.TimeoutExpired as e:
                     log.error(
                         "Caption pipeline timed out for %s after %d seconds",
