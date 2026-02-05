@@ -16,7 +16,8 @@ async function fetchStatus() {
     
     statusPill.textContent = data.status || 'unknown';
     document.getElementById('app-name').textContent = data.app || '—';
-    document.getElementById('app-version').textContent = data.version || '—';
+    const versionText = data.build_number ? `${data.version}+${data.build_number}` : data.version || '—';
+    document.getElementById('app-version').textContent = versionText;
     document.getElementById('timezone').textContent = data.timezone || '—';
     document.getElementById('dry-run').textContent = data.dry_run ? 'YES' : 'NO';
     document.getElementById('keep-original').textContent = data.keep_original ? 'YES' : 'NO';
@@ -26,7 +27,7 @@ async function fetchStatus() {
     document.getElementById('last-processed').textContent = data.last_processed 
       ? new Date(data.last_processed).toLocaleString() 
       : 'never';
-    document.getElementById('reprocess-queue').textContent = `${data.reprocess_queue_size} items`;
+    document.getElementById('manual-process-queue').textContent = `${data.manual_process_queue_size} items`;
 
     // Update service health indicators
     if (data.services) {
@@ -80,6 +81,10 @@ async function fetchStatus() {
       statusClass = 'exec-pending';
       statusIcon = '⏸';
       statusText = 'Pending';
+    } else if (exec.status === 'dry_run') {
+      statusClass = 'exec-dryrun';
+      statusIcon = '🔄';
+      statusText = 'Dry Run';
     } else if (exec.status === 'canceling' || exec.cancel_requested) {
       statusClass = 'exec-running';
       statusIcon = '⏹';
@@ -104,7 +109,7 @@ async function fetchStatus() {
   
     // Use server-provided local time if available, otherwise parse ISO timestamp
     const startTime = exec.started_local ? exec.started_local.split(' ')[1] : new Date(exec.started_at).toLocaleTimeString();
-    const tagHtml = exec.kind === 'reprocess' ? '<span class="exec-tag">Reprocess</span>' : '';
+    const tagHtml = exec.kind === 'manual_process' ? '<span class="exec-tag">Manual</span>' : '';
     const cancelHtml = (exec.status === 'running' && !exec.cancel_requested)
       ? `<button class="exec-cancel" data-exec-id="${encodeURIComponent(exec.id)}" onclick="cancelExecutionFromEl(this, event)">Cancel</button>`
       : '';
@@ -155,16 +160,16 @@ async function fetchStatus() {
       body.innerHTML = `
         <div class="detail-section">
           <h3>Overview</h3>
-          ${exec.kind === 'reprocess' ? '<p><strong>Type:</strong> Reprocess</p>' : ''}
+          ${exec.kind === 'manual_process' ? '<p><strong>Type:</strong> Manual Processing</p>' : ''}
           <p><strong>Status:</strong> ${exec.status} ${exec.success !== null ? (exec.success ? '✓ Success' : '✗ Failed') : ''}</p>
           <p><strong>Started:</strong> ${escapeHtml(startedDisplay)}</p>
           ${completedDisplay ? `<p><strong>Completed:</strong> ${escapeHtml(completedDisplay)}</p>` : ''}
           <p><strong>Duration:</strong> ${exec.elapsed_seconds > 0 ? Math.floor(exec.elapsed_seconds / 60) + 'm ' + (exec.elapsed_seconds % 60).toFixed(1) + 's' : '—'}</p>
           <p><strong>Path:</strong> <code>${escapeHtml(exec.path)}</code></p>
           ${exec.error ? `<p class="error-text"><strong>Error:</strong> ${escapeHtml(exec.error)}</p>` : ''}
-          ${exec.kind === 'reprocess' && exec.status === 'pending' ? `
-            <div style="margin-top: 20px;">
-              <button class="btn-secondary" onclick="removeFromReprocessQueue('${escapeAttr(exec.path)}', '${escapeAttr(exec.id)}')">Remove from Queue</button>
+          ${exec.kind === 'manual_process' && exec.status === 'pending' ? `
+            <div style="margin-top: 15px;">
+              <button class="btn-secondary" onclick="removeFromManualProcessQueue('${escapeAttr(exec.path)}', '${escapeAttr(exec.id)}')"Remove from Queue</button>
             </div>
           ` : ''}
         </div>
@@ -197,6 +202,56 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+async function clearList() {
+  try {
+    // First call to check pending executions
+    const res = await fetch('/api/executions/clear_list', { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to clear list');
+    const data = await res.json();
+    
+    // If there are legitimate pending jobs, ask for confirmation
+    if (data.pending_count > 0 && data.pending_ids && data.pending_ids.length > 0) {
+      const titles = data.pending_ids.map(p => `  • ${p.title || p.path}`).join('\n');
+      const msg = `This will remove failed, dry-run, and invalid pending jobs.\n\nHowever, ${data.pending_count} legitimate pending job(s) are active:\n${titles}\n\nCancel these ${data.pending_count} pending job(s)?`;
+      
+      if (!confirm(msg)) {
+        // User declined to cancel pending jobs
+        console.log('Kept', data.pending_count, 'legitimate pending jobs in queue');
+        await fetchExecutions();
+        return;
+      }
+      
+      // User confirmed cancellation - make second call with cancel_pending=true
+      const res2 = await fetch('/api/executions/clear_list?cancel_pending=true', { method: 'POST' });
+      if (!res2.ok) throw new Error('Failed to clear list with pending cancellation');
+      await res2.json();
+    }
+    
+    await fetchExecutions();
+  } catch (err) {
+    alert('Clear list error: ' + err.message);
+  }
+}
+
+async function clearFailedExecutions() {
+  // Legacy function - redirect to clearList
+  return clearList();
+}
+
+async function clearPendingExecutions() {
+  try {
+    if (!confirm('Clear stale pending executions from the list?')) {
+      return;
+    }
+    const res = await fetch('/api/executions/clear_pending?max_age_minutes=60', { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to clear pending executions');
+    await res.json();
+    fetchExecutions();
+  } catch (err) {
+    alert('Clear pending error: ' + err.message);
+  }
 }
 
   function escapeAttr(text) {
@@ -264,14 +319,14 @@ function switchTab(tabName) {
   document.getElementById(`${tabName}-tab`).classList.add('active');
 }
 
-async function showReprocessModal() {
-  const modal = document.getElementById('reprocess-modal');
-  const listContainer = document.getElementById('reprocess-list');
+async function showManualProcessModal() {
+  const modal = document.getElementById('manual-process-modal');
+  const listContainer = document.getElementById('manual-process-list');
   const verbositySelect = document.getElementById('log-verbosity');
   
   // Show modal
   modal.style.display = 'flex';
-  listContainer.innerHTML = '<p class="muted">Loading candidates...</p>';
+  listContainer.innerHTML = '<p class="muted">Loading recordings...</p>';
   
   try {
     const verbosityRes = await fetch('/api/logging/verbosity');
@@ -282,52 +337,68 @@ async function showReprocessModal() {
       }
     }
 
-    const res = await fetch('/api/reprocess/candidates');
-    if (!res.ok) throw new Error('Failed to fetch candidates');
+    const res = await fetch('/api/recordings');
+    if (!res.ok) throw new Error('Failed to fetch recordings');
     const data = await res.json();
     
-    if (data.candidates && data.candidates.length > 0) {
-      listContainer.innerHTML = data.candidates.map((candidate, idx) => {
-        const statusIcon = candidate.success ? '✓' : '✗';
-        const statusClass = candidate.success ? 'text-success' : 'text-error';
+    // Debug: see ALL fields in first recording
+    if (data.recordings && data.recordings.length > 0) {
+      console.log('First recording fields:', Object.keys(data.recordings[0]));
+      console.log('First recording full object:', data.recordings[0]);
+    }
+    
+    if (data.recordings && data.recordings.length > 0) {
+      listContainer.innerHTML = data.recordings.map((recording, idx) => {
+        const title = recording.episode_title 
+          ? `${recording.title} - ${recording.episode_title}` 
+          : recording.title;
+        
+        // Format date - created_at is Unix timestamp in milliseconds
+        let dateStr = 'Unknown';
+        if (recording.created_at) {
+          const date = new Date(recording.created_at);
+          if (!isNaN(date.getTime())) {
+            dateStr = date.toLocaleString();
+          }
+        }
+        
         return `
-          <div class="reprocess-item">
+          <div class="manual-process-item">
             <label>
-              <input type="checkbox" name="reprocess-path" value="${escapeAttr(candidate.path)}" data-idx="${idx}">
-              <span class="${statusClass}">${statusIcon}</span>
-              <span class="reprocess-title">${escapeHtml(candidate.title)}</span>
-              <span class="reprocess-time">${new Date(candidate.started_at).toLocaleString()}</span>
+              <input type="checkbox" name="manual-process-path" value="${escapeAttr(recording.path)}" data-idx="${idx}">
+              <span class="manual-process-title">${escapeHtml(title)}</span>
+              <span class="manual-process-time">${dateStr}</span>
             </label>
           </div>
         `;
       }).join('');
     } else {
-      listContainer.innerHTML = '<p class="muted">No completed recordings available for reprocessing</p>';
+      listContainer.innerHTML = '<p class="muted">No recordings available</p>';
     }
   } catch (err) {
-    listContainer.innerHTML = `<p class="muted">Error loading candidates: ${escapeHtml(err.message)}</p>`;
-    console.error('Reprocess candidates fetch error:', err);
+    listContainer.innerHTML = `<p class="muted">Error loading recordings: ${escapeHtml(err.message)}</p>`;
+    console.error('Recordings fetch error:', err);
   }
 }
 
-function closeReprocessModal() {
-  document.getElementById('reprocess-modal').style.display = 'none';
+function closeManualProcessModal() {
+  document.getElementById('manual-process-modal').style.display = 'none';
 }
 
-async function submitReprocessing() {
-  const checkboxes = document.querySelectorAll('input[name="reprocess-path"]:checked');
+async function submitManualProcessing() {
+  const checkboxes = document.querySelectorAll('input[name="manual-process-path"]:checked');
   const paths = Array.from(checkboxes).map(cb => cb.value);
   
   if (paths.length === 0) {
-    alert('Please select at least one recording to reprocess');
+    alert('Please select at least one recording to process');
     return;
   }
   
-  const skipCaptionGeneration = document.getElementById('reprocess-skip-caption').checked;
-  const logVerbosity = document.getElementById('reprocess-log-verbosity').value;
+  const skipCaptionGeneration = document.getElementById('manual-process-skip-caption').checked;
+  const logVerbosity = document.getElementById('manual-process-log-verbosity').value;
   
   try {
-    const res = await fetch('/api/reprocess/add', {
+    const res = await fetch('/api/manual-process/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
@@ -337,14 +408,13 @@ async function submitReprocessing() {
       })
     });
     
-    if (!res.ok) throw new Error('Failed to add to reprocess queue');
+    if (!res.ok) throw new Error('Failed to add to manual process queue');
     const data = await res.json();
     
     if (data.error) {
       alert('Error: ' + data.error);
     } else {
-      alert(`Added ${data.added} recording(s) to reprocess queue`);
-      closeReprocessModal();
+      closeManualProcessModal();
       fetchStatus(); // Refresh to update queue count
     }
   } catch (err) {
@@ -353,30 +423,30 @@ async function submitReprocessing() {
   }
 }
 
-async function removeFromReprocessQueue(path, execId) {
-  if (!confirm('Remove this item from the reprocess queue?')) return;
+async function removeFromManualProcessQueue(path, execId) {
+  if (!confirm('Remove this item from the manual process queue?')) return;
   
   try {
-    const res = await fetch('/api/reprocess/remove', {
+    const res = await fetch('/api/manual-process/remove', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path })
     });
     
-    if (!res.ok) throw new Error('Failed to remove from reprocess queue');
+    if (!res.ok) throw new Error('Failed to remove from manual process queue');
     const data = await res.json();
     
     if (data.error) {
       alert('Error: ' + data.error);
     } else {
-      alert('Item removed from reprocess queue');
+      alert('Item removed from manual process queue');
       closeModal();
       fetchStatus(); // Refresh to update queue count
       fetchExecutions(); // Refresh execution list
     }
   } catch (err) {
-    alert('Error removing from reprocess queue: ' + err.message);
-    console.error('Remove from reprocess queue error:', err);
+    alert('Error removing from manual process queue: ' + err.message);
+    console.error('Remove from manual process queue error:', err);
   }
 }
 
@@ -408,13 +478,19 @@ function startLogWebSocket() {
     }
   };
   logSocket.onerror = (event) => {
-    logList.innerHTML = '<li class="muted">Log stream error</li>';
-    logCount.textContent = '(error)';
+    logList.innerHTML = '<li class="muted">Log stream error - using polling fallback</li>';
+    logCount.textContent = '(polling)';
+    logSocketActive = false;
+    startLogPolling();
   };
   logSocket.onclose = () => {
     logSocketActive = false;
-    logList.innerHTML += '<li class="muted">Log stream closed</li>';
-    logCount.textContent = '(disconnected)';
+    // If we explicitly stopped it, don't try to reconnect
+    if (logSocket !== null) {
+      logList.innerHTML += '<li class="muted">Log stream closed - using polling fallback</li>';
+      logCount.textContent = '(polling)';
+      startLogPolling();
+    }
   };
 }
 

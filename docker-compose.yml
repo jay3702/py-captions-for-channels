@@ -27,6 +27,7 @@ services:
       - STATE_FILE=${STATE_FILE:-/app/data/state.json}
       - DRY_RUN=${DRY_RUN:-false}
       - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-7200}
+      - STALE_EXECUTION_SECONDS=${STALE_EXECUTION_SECONDS:-7200}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_VERBOSITY=${LOG_VERBOSITY:-NORMAL}
       - LOG_FILE=${LOG_FILE:-/app/logs/app.log}

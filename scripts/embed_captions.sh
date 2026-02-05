@@ -41,8 +41,23 @@ echo "Skip caption generation: $SKIP_CAPTION_GENERATION"
 if [ "$SKIP_CAPTION_GENERATION" != "true" ]; then
     mkdir -p "$WHISPER_MODEL_DIR"
     echo "Generating captions..."
-    if ! whisper --model "$WHISPER_MODEL" --model_dir "$WHISPER_MODEL_DIR" --language English --output_format srt --output_dir "$VIDEO_DIR" $WHISPER_ARGS "$VIDEO_PATH"; then
+    # Write to temp directory first to avoid CIFS mount permission issues
+    TEMP_OUTPUT_DIR="/tmp/whisper_output_$$"
+    mkdir -p "$TEMP_OUTPUT_DIR"
+    if ! whisper --model "$WHISPER_MODEL" --model_dir "$WHISPER_MODEL_DIR" --language English --output_format srt --output_dir "$TEMP_OUTPUT_DIR" $WHISPER_ARGS "$VIDEO_PATH"; then
         echo "ERROR: Whisper failed for $VIDEO_PATH"
+        rm -rf "$TEMP_OUTPUT_DIR"
+        exit 1
+    fi
+    # Copy SRT from temp to final location
+    TEMP_SRT="${TEMP_OUTPUT_DIR}/${VIDEO_BASE}.srt"
+    if [ -f "$TEMP_SRT" ]; then
+        cp "$TEMP_SRT" "$SRT_PATH"
+        echo "Copied SRT from temp: $TEMP_SRT -> $SRT_PATH"
+        rm -rf "$TEMP_OUTPUT_DIR"
+    else
+        echo "ERROR: Whisper did not create expected SRT file: $TEMP_SRT"
+        rm -rf "$TEMP_OUTPUT_DIR"
         exit 1
     fi
 else

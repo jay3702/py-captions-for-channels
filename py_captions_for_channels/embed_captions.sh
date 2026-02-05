@@ -1,4 +1,10 @@
 #!/bin/bash
+# ============================================================================
+# DEPRECATED: This shell script is deprecated in favor of embed_captions.py
+# The Python version handles all caption generation and embedding.
+# This file is kept for reference only - DO NOT USE IN PRODUCTION
+# ============================================================================
+#
 # Embed captions into MPG for Channels DVR compatibility (subtitle stream, not burn-in)
 #
 # Usage: embed_captions.sh /path/to/video.mpg
@@ -342,6 +348,4 @@ fi
 trap - EXIT
 
 echo "Complete!"
-echo "New file: $VIDEO_PATH"
-echo "Caption file: $SRT_PATH"
-echo "Preserved original: $ORIG_PATH"
+echo "New file: $VIDEO_h

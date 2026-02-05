@@ -18,6 +18,7 @@ from .config import (
     STATE_FILE,
     DRY_RUN,
     LOG_FILE,
+    LOG_FILE_READ,
     CAPTION_COMMAND,
     STALE_EXECUTION_SECONDS,
     CHANNELS_API_URL,
@@ -26,15 +27,16 @@ from .config import (
     LOG_VERBOSITY_FILE,
 )
 from .state import StateBackend
-from .execution_tracker import build_reprocess_job_id, get_tracker
+from .execution_tracker import build_manual_process_job_id, get_tracker
 from .logging_config import get_verbosity, set_verbosity
+from .version import VERSION, BUILD_NUMBER
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
 TEMPLATES_DIR = WEB_ROOT / "templates"
 STATIC_DIR = WEB_ROOT / "static"
 
-app = FastAPI(title="Py Captions Web GUI", version="0.8.0-dev")
+app = FastAPI(title="Py Captions Web GUI", version=VERSION)
 state_backend = StateBackend(STATE_FILE)
 
 app.add_middleware(
@@ -243,7 +245,7 @@ async def status() -> dict:
 
     Reads from state file to report:
     - Last timestamp processed
-    - Reprocess queue size
+    - Manual process queue size
     - Configuration snapshot
     - Dry-run mode status
     - Service health (Channels DVR, ChannelWatch)
@@ -253,23 +255,84 @@ async def status() -> dict:
         state_backend._load()
 
         last_ts = state_backend.last_ts
-        reprocess_queue = state_backend.get_reprocess_queue()
+        manual_process_queue = state_backend.get_manual_process_queue()
 
         # Check service health
         channels_healthy, channels_msg = check_service_health(CHANNELS_API_URL)
         channelwatch_healthy, channelwatch_msg = check_service_health(CHANNELWATCH_URL)
 
+        # Check if whisper and ffmpeg processes are running
+        # Infer from execution tracker - if any executions are running
+        # Note: Without pub/sub, we assume whisper is the primary
+        # process (longest running) and show ffmpeg only if processing
+        # but whisper isn't detected
+        whisper_running = False
+        ffmpeg_running = False
+        try:
+            tracker = get_tracker()
+            all_execs = tracker.get_executions()
+            running_execs = [e for e in all_execs if e.get("status") == "running"]
+            # If any execution is running, assume whisper is active (primary process)
+            # This is a simplification until pub/sub is implemented
+            if len(running_execs) > 0:
+                whisper_running = True
+                # ffmpeg runs briefly before/after whisper, so we don't show it
+                # to avoid both being green simultaneously
+            logging.debug(
+                f"Process status check: {len(running_execs)} running, "
+                f"whisper={whisper_running}, ffmpeg={ffmpeg_running}"
+            )
+        except Exception as e:
+            logging.error(f"Error checking process status: {e}")
+            pass  # If check fails, just show as not running
+
         settings = load_settings()
+
+        # Build services dict, only include ChannelWatch if configured
+        services = {
+            "channels_dvr": {
+                "name": "Channels DVR",
+                "url": CHANNELS_API_URL,
+                "healthy": channels_healthy,
+                "status": channels_msg,
+            },
+        }
+
+        # Only add ChannelWatch if it's configured (not using default)
+        if CHANNELWATCH_URL and os.getenv("CHANNELWATCH_URL"):
+            services["channelwatch"] = {
+                "name": "ChannelWatch",
+                "url": CHANNELWATCH_URL,
+                "healthy": channelwatch_healthy,
+                "status": channelwatch_msg,
+            }
+
+        # Add process indicators
+        services["whisper"] = {
+            "name": "Whisper",
+            "url": None,
+            "healthy": whisper_running,
+            "status": "Running" if whisper_running else "Idle",
+        }
+
+        services["ffmpeg"] = {
+            "name": "ffmpeg",
+            "url": None,
+            "healthy": ffmpeg_running,
+            "status": "Running" if ffmpeg_running else "Idle",
+        }
+
         return {
             "app": "py-captions-for-channels",
-            "version": "0.8.0-dev",
+            "version": VERSION,
+            "build_number": BUILD_NUMBER,
             "status": "running",
             "dry_run": settings.get("dry_run", False),
             "keep_original": settings.get("keep_original", True),
             "log_verbosity": settings.get("log_verbosity", "NORMAL"),
             "whisper_model": settings.get("whisper_model", "medium"),
             "last_processed": last_ts.isoformat() if last_ts else None,
-            "reprocess_queue_size": len(reprocess_queue),
+            "manual_process_queue_size": len(manual_process_queue),
             "caption_command": (
                 CAPTION_COMMAND[:50] + "..."
                 if len(CAPTION_COMMAND) > 50
@@ -277,26 +340,14 @@ async def status() -> dict:
             ),
             "log_file": str(LOG_FILE),
             "timezone": str(LOCAL_TZ) if LOCAL_TZ else "system-default",
-            "services": {
-                "channels_dvr": {
-                    "name": "Channels DVR",
-                    "url": CHANNELS_API_URL,
-                    "healthy": channels_healthy,
-                    "status": channels_msg,
-                },
-                "channelwatch": {
-                    "name": "ChannelWatch",
-                    "url": CHANNELWATCH_URL,
-                    "healthy": channelwatch_healthy,
-                    "status": channelwatch_msg,
-                },
-            },
+            "services": services,
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         return {
             "app": "py-captions-for-channels",
-            "version": "0.8.0-dev",
+            "version": VERSION,
+            "build_number": BUILD_NUMBER,
             "status": "error",
             "error": str(e),
             "services": {
@@ -330,7 +381,7 @@ async def logs_endpoint(lines: int = 100) -> dict:
     items = []
 
     # Return log file path and info
-    log_path = Path(LOG_FILE)
+    log_path = Path(LOG_FILE_READ)
 
     if log_path.exists():
         try:
@@ -345,12 +396,12 @@ async def logs_endpoint(lines: int = 100) -> dict:
         except Exception as e:
             items = [f"Error reading logs: {str(e)}"]
     else:
-        items = [f"Log file not found: {LOG_FILE}"]
+        items = [f"Log file not found: {LOG_FILE_READ}"]
 
     return {
         "items": items,
         "count": len(items),
-        "log_file": str(LOG_FILE),
+        "log_file": str(LOG_FILE_READ),
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -391,6 +442,163 @@ async def get_executions(limit: int = 50) -> dict:
         }
 
 
+@app.post("/api/executions/clear_list")
+async def clear_list_executions(cancel_pending: bool = False) -> dict:
+    """Clear list intelligently based on status.
+
+    Removes:
+    - Failed executions (completed with success=False)
+    - Dry-run executions (status="dry_run")
+    - Invalid pending executions (not in manual process queue and stale)
+
+    If there are legitimate pending executions (in queue and recent),
+    returns them for confirmation before clearing.
+
+    Args:
+        cancel_pending: If True, also cancel and remove legitimate pending executions
+
+    Returns:
+        Dict with removed_ids, pending_count, and optionally pending_ids
+    """
+    try:
+        tracker = get_tracker()
+        executions = tracker.get_executions(limit=10000)
+        manual_queue = set(state_backend.get_manual_process_queue())
+        now = datetime.now(timezone.utc)
+
+        removed_ids = []
+        pending_ids = []
+
+        for exec_data in executions:
+            job_id = exec_data.get("id")
+            status = exec_data.get("status")
+            path = exec_data.get("path", "")
+            started_at = exec_data.get("started_at")
+
+            # Remove failed executions
+            if status == "completed" and exec_data.get("success") is False:
+                if job_id and tracker.remove_execution(job_id):
+                    removed_ids.append(job_id)
+
+            # Remove dry-run executions
+            elif status == "dry_run":
+                if job_id and tracker.remove_execution(job_id):
+                    removed_ids.append(job_id)
+
+            # Handle pending executions
+            elif status == "pending":
+                # Check if this is in the manual queue (legitimate)
+                in_queue = any(
+                    path.endswith(q) or q.endswith(path) for q in manual_queue
+                )
+
+                # Check if pending is stale (older than 60 minutes)
+                is_stale = False
+                if started_at:
+                    try:
+                        dt = datetime.fromisoformat(started_at)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        age_minutes = (now - dt).total_seconds() / 60.0
+                        is_stale = age_minutes > 60
+                    except Exception:
+                        is_stale = True
+
+                # Remove invalid pending (not in queue OR stale)
+                if not in_queue or is_stale:
+                    if job_id and tracker.remove_execution(job_id):
+                        removed_ids.append(job_id)
+                # Collect legitimate pending that need confirmation
+                elif cancel_pending:
+                    # User confirmed cancellation of pending jobs
+                    if job_id and tracker.remove_execution(job_id):
+                        removed_ids.append(job_id)
+                else:
+                    # Keep track of pending jobs requiring confirmation
+                    pending_ids.append(
+                        {
+                            "id": job_id,
+                            "path": path,
+                            "title": exec_data.get("title", ""),
+                        }
+                    )
+
+        return {
+            "removed": len(removed_ids),
+            "removed_ids": removed_ids,
+            "pending_count": len(pending_ids),
+            "pending_ids": pending_ids if pending_ids and not cancel_pending else [],
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        return {
+            "removed": 0,
+            "pending_count": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+
+@app.post("/api/executions/clear_failed")
+async def clear_failed_executions() -> dict:
+    """Legacy endpoint - redirect to clear_list for backward compatibility."""
+    return await clear_list_executions()
+
+
+@app.post("/api/executions/clear_pending")
+async def clear_pending_executions(max_age_minutes: int = 60) -> dict:
+    """Remove stale pending executions.
+
+    Pending items are removed if they are older than max_age_minutes or
+    are not present in the manual process queue.
+    """
+    try:
+        tracker = get_tracker()
+        executions = tracker.get_executions(limit=10000)
+        manual_queue = set(state_backend.get_manual_process_queue())
+        now = datetime.now(timezone.utc)
+        removed_ids = []
+
+        for exec_data in executions:
+            if exec_data.get("status") != "pending":
+                continue
+
+            job_id = exec_data.get("id")
+            path = exec_data.get("path")
+
+            started_at = exec_data.get("started_at")
+            stale = False
+            if started_at:
+                try:
+                    dt = datetime.fromisoformat(started_at)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    age_minutes = (now - dt).total_seconds() / 60.0
+                    if age_minutes > max_age_minutes:
+                        stale = True
+                except Exception:
+                    stale = True
+            else:
+                stale = True
+
+            # Remove if stale or not in manual queue (for manual items)
+            if stale or (path and path not in manual_queue):
+                if job_id and tracker.remove_execution(job_id):
+                    removed_ids.append(job_id)
+
+        return {
+            "removed": len(removed_ids),
+            "removed_ids": removed_ids,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        return {
+            "removed": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+
 def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
     """Extract log lines for a specific job from the main log file.
 
@@ -404,7 +612,7 @@ def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
     from collections import deque
 
     job_logs = deque(maxlen=max_lines)
-    log_path = Path(LOG_FILE)
+    log_path = Path(LOG_FILE_READ)
 
     if not log_path.exists():
         return []
@@ -467,16 +675,80 @@ async def cancel_execution(job_id: str) -> dict:
         ok = tracker.request_cancel(job_id)
         if not ok:
             return {"error": "Execution not found", "job_id": job_id}
-        if execution and execution.get("kind") == "reprocess" and execution.get("path"):
-            state_backend.clear_reprocess_request(execution["path"])
+        if (
+            execution
+            and execution.get("kind") == "manual_process"
+            and execution.get("path")
+        ):
+            state_backend.clear_manual_process_request(execution["path"])
         return {"ok": True, "job_id": job_id}
     except Exception as e:
         return {"error": str(e), "job_id": job_id}
 
 
-@app.get("/api/reprocess/candidates")
-async def get_reprocess_candidates() -> dict:
-    """Get list of recordings that can be reprocessed.
+@app.get("/api/recordings")
+async def get_recordings() -> dict:
+    """Get list of recordings from Channels DVR API.
+
+    Fetches all recordings from the Channels DVR /api/v1/all endpoint
+    sorted by date_added (most recent first).
+
+    Returns:
+        JSON with recordings list containing path, title, date_added, etc.
+    """
+    try:
+        import requests
+
+        resp = requests.get(
+            f"{CHANNELS_API_URL}/api/v1/all",
+            params={"sort": "date_added", "order": "desc", "source": "recordings"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        recordings = resp.json()
+
+        # Debug: Log field names only
+        if recordings and len(recordings) > 0:
+            LOG.info(f"Received {len(recordings)} recordings from Channels DVR")
+            LOG.info(f"First recording keys: {list(recordings[0].keys())}")
+
+        # Extract relevant fields for UI
+        formatted_recordings = [
+            {
+                "path": rec.get("path", ""),
+                "title": rec.get("title", "Unknown"),
+                "episode_title": rec.get("episode_title", ""),
+                "summary": rec.get("summary", ""),
+                "created_at": rec.get(
+                    "created_at", 0
+                ),  # Unix timestamp in milliseconds
+                "original_air_date": rec.get("original_air_date", ""),
+                "duration": rec.get("duration", 0),
+            }
+            for rec in recordings
+            if rec.get("path")  # Only include recordings with valid paths
+        ]
+
+        LOG.info(f"Formatted {len(formatted_recordings)} recordings for UI")
+
+        return {
+            "recordings": formatted_recordings,
+            "count": len(formatted_recordings),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        LOG.error(f"Error fetching recordings from Channels DVR API: {e}")
+        return {
+            "recordings": [],
+            "count": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+
+@app.get("/api/manual-process/candidates")
+async def get_manual_process_candidates() -> dict:
+    """Get list of recordings that can be manually processed.
 
     Returns completed executions (both successful and failed).
     """
@@ -511,9 +783,9 @@ async def get_reprocess_candidates() -> dict:
         }
 
 
-@app.post("/api/reprocess/add")
-async def add_to_reprocess_queue(request: Request) -> dict:
-    """Add paths to the reprocess queue.
+@app.post("/api/manual-process/add")
+async def add_to_manual_process_queue(request: Request) -> dict:
+    """Add paths to the manual process queue.
 
     Expects JSON body:
     {"paths": ["path1", ...], "skip_caption_generation": bool,
@@ -530,14 +802,14 @@ async def add_to_reprocess_queue(request: Request) -> dict:
 
         tracker = get_tracker()
 
-        # Add paths to reprocess queue with settings
+        # Add paths to manual process queue with settings
         for path in paths:
-            state_backend.mark_for_reprocess(
+            state_backend.mark_for_manual_process(
                 path, skip_caption_generation, log_verbosity
             )
             filename = path.split("/")[-1]
-            title = f"Reprocess: {filename}"
-            job_id = build_reprocess_job_id(path)
+            title = f"Manual: {filename}"
+            job_id = build_manual_process_job_id(path)
             existing = tracker.get_execution(job_id)
             if not existing or existing.get("status") != "running":
                 tracker.start_execution(
@@ -546,37 +818,12 @@ async def add_to_reprocess_queue(request: Request) -> dict:
                     path,
                     datetime.now(timezone.utc).isoformat(),
                     status="pending",
-                    kind="reprocess",
+                    kind="manual_process",
                 )
 
-        # Optionally trigger reprocess queue immediately (if running in main process)
-        try:
-            from py_captions_for_channels import watcher
-            from py_captions_for_channels.pipeline import Pipeline
-            from py_captions_for_channels.parser import Parser
-            from py_captions_for_channels.channels_api import ChannelsAPI
-            from py_captions_for_channels.config import (
-                CAPTION_COMMAND,
-                DRY_RUN,
-                CHANNELS_API_URL,
-            )
-            import asyncio
-
-            # Initialize required objects
-            pipeline = Pipeline(CAPTION_COMMAND, dry_run=DRY_RUN)
-            parser = Parser()
-            api = ChannelsAPI(CHANNELS_API_URL)
-
-            # Fire and forget (non-blocking)
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(
-                    watcher.process_reprocess_queue(
-                        state_backend, pipeline, api, parser
-                    )
-                )
-        except Exception as e:
-            LOG.warning(f"Could not auto-trigger reprocess queue: {e}")
+        # Note: Web container does not process queue directly.
+        # The main container polls the queue every ~5 seconds and processes items.
+        # Items added here will be picked up automatically by the main container.
 
         return {
             "added": len(paths),
@@ -586,9 +833,9 @@ async def add_to_reprocess_queue(request: Request) -> dict:
         return {"error": str(e), "added": 0}
 
 
-@app.post("/api/reprocess/remove")
-async def remove_from_reprocess_queue(request: Request) -> dict:
-    """Remove a path from the reprocess queue.
+@app.post("/api/manual-process/remove")
+async def remove_from_manual_process_queue(request: Request) -> dict:
+    """Remove a path from the manual process queue.
 
     Expects JSON body: {"path": "path/to/file.mpg"}
     """
@@ -600,11 +847,11 @@ async def remove_from_reprocess_queue(request: Request) -> dict:
             return {"error": "No path provided", "removed": False}
 
         # Clear from state backend
-        state_backend.clear_reprocess_request(path)
+        state_backend.clear_manual_process_request(path)
 
         # Remove execution if pending (completely delete it)
         tracker = get_tracker()
-        job_id = build_reprocess_job_id(path)
+        job_id = build_manual_process_job_id(path)
         execution = tracker.get_execution(job_id)
         if execution and execution.get("status") == "pending":
             tracker.remove_execution(job_id)

@@ -39,7 +39,8 @@ from pathlib import Path
 
 LOG = get_logger("watcher")
 
-# Queue for pending polling detections (allows polling to continue while processing serially)
+# Queue for pending polling detections
+# (allows polling to continue while processing serially)
 _polling_queue = asyncio.Queue()
 
 
@@ -55,8 +56,12 @@ async def process_manual_process_queue(state, pipeline, api, parser):
         for path in queue:
             job_id = build_manual_process_job_id(path)
             existing = tracker.get_execution(job_id)
-            # Create pending execution if none exists, or if previous one is completed/failed
-            if not existing or existing.get("status") in ("completed", "failed"):
+            # Create pending execution if none exists,
+            # or if previous one is completed/failed
+            if not existing or existing.get("status") in (
+                "completed",
+                "failed",
+            ):
                 filename = path.split("/")[-1]
                 title = f"Manual: {filename}"
                 tracker.start_execution(
@@ -163,7 +168,8 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                         kind="manual_process",
                     )
 
-                # Update job_id to the actual execution ID (may have timestamp for reprocessing)
+                # Update job_id to the actual execution ID
+                # (may have timestamp for reprocessing)
                 set_job_id(job_id)
 
                 # Run pipeline in executor to not block event loop
@@ -189,7 +195,8 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                             tracker.add_log(exec_id, f"[stderr] {line}")
 
                 # Complete execution tracking
-                # For dry-run executions, mark as "dry_run" status instead of "completed"
+                # For dry-run executions, mark as "dry_run" status
+                # instead of "completed"
                 if hasattr(result, "is_dry_run") and result.is_dry_run:
                     tracker.update_execution(
                         exec_id,
@@ -333,7 +340,8 @@ async def main():
 
     # Clean up stale manual process executions from previous runs
     # Only clear 'running' items (interrupted by restart)
-    # Keep 'pending' items (safe to retry) and 'failed' items (don't retry automatically)
+    # Keep 'pending' items (safe to retry) and 'failed' items
+    # (don't retry automatically)
     tracker = get_tracker()
     all_executions = tracker.get_executions()
     stale_count = 0
@@ -389,15 +397,20 @@ async def main():
                 try:
                     _maybe_update_log_verbosity()
 
-                    # Set job ID for this processing task - include date to avoid daily collisions
-                    job_id = f"{event_partial.title} @ {event_partial.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    # Set job ID for this processing task
+                    # Include date to avoid daily collisions
+                    job_id = (
+                        f"{event_partial.title} @ "
+                        f"{event_partial.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
                     set_job_id(job_id)
 
                     tracker = get_tracker()
                     exec_id = None
 
                     try:
-                        # Use path from event if provided (polling source), otherwise lookup
+                        # Use path from event if provided (polling source),
+                        # otherwise lookup
                         if hasattr(event_partial, "path") and event_partial.path:
                             path = event_partial.path
                             LOG.debug("Using path from event: %s", path)
@@ -407,7 +420,8 @@ async def main():
                             )
                         event = parser.from_channelwatch(event_partial, path)
 
-                        # Get the existing pending execution (created when added to queue)
+                        # Get the existing pending execution
+                        # (created when added to queue)
                         exec_id = job_id
 
                         # Update to running when we actually start processing
@@ -438,7 +452,8 @@ async def main():
                                     tracker.add_log(exec_id, f"[stderr] {line}")
 
                         # Complete execution tracking
-                        # For dry-run executions, mark as "dry_run" status instead of "completed"
+                        # For dry-run executions, mark as "dry_run"
+                        # status instead of "completed"
                         if hasattr(result, "is_dry_run") and result.is_dry_run:
                             tracker.update_execution(
                                 exec_id,
@@ -458,7 +473,7 @@ async def main():
                                     else (
                                         "Canceled"
                                         if result.returncode == -2
-                                        else f"Exit code {result.returncode}"
+                                        else (f"Exit code " f"{result.returncode}")
                                     )
                                 ),
                             )
@@ -470,7 +485,8 @@ async def main():
                         if not (hasattr(result, "is_dry_run") and result.is_dry_run):
                             state.update(event.timestamp)
 
-                        # Clear any manual process request for this path after successful processing
+                        # Clear any manual process request for this path
+                        # after successful processing
                         state.clear_manual_process_request(event.path)
                     except RuntimeError as e:
                         LOG.error(
@@ -531,7 +547,10 @@ async def main():
             continue
 
         # Create pending execution immediately so it shows in UI
-        job_id = f"{event_partial.title} @ {event_partial.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        job_id = (
+            f"{event_partial.title} @ "
+            f"{event_partial.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
 
         # Use path from event if provided (polling source), otherwise lookup
         if hasattr(event_partial, "path") and event_partial.path:

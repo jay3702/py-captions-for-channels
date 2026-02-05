@@ -315,8 +315,9 @@ class Pipeline:
             log.info("Running caption pipeline: %s", cmd)
 
             try:
-                # Execute command with subprocess.run() which handles timeouts more reliably
-                # than manual polling (especially for processes stuck in D state)
+                # Execute command with subprocess.run() which handles
+                # timeouts more reliably than manual polling
+                # (especially for processes stuck in D state)
                 log.debug("About to execute command: %s", cmd)
 
                 try:

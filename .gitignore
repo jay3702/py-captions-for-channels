@@ -43,6 +43,14 @@ data/
 tmp/
 *.tmp
 
+# Test recordings directory (keep structure, not files)
+test-recordings/**/*.mpg
+test-recordings/**/*.mp4
+test-recordings/**/*.srt
+test-recordings/**/*.orig*
+# tmp folder for staging test files
+test-recordings/tmp/
+
 # macOS
 .DS_Store
 
