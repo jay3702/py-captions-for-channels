@@ -504,7 +504,7 @@ async def main():
             LOG.error("Fatal error in polling processor loop: %s", e, exc_info=True)
 
     # Start the polling processor task
-    polling_processor_task = asyncio.ensure_future(_polling_processor_loop())
+    _ = asyncio.ensure_future(_polling_processor_loop())
     LOG.info("Polling processor background task started")
     await asyncio.sleep(0)
 
