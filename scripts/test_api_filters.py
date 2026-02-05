@@ -3,6 +3,7 @@
 
 Experiment with various query parameters to see what's supported.
 """
+
 import os
 import sys
 import requests
