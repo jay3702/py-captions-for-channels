@@ -33,6 +33,7 @@ from .execution_tracker import build_manual_process_job_id, get_tracker
 from .logging_config import get_verbosity, set_verbosity
 from .version import VERSION, BUILD_NUMBER
 from .progress_tracker import get_progress_tracker
+from .whitelist import Whitelist
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
@@ -761,22 +762,54 @@ async def get_recordings() -> dict:
             LOG.info(f"Received {len(recordings)} recordings from Channels DVR")
             LOG.info(f"First recording keys: {list(recordings[0].keys())}")
 
+        # Load whitelist for checking
+        whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
+        whitelist = Whitelist(str(whitelist_path) if whitelist_path.exists() else None)
+
+        # Get execution tracker to check processed status
+        tracker = get_tracker()
+        all_executions = tracker.get_executions(limit=1000)
+
         # Extract relevant fields for UI
-        formatted_recordings = [
-            {
-                "path": rec.get("path", ""),
-                "title": rec.get("title", "Unknown"),
-                "episode_title": rec.get("episode_title", ""),
-                "summary": rec.get("summary", ""),
-                "created_at": rec.get(
-                    "created_at", 0
-                ),  # Unix timestamp in milliseconds
-                "original_air_date": rec.get("original_air_date", ""),
-                "duration": rec.get("duration", 0),
-            }
-            for rec in recordings
-            if rec.get("path")  # Only include recordings with valid paths
-        ]
+        formatted_recordings = []
+        for rec in recordings:
+            if not rec.get("path"):
+                continue
+
+            path = rec.get("path", "")
+            title = rec.get("title", "Unknown")
+            episode_title = rec.get("episode_title", "")
+            full_title = f"{title} - {episode_title}" if episode_title else title
+
+            # Check whitelist
+            passes_whitelist = whitelist.is_allowed(full_title)
+
+            # Check if processed (look for execution with this path)
+            processed_exec = next(
+                (e for e in all_executions if e.get("path") == path), None
+            )
+            processed_status = None
+            if processed_exec:
+                if processed_exec.get("status") == "completed":
+                    processed_status = (
+                        "success" if processed_exec.get("success") else "failed"
+                    )
+
+            formatted_recordings.append(
+                {
+                    "path": path,
+                    "title": title,
+                    "episode_title": episode_title,
+                    "summary": rec.get("summary", ""),
+                    "created_at": rec.get(
+                        "created_at", 0
+                    ),  # Unix timestamp in milliseconds
+                    "original_air_date": rec.get("original_air_date", ""),
+                    "duration": rec.get("duration", 0),
+                    "passes_whitelist": passes_whitelist,
+                    "processed": processed_status,  # None, 'success', or 'failed'
+                }
+            )
 
         LOG.info(f"Formatted {len(formatted_recordings)} recordings for UI")
 
