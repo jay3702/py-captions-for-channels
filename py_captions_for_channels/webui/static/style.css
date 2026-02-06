@@ -150,12 +150,12 @@ h1 {
 
 .service-healthy {
   color: #81c784;
-  font-size: 12px;
+  font-size: 20px;
 }
 
 .service-unhealthy {
-  color: #ef5350;
-  font-size: 12px;
+  color: #666;
+  font-size: 20px;
 }
 
 .list {
