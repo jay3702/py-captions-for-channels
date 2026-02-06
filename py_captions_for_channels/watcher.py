@@ -583,43 +583,66 @@ async def main():
 
         tracker = get_tracker()
 
-        # Only create execution if:
-        # - None exists for this job_id, OR
-        # - Previous execution failed (allow reprocessing)
-        # Do NOT reprocess if already completed successfully
-        existing = tracker.get_execution(job_id)
-        if not existing:
-            _ = tracker.start_execution(
-                job_id,
-                event_partial.title,
-                path,
-                event_partial.timestamp.isoformat(),
-                status="pending",
-            )
-            LOG.info("Added to processing queue: %s", event_partial.title)
-        elif existing.get("status") == "failed":
-            # Allow reprocessing of failed recordings
-            _ = tracker.start_execution(
-                job_id,
-                event_partial.title,
-                path,
-                event_partial.timestamp.isoformat(),
-                status="pending",
-            )
-            LOG.info("Reprocessing failed recording: %s", event_partial.title)
-        elif existing.get("status") == "completed" and existing.get("success") is True:
-            # Skip successfully completed recordings
-            LOG.debug(
-                "Skipping - recording already completed successfully: %s",
-                event_partial.title,
-            )
+        # Check if this exact recording (by path) has been processed
+        # Handles job_id format changes and multiple recordings, same title
+        all_executions = tracker.get_executions(limit=1000)
+        existing_by_path = next(
+            (e for e in all_executions if e.get("path") == path), None
+        )
+        existing_by_id = tracker.get_execution(job_id)
+
+        # Determine if we should create a new execution
+        should_create = False
+        reason = ""
+
+        if existing_by_path:
+            if (
+                existing_by_path.get("status") == "completed"
+                and existing_by_path.get("success") is True
+            ):
+                LOG.debug(
+                    "Skipping - recording already completed: %s (path: %s)",
+                    event_partial.title,
+                    path,
+                )
+                should_create = False
+            elif existing_by_path.get("status") == "failed":
+                should_create = True
+                reason = "Reprocessing failed recording"
+            elif existing_by_path.get("status") in ("pending", "running"):
+                LOG.debug(
+                    "Skipping - execution already %s: %s",
+                    existing_by_path.get("status"),
+                    event_partial.title,
+                )
+                should_create = False
+        elif existing_by_id:
+            # Job ID exists but path differs - different recording, same title/time
+            if existing_by_id.get("status") in ("pending", "running"):
+                LOG.debug(
+                    "Skipping - execution already %s: %s",
+                    existing_by_id.get("status"),
+                    event_partial.title,
+                )
+                should_create = False
+            else:
+                # Completed or failed with different path - likely new recording
+                should_create = True
+                reason = "New recording"
         else:
-            # Execution exists and is pending/running
-            LOG.debug(
-                "Skipping - execution already exists with status %s: %s",
-                existing.get("status"),
+            # No existing execution found
+            should_create = True
+            reason = "New recording"
+
+        if should_create:
+            _ = tracker.start_execution(
+                job_id,
                 event_partial.title,
+                path,
+                event_partial.timestamp.isoformat(),
+                status="pending",
             )
+            LOG.info("Added to processing queue: %s (%s)", event_partial.title, reason)
 
         # Add to queue for processing (non-blocking)
         await _polling_queue.put(event_partial)
