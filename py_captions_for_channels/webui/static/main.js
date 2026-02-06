@@ -42,6 +42,26 @@ async function fetchStatus() {
         servicesContainer.innerHTML = servicesHtml;
       }
     }
+
+    // Update heartbeat indicators with pulse animation
+    if (data.heartbeat) {
+      for (const [name, hb] of Object.entries(data.heartbeat)) {
+        const indicator = document.getElementById(`heartbeat-${name}`);
+        if (indicator) {
+          if (hb.alive && hb.age_seconds < 3) {
+            // Recent heartbeat - pulse it
+            indicator.classList.add('pulse');
+            setTimeout(() => indicator.classList.remove('pulse'), 500);
+          } else if (hb.alive) {
+            // Alive but not fresh - keep cyan but no pulse
+            indicator.style.color = '#5ce1e6';
+          } else {
+            // Stale - grey
+            indicator.style.color = '#666';
+          }
+        }
+      }
+    }
   } catch (err) {
     document.getElementById('status-pill').className = 'pill pill-error';
     document.getElementById('status-pill').textContent = 'error';

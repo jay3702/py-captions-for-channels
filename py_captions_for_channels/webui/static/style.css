@@ -158,6 +158,28 @@ h1 {
   font-size: 20px;
 }
 
+.heartbeat-indicator {
+  font-size: 16px;
+  color: #666;
+  transition: color 0.3s ease;
+}
+
+.heartbeat-indicator.pulse {
+  color: #5ce1e6;
+  animation: heartbeat-pulse 0.5s ease-out;
+}
+
+@keyframes heartbeat-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.2);
+  }
+}
+
 .list {
   list-style: none;
   margin: 0;

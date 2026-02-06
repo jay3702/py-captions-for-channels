@@ -136,6 +136,16 @@ class ChannelsPollingSource:
 
         while True:
             try:
+                # Update heartbeat file for UI
+                try:
+                    from pathlib import Path
+
+                    heartbeat_file = Path.cwd() / "data" / "heartbeat_polling.txt"
+                    heartbeat_file.parent.mkdir(parents=True, exist_ok=True)
+                    heartbeat_file.write_text(datetime.now(timezone.utc).isoformat())
+                except Exception:
+                    pass  # Don't fail on heartbeat
+
                 # Use local mock scanner if LOCAL_TEST_DIR is set
                 if self._use_local_mock:
                     LOG.debug("[MOCK] Scanning local test directory for recordings")

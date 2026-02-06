@@ -6,14 +6,14 @@
       "title": "CNN News Central",
       "path": "/recordings/TV/CNN News Central/CNN News Central 2025-12-19-1200.mpg",
       "kind": "normal",
-      "status": "running",
+      "status": "completed",
       "cancel_requested": false,
       "started_at": "2026-02-05T18:34:17.469102+00:00",
-      "completed_at": null,
-      "success": null,
-      "elapsed_seconds": 0.0,
+      "completed_at": "2026-02-06T17:50:08.091251+00:00",
+      "success": false,
+      "elapsed_seconds": 83750.622149,
       "logs": [],
-      "error": null
+      "error": "Execution interrupted or timed out (exceeded 3600s)"
     }
   },
   "execution_counter": 1

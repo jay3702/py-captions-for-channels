@@ -289,6 +289,27 @@ async def status() -> dict:
 
         settings = load_settings()
 
+        # Check heartbeat files
+        heartbeat_data = {}
+        try:
+            for name in ["polling", "manual"]:
+                hb_file = (
+                    Path(__file__).parent.parent / "data" / f"heartbeat_{name}.txt"
+                )
+                if hb_file.exists():
+                    hb_text = hb_file.read_text().strip()
+                    hb_dt = datetime.fromisoformat(hb_text)
+                    if hb_dt.tzinfo is None:
+                        hb_dt = hb_dt.replace(tzinfo=timezone.utc)
+                    age_seconds = (datetime.now(timezone.utc) - hb_dt).total_seconds()
+                    heartbeat_data[name] = {
+                        "last": hb_text,
+                        "age_seconds": age_seconds,
+                        "alive": age_seconds < 30,  # Recent if < 30 seconds
+                    }
+        except Exception as e:
+            LOG.debug("Error reading heartbeat: %s", e)
+
         # Build services dict, only include ChannelWatch if configured
         services = {
             "channels_dvr": {
@@ -342,6 +363,7 @@ async def status() -> dict:
             "log_file": str(LOG_FILE),
             "timezone": str(LOCAL_TZ) if LOCAL_TZ else "system-default",
             "services": services,
+            "heartbeat": heartbeat_data,
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
