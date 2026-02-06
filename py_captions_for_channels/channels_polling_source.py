@@ -227,14 +227,25 @@ class ChannelsPollingSource:
                         try:
                             tracker = get_tracker()
                             all_execs = tracker.get_executions(limit=100)
+                            LOG.debug(
+                                "Checking execution tracker for '%s': "
+                                "%d total executions",
+                                title,
+                                len(all_execs),
+                            )
                             existing = next(
                                 (e for e in all_execs if e.get("path") == path), None
                             )
                             if existing:
                                 status = existing.get("status")
+                                LOG.debug(
+                                    "Found existing execution for '%s': status=%s",
+                                    title,
+                                    status,
+                                )
                                 # Skip if pending, running, or canceling
                                 if status in ("pending", "running", "canceling"):
-                                    LOG.debug(
+                                    LOG.info(
                                         "Skipping recording with %s execution: '%s'",
                                         status,
                                         title,
@@ -254,7 +265,7 @@ class ChannelsPollingSource:
                                                 )
                                             age = (now - comp_dt).total_seconds() / 60.0
                                             if age < 5:  # Completed within 5 min
-                                                LOG.debug(
+                                                LOG.info(
                                                     "Skipping recently completed "
                                                     "recording: '%s' (%.1f min ago)",
                                                     title,
@@ -264,7 +275,7 @@ class ChannelsPollingSource:
                                         except Exception:
                                             pass  # If parsing fails, proceed
                         except Exception as e:
-                            LOG.debug("Error checking execution tracker: %s", e)
+                            LOG.warning("Error checking execution tracker: %s", e)
                             # Continue anyway - better to process twice than skip
 
                     LOG.info(
