@@ -388,7 +388,22 @@ async function showManualProcessModal() {
     }
     
     if (data.recordings && data.recordings.length > 0) {
-      listContainer.innerHTML = data.recordings.map((recording, idx) => {
+      // Create table for recordings
+      let tableHtml = `
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border); text-align: left;">
+              <th style="padding: 8px 4px; width: 30px;"></th>
+              <th style="padding: 8px;">Recording</th>
+              <th style="padding: 8px; width: 140px;">Date</th>
+              <th style="padding: 8px; width: 80px; text-align: center;">Processed</th>
+              <th style="padding: 8px; width: 80px; text-align: center;">Whitelist</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      
+      data.recordings.forEach((recording, idx) => {
         const title = recording.episode_title 
           ? `${recording.title} - ${recording.episode_title}` 
           : recording.title;
@@ -402,16 +417,37 @@ async function showManualProcessModal() {
           }
         }
         
-        return `
-          <div class="manual-process-item">
-            <label>
+        // Processed status: green checkmark if success, red X if failed, empty if not processed
+        let processedIcon = '';
+        if (recording.processed === 'success') {
+          processedIcon = '<span style="color: #4caf50; font-size: 18px;" title="Processed successfully">✓</span>';
+        } else if (recording.processed === 'failed') {
+          processedIcon = '<span style="color: #ef5350; font-size: 18px;" title="Processing failed">✗</span>';
+        }
+        
+        // Whitelist status: green checkmark if passes, empty if not
+        let whitelistIcon = '';
+        if (recording.passes_whitelist) {
+          whitelistIcon = '<span style="color: #4caf50; font-size: 18px;" title="Passes whitelist">✓</span>';
+        }
+        
+        tableHtml += `
+          <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: 8px 4px;">
               <input type="checkbox" name="manual-process-path" value="${escapeAttr(recording.path)}" data-idx="${idx}">
-              <span class="manual-process-title">${escapeHtml(title)}</span>
-              <span class="manual-process-time">${dateStr}</span>
-            </label>
-          </div>
+            </td>
+            <td style="padding: 8px;">
+              <div style="font-weight: 500;">${escapeHtml(title)}</div>
+            </td>
+            <td style="padding: 8px; color: var(--muted); font-size: 0.85em;">${dateStr}</td>
+            <td style="padding: 8px; text-align: center;">${processedIcon}</td>
+            <td style="padding: 8px; text-align: center;">${whitelistIcon}</td>
+          </tr>
         `;
-      }).join('');
+      });
+      
+      tableHtml += '</tbody></table>';
+      listContainer.innerHTML = tableHtml;
     } else {
       listContainer.innerHTML = '<p class="muted">No recordings available</p>';
     }
