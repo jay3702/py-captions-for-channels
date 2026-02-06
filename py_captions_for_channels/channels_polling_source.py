@@ -135,6 +135,10 @@ class ChannelsPollingSource:
 
         while True:
             try:
+                # Track recordings yielded in THIS poll cycle only
+                # (cleared at start of each iteration)
+                seen_this_cycle = set()
+
                 # Update heartbeat file for UI
                 try:
                     from pathlib import Path
@@ -184,6 +188,13 @@ class ChannelsPollingSource:
                     if not rec_id:
                         LOG.warning("Recording missing ID: %s", rec.get("title"))
                         continue
+
+                    # Skip if already yielded in this poll cycle
+                    if rec_id in seen_this_cycle:
+                        continue
+
+                    # Mark as seen for this cycle
+                    seen_this_cycle.add(rec_id)
 
                     # Extract details
                     title = rec.get("title", "Unknown")
