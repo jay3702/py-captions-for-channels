@@ -228,7 +228,7 @@ class ChannelsPollingSource:
                         last_yielded = self._yielded_cache[rec_id]
                         age_seconds = (now - last_yielded).total_seconds()
                         if age_seconds < 600:  # 10 minutes
-                            LOG.debug(
+                            LOG.info(
                                 "Skipping recently yielded recording: '%s' "
                                 "(%.1f min ago)",
                                 title,
