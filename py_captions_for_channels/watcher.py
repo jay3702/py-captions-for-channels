@@ -391,7 +391,17 @@ async def main():
         try:
             while True:
                 await asyncio.sleep(MANUAL_PROCESS_POLL_SECONDS)
-                LOG.info("Manual process loop checking queue...")
+                LOG.debug("Manual process loop checking queue...")
+                # Update heartbeat file for UI
+                try:
+                    from pathlib import Path
+
+                    heartbeat_file = (
+                        Path(state.state_file).parent / "heartbeat_manual.txt"
+                    )
+                    heartbeat_file.write_text(datetime.now(timezone.utc).isoformat())
+                except Exception:
+                    pass  # Don't fail on heartbeat
                 try:
                     await process_manual_process_queue(state, pipeline, api, parser)
                 except Exception as e:
