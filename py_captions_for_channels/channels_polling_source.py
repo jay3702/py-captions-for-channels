@@ -14,7 +14,6 @@ import requests
 
 from .channels_api import ChannelsAPI
 from .config import LOCAL_TEST_DIR
-from .execution_tracker import get_tracker
 
 LOG = logging.getLogger(__name__)
 
@@ -64,6 +63,9 @@ class ChannelsPollingSource:
         self.max_age_hours = max_age_hours
         self._api = ChannelsAPI(api_url, timeout=timeout)
         self._use_local_mock = LOCAL_TEST_DIR is not None
+        # Track yielded recordings with timestamp to prevent duplicates
+        # within a time window (10 minutes)
+        self._yielded_cache = {}  # {rec_id: timestamp}
 
     def _get_smart_interval(self) -> int:
         """Calculate smart polling interval based on current time.
@@ -219,64 +221,30 @@ class ChannelsPollingSource:
                                 start_time.strftime("%Y-%m-%d %H:%M:%S"),
                             )
                             continue
-                    path = rec.get("path")  # Get file path from API
 
-                    # Check if there's already an execution for this path
-                    # Skip if pending/running/recently completed to avoid duplicates
-                    if path:
-                        try:
-                            tracker = get_tracker()
-                            all_execs = tracker.get_executions(limit=100)
+                    # Check if we've already yielded this recording recently
+                    # (within 10 minutes) to prevent duplicate processing
+                    if rec_id in self._yielded_cache:
+                        last_yielded = self._yielded_cache[rec_id]
+                        age_seconds = (now - last_yielded).total_seconds()
+                        if age_seconds < 600:  # 10 minutes
                             LOG.debug(
-                                "Checking execution tracker for '%s': "
-                                "%d total executions",
+                                "Skipping recently yielded recording: '%s' "
+                                "(%.1f min ago)",
                                 title,
-                                len(all_execs),
+                                age_seconds / 60.0,
                             )
-                            existing = next(
-                                (e for e in all_execs if e.get("path") == path), None
-                            )
-                            if existing:
-                                status = existing.get("status")
-                                LOG.debug(
-                                    "Found existing execution for '%s': status=%s",
-                                    title,
-                                    status,
-                                )
-                                # Skip if pending, running, or canceling
-                                if status in ("pending", "running", "canceling"):
-                                    LOG.info(
-                                        "Skipping recording with %s execution: '%s'",
-                                        status,
-                                        title,
-                                    )
-                                    continue
-                                # Skip if recently completed (within 5 minutes)
-                                if status == "completed":
-                                    completed_at = existing.get("completed_at")
-                                    if completed_at:
-                                        try:
-                                            comp_dt = datetime.fromisoformat(
-                                                completed_at
-                                            )
-                                            if comp_dt.tzinfo is None:
-                                                comp_dt = comp_dt.replace(
-                                                    tzinfo=timezone.utc
-                                                )
-                                            age = (now - comp_dt).total_seconds() / 60.0
-                                            if age < 5:  # Completed within 5 min
-                                                LOG.info(
-                                                    "Skipping recently completed "
-                                                    "recording: '%s' (%.1f min ago)",
-                                                    title,
-                                                    age,
-                                                )
-                                                continue
-                                        except Exception:
-                                            pass  # If parsing fails, proceed
-                        except Exception as e:
-                            LOG.warning("Error checking execution tracker: %s", e)
-                            # Continue anyway - better to process twice than skip
+                            continue
+                        # Expired - remove from cache
+                        del self._yielded_cache[rec_id]
+
+                    # Clean up old cache entries (older than 15 minutes)
+                    cutoff_time = now - timedelta(minutes=15)
+                    self._yielded_cache = {
+                        k: v for k, v in self._yielded_cache.items() if v > cutoff_time
+                    }
+
+                    path = rec.get("path")  # Get file path from API
 
                     LOG.info(
                         "New completed recording: '%s' (created: %s, path: %s)",
@@ -284,6 +252,9 @@ class ChannelsPollingSource:
                         start_time.strftime("%Y-%m-%d %H:%M:%S"),
                         path or "Unknown",
                     )
+
+                    # Mark as yielded to prevent duplicates
+                    self._yielded_cache[rec_id] = now
 
                     yield PartialProcessingEvent(
                         timestamp=now,
