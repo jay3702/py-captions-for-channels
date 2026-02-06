@@ -61,7 +61,6 @@ class ChannelsPollingSource:
         self.limit = limit
         self.timeout = timeout
         self.max_age_hours = max_age_hours
-        self._seen_ids = set()  # Track recordings we've already yielded
         self._api = ChannelsAPI(api_url, timeout=timeout)
         self._use_local_mock = LOCAL_TEST_DIR is not None
 
@@ -186,13 +185,6 @@ class ChannelsPollingSource:
                         LOG.warning("Recording missing ID: %s", rec.get("title"))
                         continue
 
-                    # Skip if we've already yielded this recording
-                    if rec_id in self._seen_ids:
-                        continue
-
-                    # Mark as seen
-                    self._seen_ids.add(rec_id)
-
                     # Extract details
                     title = rec.get("title", "Unknown")
                     created_at = rec.get("created_at", 0)
@@ -214,7 +206,6 @@ class ChannelsPollingSource:
                                 title,
                                 start_time.strftime("%Y-%m-%d %H:%M:%S"),
                             )
-                            self._seen_ids.add(rec_id)
                             continue
                     path = rec.get("path")  # Get file path from API
 
