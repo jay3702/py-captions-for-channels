@@ -582,15 +582,25 @@ async def main():
             )
 
         tracker = get_tracker()
-        _ = tracker.start_execution(
-            job_id,
-            event_partial.title,
-            path,
-            event_partial.timestamp.isoformat(),
-            status="pending",
-        )
 
-        LOG.info("Added to processing queue: %s", event_partial.title)
+        # Only create execution if none exists or previous one is completed/failed
+        # This prevents duplicate pending executions on restart
+        existing = tracker.get_execution(job_id)
+        if not existing or existing.get("status") in ("completed", "failed"):
+            _ = tracker.start_execution(
+                job_id,
+                event_partial.title,
+                path,
+                event_partial.timestamp.isoformat(),
+                status="pending",
+            )
+            LOG.info("Added to processing queue: %s", event_partial.title)
+        else:
+            LOG.debug(
+                "Skipping - execution already exists with status %s: %s",
+                existing.get("status"),
+                event_partial.title,
+            )
 
         # Add to queue for processing (non-blocking)
         await _polling_queue.put(event_partial)
