@@ -23,7 +23,7 @@ services:
       # Caption processing options
       - TRANSCODE_FOR_FIRETV=${TRANSCODE_FOR_FIRETV:-false}
       - KEEP_ORIGINAL=${KEEP_ORIGINAL:-true}
-      - CAPTION_COMMAND=${CAPTION_COMMAND:-bash -c 'whisper --model medium --output_format srt --output_dir "$(dirname "{path}")" "{path}"'}
+      - CAPTION_COMMAND=${CAPTION_COMMAND:-}
       
       - STATE_FILE=${STATE_FILE:-/app/data/state.json}
       - DRY_RUN=${DRY_RUN:-false}
