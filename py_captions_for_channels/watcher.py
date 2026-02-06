@@ -335,7 +335,28 @@ async def main():
     # Initialize remaining processing components
     parser = Parser()
     state = StateBackend(STATE_FILE)
-    pipeline = Pipeline(CAPTION_COMMAND, dry_run=DRY_RUN)
+
+    # Auto-detect caption command if not explicitly set
+    caption_cmd = CAPTION_COMMAND
+    if not caption_cmd or caption_cmd == 'echo "Would process: {path}"':
+        # Auto-detect based on TRANSCODE_FOR_FIRETV setting
+        import sys
+        from .config import get_env_bool
+
+        if get_env_bool("TRANSCODE_FOR_FIRETV", False):
+            caption_cmd = (
+                f"{sys.executable} -m py_captions_for_channels.embed_captions "
+                "--input {path}"
+            )
+            print("Auto-detected: embed_captions (TRANSCODE_FOR_FIRETV=true)")
+        else:
+            caption_cmd = (
+                "whisper --model medium --output_format srt --output_dir "
+                '"$(dirname {path})" {path}'
+            )
+            print("Auto-detected: whisper (TRANSCODE_FOR_FIRETV=false)")
+
+    pipeline = Pipeline(caption_cmd, dry_run=DRY_RUN)
     whitelist = Whitelist(WHITELIST_FILE)
 
     # Clean up stale manual process executions from previous runs
