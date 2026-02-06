@@ -14,6 +14,7 @@ import requests
 
 from .channels_api import ChannelsAPI
 from .config import LOCAL_TEST_DIR
+from .execution_tracker import get_tracker
 
 LOG = logging.getLogger(__name__)
 
@@ -219,6 +220,52 @@ class ChannelsPollingSource:
                             )
                             continue
                     path = rec.get("path")  # Get file path from API
+
+                    # Check if there's already an execution for this path
+                    # Skip if pending/running/recently completed to avoid duplicates
+                    if path:
+                        try:
+                            tracker = get_tracker()
+                            all_execs = tracker.get_executions(limit=100)
+                            existing = next(
+                                (e for e in all_execs if e.get("path") == path), None
+                            )
+                            if existing:
+                                status = existing.get("status")
+                                # Skip if pending, running, or canceling
+                                if status in ("pending", "running", "canceling"):
+                                    LOG.debug(
+                                        "Skipping recording with %s execution: '%s'",
+                                        status,
+                                        title,
+                                    )
+                                    continue
+                                # Skip if recently completed (within 5 minutes)
+                                if status == "completed":
+                                    completed_at = existing.get("completed_at")
+                                    if completed_at:
+                                        try:
+                                            comp_dt = datetime.fromisoformat(
+                                                completed_at
+                                            )
+                                            if comp_dt.tzinfo is None:
+                                                comp_dt = comp_dt.replace(
+                                                    tzinfo=timezone.utc
+                                                )
+                                            age = (now - comp_dt).total_seconds() / 60.0
+                                            if age < 5:  # Completed within 5 min
+                                                LOG.debug(
+                                                    "Skipping recently completed "
+                                                    "recording: '%s' (%.1f min ago)",
+                                                    title,
+                                                    age,
+                                                )
+                                                continue
+                                        except Exception:
+                                            pass  # If parsing fails, proceed
+                        except Exception as e:
+                            LOG.debug("Error checking execution tracker: %s", e)
+                            # Continue anyway - better to process twice than skip
 
                     LOG.info(
                         "New completed recording: '%s' (created: %s, path: %s)",
