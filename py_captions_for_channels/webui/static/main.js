@@ -62,6 +62,45 @@ async function fetchStatus() {
         }
       }
     }
+
+    // Update progress bars
+    if (data.progress) {
+      const progressRow = document.getElementById('progress-row');
+      const whisperContainer = document.getElementById('whisper-progress-container');
+      const ffmpegContainer = document.getElementById('ffmpeg-progress-container');
+      
+      let hasProgress = false;
+      
+      // Check for whisper progress
+      const whisperProgress = Object.values(data.progress).find(p => p.process_type === 'whisper');
+      if (whisperProgress) {
+        hasProgress = true;
+        whisperContainer.style.display = 'block';
+        document.getElementById('whisper-progress-fill').style.width = `${whisperProgress.percent}%`;
+        document.getElementById('whisper-progress-text').textContent = 
+          `${Math.round(whisperProgress.percent)}% - ${whisperProgress.message}`;
+      } else {
+        whisperContainer.style.display = 'none';
+      }
+      
+      // Check for ffmpeg progress
+      const ffmpegProgress = Object.values(data.progress).find(p => p.process_type === 'ffmpeg');
+      if (ffmpegProgress) {
+        hasProgress = true;
+        ffmpegContainer.style.display = 'block';
+        document.getElementById('ffmpeg-progress-fill').style.width = `${ffmpegProgress.percent}%`;
+        document.getElementById('ffmpeg-progress-text').textContent = 
+          `${Math.round(ffmpegProgress.percent)}% - ${ffmpegProgress.message}`;
+      } else {
+        ffmpegContainer.style.display = 'none';
+      }
+      
+      // Show/hide progress row based on whether we have any progress
+      progressRow.style.display = hasProgress ? 'table-row' : 'none';
+    } else {
+      // No progress data, hide the row
+      document.getElementById('progress-row').style.display = 'none';
+    }
   } catch (err) {
     document.getElementById('status-pill').className = 'pill pill-error';
     document.getElementById('status-pill').textContent = 'error';

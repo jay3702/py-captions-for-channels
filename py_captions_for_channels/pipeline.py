@@ -5,6 +5,7 @@ from typing import Callable, Optional
 import time
 from pathlib import Path
 import sys
+import threading
 
 from .config import (
     LOG_DIVIDER_CHAR,
@@ -12,6 +13,7 @@ from .config import (
     LOG_STATS_ENABLED,
     PIPELINE_TIMEOUT,
 )
+from .progress_tracker import get_progress_tracker
 
 
 class PipelineResult:
@@ -99,6 +101,202 @@ class Pipeline:
             output_files[mp4_file.name] = mp4_file.stat().st_size
 
         return output_files
+
+    def _parse_whisper_progress(self, line: str) -> Optional[float]:
+        """Parse progress percentage from Whisper output.
+
+        Whisper outputs lines like:
+        [00:01.000 --> 00:05.000]  transcribed text...
+        We can estimate progress based on timestamp vs duration.
+
+        Returns:
+            Progress percentage (0-100) or None if not parseable
+        """
+        # Look for timestamp patterns like [00:01.000 --> 00:05.000]
+        match = re.search(
+            r"\[(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2})\.(\d{3})\]",
+            line,
+        )
+        if match:
+            # Parse end timestamp (hours:minutes.milliseconds)
+            end_min = int(match.group(4))
+            end_sec = int(match.group(5))
+            end_ms = int(match.group(6))
+            end_time_seconds = end_min * 60 + end_sec + end_ms / 1000.0
+            return end_time_seconds  # Return time processed, caller will convert to %
+        return None
+
+    def _parse_ffmpeg_progress(self, line: str) -> Optional[dict]:
+        """Parse progress from FFmpeg output.
+
+        FFmpeg outputs lines like:
+        frame= 1234 fps= 45 q=28.0 size=   12345kB time=00:01:23.45
+        bitrate=1234.5kbits/s speed=1.23x
+
+        Returns:
+            Dict with time, speed, etc. or None if not parseable
+        """
+        # Look for time= pattern
+        time_match = re.search(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})", line)
+        speed_match = re.search(r"speed=\s*([0-9.]+)x", line)
+
+        if time_match:
+            hours = int(time_match.group(1))
+            minutes = int(time_match.group(2))
+            seconds = int(time_match.group(3))
+            time_seconds = hours * 3600 + minutes * 60 + seconds
+
+            result = {"time_seconds": time_seconds}
+            if speed_match:
+                result["speed"] = float(speed_match.group(1))
+            return result
+        return None
+
+    def _stream_and_capture_output(
+        self,
+        proc: subprocess.Popen,
+        job_id: str,
+        log,
+        input_duration: float = 0.0,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> tuple:
+        """Stream stdout/stderr in real-time, parse progress, and capture output.
+
+        Args:
+            proc: Running subprocess.Popen
+            job_id: Job identifier for progress tracking
+            log: Logger instance
+            input_duration: Input file duration in seconds (for progress calculation)
+            cancel_check: Optional callable to check if job should be cancelled
+
+        Returns:
+            Tuple of (stdout, stderr) as strings
+        """
+        progress_tracker = get_progress_tracker()
+        stdout_lines = []
+        stderr_lines = []
+
+        current_process_type = (
+            "whisper"  # Start with whisper, switch to ffmpeg when detected
+        )
+        last_whisper_time = 0.0
+
+        def read_stream(stream, is_stderr: bool):
+            nonlocal current_process_type, last_whisper_time
+            for line in iter(stream.readline, ""):
+                if not line:
+                    break
+
+                line = line.strip()
+                if is_stderr:
+                    stderr_lines.append(line)
+                else:
+                    stdout_lines.append(line)
+
+                # Parse progress from line
+                if is_stderr:  # FFmpeg writes to stderr
+                    ffmpeg_progress = self._parse_ffmpeg_progress(line)
+                    if ffmpeg_progress:
+                        current_process_type = "ffmpeg"
+                        if input_duration > 0:
+                            percent = min(
+                                100.0,
+                                (ffmpeg_progress["time_seconds"] / input_duration)
+                                * 100,
+                            )
+                            speed = ffmpeg_progress.get("speed", 0)
+                            progress_tracker.update_progress(
+                                job_id,
+                                "ffmpeg",
+                                percent,
+                                (
+                                    f"Encoding... {speed:.1f}x"
+                                    if speed > 0
+                                    else "Encoding..."
+                                ),
+                                ffmpeg_progress,
+                            )
+                        else:
+                            # Don't know duration, just show time processed
+                            progress_tracker.update_progress(
+                                job_id,
+                                "ffmpeg",
+                                0,
+                                f"{ffmpeg_progress['time_seconds']:.1f}s processed",
+                                ffmpeg_progress,
+                            )
+
+                # Whisper outputs to stdout
+                if not is_stderr:
+                    whisper_time = self._parse_whisper_progress(line)
+                    if whisper_time is not None:
+                        current_process_type = "whisper"
+                        last_whisper_time = whisper_time
+                        if input_duration > 0:
+                            percent = min(100.0, (whisper_time / input_duration) * 100)
+                            progress_tracker.update_progress(
+                                job_id,
+                                "whisper",
+                                percent,
+                                f"Transcribing... {whisper_time:.1f}s",
+                                {"time_seconds": whisper_time},
+                            )
+                        else:
+                            progress_tracker.update_progress(
+                                job_id,
+                                "whisper",
+                                0,
+                                f"{whisper_time:.1f}s transcribed",
+                                {"time_seconds": whisper_time},
+                            )
+
+        # Read stdout and stderr in separate threads
+        stdout_thread = threading.Thread(target=read_stream, args=(proc.stdout, False))
+        stderr_thread = threading.Thread(target=read_stream, args=(proc.stderr, True))
+
+        stdout_thread.daemon = True
+        stderr_thread.daemon = True
+
+        stdout_thread.start()
+        stderr_thread.start()
+
+        # Wait for process to complete or timeout
+        start_time = time.time()
+        while proc.poll() is None:
+            # Check for cancellation
+            if cancel_check and cancel_check():
+                log.warning("Job cancellation requested, terminating process")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    log.error("Process did not terminate gracefully, killing")
+                    proc.kill()
+                    proc.wait()
+                break
+
+            # Check for timeout
+            elapsed = time.time() - start_time
+            if elapsed > PIPELINE_TIMEOUT:
+                log.error(
+                    "Process timeout after %d seconds, terminating", PIPELINE_TIMEOUT
+                )
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    log.error("Process did not terminate gracefully, killing")
+                    proc.kill()
+                    proc.wait()
+                break
+
+            time.sleep(0.1)
+
+        # Wait for reader threads to finish
+        stdout_thread.join(timeout=2)
+        stderr_thread.join(timeout=2)
+
+        return "\n".join(stdout_lines), "\n".join(stderr_lines)
 
     def _probe_input_duration_seconds(self, job_id_or_path: str) -> float:
         """Probe input media duration using ffprobe.
@@ -314,23 +512,34 @@ class Pipeline:
                 log.info("\n" + (LOG_DIVIDER_CHAR * LOG_DIVIDER_LENGTH))
             log.info("Running caption pipeline: %s", cmd)
 
+            # Get input duration for progress tracking
+            input_duration = self._probe_input_duration_seconds(event.path)
+
             try:
-                # Execute command with subprocess.run() which handles
-                # timeouts more reliably than manual polling
-                # (especially for processes stuck in D state)
+                # Execute command with subprocess.Popen() to stream output in real-time
                 log.debug("About to execute command: %s", cmd)
 
                 try:
-                    proc = subprocess.run(
+                    proc = subprocess.Popen(
                         cmd,
                         shell=True,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
-                        timeout=PIPELINE_TIMEOUT,
+                        bufsize=1,  # Line buffered
                     )
-                    stdout = proc.stdout or ""
-                    stderr = proc.stderr or ""
+
+                    # Stream output and parse progress
+                    stdout, stderr = self._stream_and_capture_output(
+                        proc, job_id, log, input_duration, cancel_check
+                    )
+
+                    returncode = proc.returncode
+
+                    # Clear progress after completion
+                    progress_tracker = get_progress_tracker()
+                    progress_tracker.clear_progress(job_id)
+
                 except subprocess.TimeoutExpired as e:
                     log.error(
                         "Caption pipeline timed out for %s after %d seconds",
@@ -338,6 +547,9 @@ class Pipeline:
                         PIPELINE_TIMEOUT,
                     )
                     elapsed = time.time() - start_time
+                    # Clear progress
+                    progress_tracker = get_progress_tracker()
+                    progress_tracker.clear_progress(job_id)
                     return PipelineResult(
                         success=False,
                         returncode=-1,
@@ -348,15 +560,15 @@ class Pipeline:
                         input_path=event.path,
                     )
 
-                if proc.returncode != 0:
+                if returncode != 0:
                     elapsed = time.time() - start_time
                     log.error(
                         "Caption pipeline failed for %s (exit code %d)",
                         event.path,
-                        proc.returncode,
+                        returncode,
                     )
                     log.error("Command attempted: %s", cmd)
-                    if proc.returncode == 126:
+                    if returncode == 126:
                         log.error(
                             "Exit code 126: Permission denied or not executable. "
                             "Check permissions and shebang for: %s",
@@ -366,7 +578,7 @@ class Pipeline:
                         log.error("stderr: %s", stderr[:500])
                     return PipelineResult(
                         success=False,
-                        returncode=proc.returncode,
+                        returncode=returncode,
                         stdout=stdout,
                         stderr=stderr,
                         command=cmd,

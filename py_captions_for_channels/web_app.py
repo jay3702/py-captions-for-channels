@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 import logging
 import threading
+import requests
 from .config import (
     STATE_FILE,
     DRY_RUN,
@@ -31,6 +32,7 @@ from .state import StateBackend
 from .execution_tracker import build_manual_process_job_id, get_tracker
 from .logging_config import get_verbosity, set_verbosity
 from .version import VERSION, BUILD_NUMBER
+from .progress_tracker import get_progress_tracker
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
@@ -81,8 +83,6 @@ def check_service_health(url: str):
     Check if a service at the given URL is reachable.
     Returns (healthy: bool, message: str).
     """
-    import requests
-
     try:
         resp = requests.get(url, timeout=3)
         resp.raise_for_status()
@@ -310,6 +310,33 @@ async def status() -> dict:
         except Exception as e:
             LOG.debug("Error reading heartbeat: %s", e)
 
+        # Get progress data for active processes
+        progress_data = {}
+        try:
+            progress_tracker = get_progress_tracker()
+            all_progress = progress_tracker.get_all_progress()
+
+            # Filter to active processes (updated in last 30 seconds)
+            now = datetime.now(timezone.utc)
+            for job_id, prog in all_progress.items():
+                updated_at_str = prog.get("updated_at")
+                if updated_at_str:
+                    updated_dt = datetime.fromisoformat(updated_at_str)
+                    if updated_dt.tzinfo is None:
+                        updated_dt = updated_dt.replace(tzinfo=timezone.utc)
+                    age_seconds = (now - updated_dt).total_seconds()
+
+                    # Only include recent progress (< 30 seconds old)
+                    if age_seconds < 30:
+                        progress_data[job_id] = {
+                            "process_type": prog.get("process_type", "unknown"),
+                            "percent": prog.get("percent", 0),
+                            "message": prog.get("message", ""),
+                            "age_seconds": age_seconds,
+                        }
+        except Exception as e:
+            LOG.debug("Error reading progress: %s", e)
+
         # Build services dict, only include ChannelWatch if configured
         services = {
             "channels_dvr": {
@@ -364,6 +391,7 @@ async def status() -> dict:
             "timezone": str(LOCAL_TZ) if LOCAL_TZ else "system-default",
             "services": services,
             "heartbeat": heartbeat_data,
+            "progress": progress_data,
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
@@ -720,8 +748,6 @@ async def get_recordings() -> dict:
         JSON with recordings list containing path, title, date_added, etc.
     """
     try:
-        import requests
-
         resp = requests.get(
             f"{CHANNELS_API_URL}/api/v1/all",
             params={"sort": "date_added", "order": "desc", "source": "recordings"},
