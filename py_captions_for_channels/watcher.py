@@ -583,10 +583,12 @@ async def main():
 
         tracker = get_tracker()
 
-        # Only create execution if none exists or previous one is completed/failed
-        # This prevents duplicate pending executions on restart
+        # Only create execution if:
+        # - None exists for this job_id, OR
+        # - Previous execution failed (allow reprocessing)
+        # Do NOT reprocess if already completed successfully
         existing = tracker.get_execution(job_id)
-        if not existing or existing.get("status") in ("completed", "failed"):
+        if not existing:
             _ = tracker.start_execution(
                 job_id,
                 event_partial.title,
@@ -595,7 +597,24 @@ async def main():
                 status="pending",
             )
             LOG.info("Added to processing queue: %s", event_partial.title)
+        elif existing.get("status") == "failed":
+            # Allow reprocessing of failed recordings
+            _ = tracker.start_execution(
+                job_id,
+                event_partial.title,
+                path,
+                event_partial.timestamp.isoformat(),
+                status="pending",
+            )
+            LOG.info("Reprocessing failed recording: %s", event_partial.title)
+        elif existing.get("status") == "completed" and existing.get("success") is True:
+            # Skip successfully completed recordings
+            LOG.debug(
+                "Skipping - recording already completed successfully: %s",
+                event_partial.title,
+            )
         else:
+            # Execution exists and is pending/running
             LOG.debug(
                 "Skipping - execution already exists with status %s: %s",
                 existing.get("status"),
