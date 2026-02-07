@@ -79,8 +79,9 @@ def test_execution_tracker():
     assert completed["success"] is True
     assert completed["elapsed_seconds"] == 120.5
     print(
-        f"   Completed: success={completed['success']}, elapsed={completed['elapsed_seconds']}s"
-    )  # noqa: E501
+        f"   Completed: success={completed['success']}, "
+        f"elapsed={completed['elapsed_seconds']}s"
+    )
     print("✓ complete_execution working")
 
     # Test get_executions

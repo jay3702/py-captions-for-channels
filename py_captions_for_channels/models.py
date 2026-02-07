@@ -27,13 +27,17 @@ class Setting(Base):
 
     key = Column(String(100), primary_key=True)
     value = Column(Text, nullable=False)
-    value_type = Column(String(20), nullable=False)  # 'string', 'bool', 'int', 'float'
+    # Type: 'string', 'bool', 'int', 'float'
+    value_type = Column(String(20), nullable=False)
     updated_at = Column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     def __repr__(self):
-        return f"<Setting(key='{self.key}', value='{self.value}', type='{self.value_type}')>"
+        return (
+            f"<Setting(key='{self.key}', "
+            f"value='{self.value}', type='{self.value_type}')>"
+        )
 
 
 class Execution(Base):
@@ -170,13 +174,16 @@ class Progress(Base):
     updated_at = Column(DateTime, nullable=False)
 
     def __repr__(self):
-        return f"<Progress(job_id='{self.job_id}', type='{self.process_type}', percent={self.percent})>"
+        return (
+            f"<Progress(job_id='{self.job_id}', "
+            f"type='{self.process_type}', percent={self.percent})>"
+        )
 
 
 class PollingCache(Base):
     """Polling source yielded cache (persistent).
 
-    Replaces: in-memory _yielded_cache dict
+    Replaces: in-memory _yielded_cache dict.
     Prevents duplicate processing across restarts.
     """
 
