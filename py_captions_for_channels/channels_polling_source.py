@@ -224,6 +224,12 @@ class ChannelsPollingSource:
 
                     # Check if we've already yielded this recording recently
                     # (within 10 minutes) to prevent duplicate processing
+                    LOG.info(
+                        "Checking cache for rec_id=%s, cache size=%d, in cache=%s",
+                        rec_id,
+                        len(self._yielded_cache),
+                        rec_id in self._yielded_cache,
+                    )
                     if rec_id in self._yielded_cache:
                         last_yielded = self._yielded_cache[rec_id]
                         age_seconds = (now - last_yielded).total_seconds()
@@ -255,6 +261,11 @@ class ChannelsPollingSource:
 
                     # Mark as yielded to prevent duplicates
                     self._yielded_cache[rec_id] = now
+                    LOG.info(
+                        "Added rec_id=%s to cache, cache size now=%d",
+                        rec_id,
+                        len(self._yielded_cache),
+                    )
 
                     yield PartialProcessingEvent(
                         timestamp=now,
