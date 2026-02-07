@@ -46,8 +46,12 @@ STATIC_DIR = WEB_ROOT / "static"
 app = FastAPI(title="Py Captions Web GUI", version=VERSION)
 state_backend = StateBackend(STATE_FILE)
 
-# Initialize database on startup
-init_db()
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on application startup."""
+    init_db()
+
 
 app.add_middleware(
     CORSMiddleware,
