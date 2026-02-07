@@ -2,7 +2,7 @@
 # syntax=docker/dockerfile:1
 
 # --- Build stage: Compile FFmpeg with NVENC support ---
-FROM ubuntu:22.04 AS ffmpeg-build
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 AS ffmpeg-build
 
 ENV DEBIAN_FRONTEND=noninteractive
 
