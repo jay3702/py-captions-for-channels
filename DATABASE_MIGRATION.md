@@ -34,51 +34,74 @@ All application state has been migrated from JSON files and in-memory storage to
 
 ## Deployment Steps
 
+### Prerequisites
+Determine your deployment type:
+- **Docker**: Using docker-compose (recommended)
+- **Systemd**: Running directly with systemd services
+
 ### 1. Backup Current State
 ```bash
+# SSH to the server
 ssh niu@192.168.3.150
-cd /app/py-captions-for-channels
+
+# Navigate to the project directory on host (NOT container path)
+cd ~/py-captions-for-channels  # or wherever you cloned the repo
+
 # Backup all JSON files and state
-tar -czf ~/backup-$(date +%Y%m%d-%H%M%S).tar.gz data/*.json data/*.txt
+tar -czf ~/backup-$(date +%Y%m%d-%H%M%S).tar.gz data/*.json data/*.txt data/logs/
 ```
 
 ### 2. Pull Latest Code
 ```bash
-cd /app/py-captions-for-channels
+# Still in the project directory on host
+cd ~/py-captions-for-channels
 git pull origin main
 ```
 
-### 3. Update Dependencies
+### 3. Update Dependencies & Restart
+
+**Option A: Docker Deployment (Recommended)**
 ```bash
-# If using Docker
+# Rebuild containers with latest code
 docker-compose build
+
+# Restart services
+docker-compose down
 docker-compose up -d
 
-# If running directly
-source venv/bin/activate
-pip install -r requirements.txt
+# View logs to watch migrations
+docker-compose logs -f
 ```
 
-### 4. Restart Services
+**Option B: Systemd Deployment**
 ```bash
-# Docker
-docker-compose restart
+# Update Python dependencies
+source venv/bin/activate
+pip install -r requirements.txt
 
-# Systemd
+# Restart services
 sudo systemctl restart py-captions.service
 sudo systemctl restart py-captions-web.service
 ```
 
-### 5. Verify Migration
+### 4. Verify Migration
+
+**Check Database Created (from host)**
 ```bash
-# Check database was created
-ls -lh /app/data/py_captions.db
+# Database is in the data/ directory on host (mounted to /app/data in container)
+ls -lh data/py_captions.db
 
-# Check migration markers
-ls -la /app/data/.*.migrated
+# Check migration marker files
+ls -la data/.*.migrated
+```
 
-# Check logs for migration messages
-tail -f /app/data/logs/py_captions.log | grep -i migrat
+**Watch Logs for Migration Messages**
+```bash
+# Docker
+docker-compose logs -f | grep -i migrat
+
+# Systemd
+tail -f data/logs/py_captions.log | grep -i migrat
 
 # Expected log messages:
 # "Migrated settings from settings.json"
@@ -87,7 +110,7 @@ tail -f /app/data/logs/py_captions.log | grep -i migrat
 # "Migrated X progress entries from progress.json"
 ```
 
-### 6. Test Functionality
+### 5. Test Functionality
 1. **Web UI**: Visit http://192.168.3.150:8000
    - Check status page shows correct heartbeats (from database)
    - Verify settings page loads and saves
@@ -185,25 +208,31 @@ CREATE TABLE heartbeats (
 If issues occur, rollback procedure:
 
 ```bash
-# 1. Stop services
+# 1. Stop services (on host)
+# Docker
 docker-compose down
-# or
-sudo systemctl stop py-captions.service
 
-# 2. Restore from backup
-cd /app/py-captions-for-channels
+# Systemd
+sudo systemctl stop py-captions.service
+sudo systemctl stop py-captions-web.service
+
+# 2. Restore from backup (on host)
+cd ~/py-captions-for-channels
 tar -xzf ~/backup-YYYYMMDD-HHMMSS.tar.gz
 
 # 3. Checkout previous version
 git checkout 6abc102  # Last commit before Phase 4+5
 
-# 4. Remove database and migration markers
+# 4. Remove database and migration markers (on host, in data/ directory)
 rm -f data/py_captions.db data/.*.migrated
 
 # 5. Restart
+# Docker
 docker-compose up -d
-# or
+
+# Systemd
 sudo systemctl start py-captions.service
+sudo systemctl start py-captions-web.service
 ```
 
 ## Performance Notes
@@ -233,16 +262,34 @@ Watch for these log messages indicating healthy operation:
 - Solution: Restart services
 
 **Migration didn't run:**
-- Check for marker files: `ls /app/data/.*.migrated`
-- If marker exists but data missing, remove marker to re-run: `rm /app/data/.executions_migrated`
+- Check for marker files (on host): `ls data/.*.migrated`
+- If marker exists but data missing, remove marker to re-run: `rm data/.executions_migrated`
 
 **Old JSON files still present:**
 - Normal! They're preserved as `.migrated` backups
-- Safe to remove after confirming database working: `rm /app/data/*.json.migrated`
+- Safe to remove after confirming database working: `rm data/*.json.migrated`
+
+## File Paths Reference
+
+**Host (where you SSH):**
+- Project directory: `~/py-captions-for-channels/` (or your clone location)
+- Data directory: `~/py-captions-for-channels/data/`
+- Database: `~/py-captions-for-channels/data/py_captions.db`
+- Logs: `~/py-captions-for-channels/data/logs/`
+
+**Container (Docker only):**
+- Working directory: `/app/`
+- Data directory: `/app/data/` (mounted from host `data/`)
+- Database: `/app/data/py_captions.db`
+- Logs: `/app/data/logs/`
 
 ## Contact
 
 Issues or questions? Check logs first:
 ```bash
-tail -f /app/data/logs/py_captions.log
+# Docker
+docker-compose logs -f
+
+# Systemd
+tail -f data/logs/py_captions.log
 ```
