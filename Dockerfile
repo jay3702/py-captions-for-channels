@@ -33,8 +33,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# nv-codec-headers
-RUN git clone https://github.com/FFmpeg/nv-codec-headers.git && \
+# nv-codec-headers - use n12.0.16.0 tag compatible with FFmpeg 6.1.x and CUDA 11.8
+RUN git clone --branch n12.0.16.0 --depth 1 https://github.com/FFmpeg/nv-codec-headers.git && \
     cd nv-codec-headers && \
     make && make install
 
