@@ -1,24 +1,82 @@
+"""State management for pipeline with database backend for manual queue."""
+
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
+from .database import get_db
+from .services.manual_queue_service import ManualQueueService
 
 
 class StateBackend:
     """
     Tracks last processed timestamp to ensure idempotency.
     Also tracks manual processing requests (user-selected recordings).
-    Stores state in a JSON file.
+
+    State storage:
+    - last_ts: Stored in JSON file for backward compatibility
+    - manual_process_queue: Migrated to database (ManualQueueItem model)
     """
 
     def __init__(self, path: str):
         self.path = path
         self.last_ts = None
-        # Paths marked for manual processing with settings
-        # {path: {skip_caption_generation, log_verbosity}}
-        self.manual_process_paths = {}
         self._load()
+        self._migrate_manual_queue()
+
+    def _get_service(self) -> ManualQueueService:
+        """Get ManualQueueService with database session."""
+        db = next(get_db())
+        return ManualQueueService(db)
+
+    def _migrate_manual_queue(self):
+        """Migrate manual process queue from JSON to database on first run."""
+        migration_marker = Path(self.path).parent / ".manual_queue_migrated"
+
+        if migration_marker.exists():
+            return  # Already migrated
+
+        # Check if we have data in JSON to migrate
+        if os.path.exists(self.path):
+            try:
+                with open(self.path, "r") as f:
+                    data = json.load(f)
+                    manual_data = data.get(
+                        "manual_process_paths", data.get("reprocess_paths", [])
+                    )
+
+                    if manual_data:
+                        service = self._get_service()
+
+                        # Handle both list (old) and dict (new) formats
+                        if isinstance(manual_data, list):
+                            for path in manual_data:
+                                service.add_to_queue(path)
+                        else:
+                            for path, settings in manual_data.items():
+                                service.add_to_queue(
+                                    path,
+                                    skip_caption_generation=settings.get(
+                                        "skip_caption_generation", False
+                                    ),
+                                    log_verbosity=settings.get(
+                                        "log_verbosity", "NORMAL"
+                                    ),
+                                )
+
+                        # Mark as migrated
+                        migration_marker.touch()
+
+                        # Rename state.json to preserve it
+                        backup_path = self.path + ".manual_queue_migrated"
+                        if not os.path.exists(backup_path):
+                            with open(backup_path, "w") as f:
+                                json.dump(data, f, indent=2)
+            except Exception:
+                pass  # Ignore migration errors
 
     def _load(self):
+        """Load last_ts from JSON file (manual queue now in database)."""
         if os.path.exists(self.path):
             try:
                 with open(self.path, "r") as f:
@@ -26,28 +84,9 @@ class StateBackend:
                     ts_str = data.get("last_timestamp")
                     if ts_str:
                         self.last_ts = datetime.fromisoformat(ts_str)
-                    # Load manual process queue - handle both old (reprocess_paths)
-                    # and new (manual_process_paths) naming, and old (list)
-                    # and new (dict) formats
-                    manual_data = data.get(
-                        "manual_process_paths", data.get("reprocess_paths", [])
-                    )
-                    if isinstance(manual_data, list):
-                        # Old format: convert to dict with default settings
-                        self.manual_process_paths = {
-                            path: {
-                                "skip_caption_generation": False,
-                                "log_verbosity": "NORMAL",
-                            }
-                            for path in manual_data
-                        }
-                    else:
-                        # New format: dict
-                        self.manual_process_paths = manual_data
             except Exception:
                 # Corrupt state file? Reset safely.
                 self.last_ts = None
-                self.manual_process_paths = {}
 
     def should_process(self, ts: datetime) -> bool:
         """
@@ -73,7 +112,7 @@ class StateBackend:
         Ensures the directory exists before writing.
         """
         self.last_ts = ts  # Update in-memory state
-        self._persist_state(ts, self.manual_process_paths)
+        self._persist_state(ts)
 
     def mark_for_manual_process(
         self,
@@ -83,44 +122,53 @@ class StateBackend:
     ):
         """
         Mark a file path for manual processing with specific settings.
+        Now stores in database via ManualQueueService.
         """
-        self.manual_process_paths[path] = {
-            "skip_caption_generation": skip_caption_generation,
-            "log_verbosity": log_verbosity,
-        }
-        self._persist_state(self.last_ts, self.manual_process_paths)
+        service = self._get_service()
+        service.add_to_queue(path, skip_caption_generation, log_verbosity)
 
     def has_manual_process_request(self, path: str) -> bool:
         """
         Check if a path is marked for manual processing.
+        Now checks database via ManualQueueService.
         """
-        return path in self.manual_process_paths
+        service = self._get_service()
+        return service.has_path(path)
 
     def get_manual_process_settings(self, path: str) -> dict:
         """
         Get manual process settings for a path.
+        Now retrieves from database via ManualQueueService.
         """
-        return self.manual_process_paths.get(
-            path, {"skip_caption_generation": False, "log_verbosity": "NORMAL"}
-        )
+        service = self._get_service()
+        item = service.get_queue_item(path)
+        if item:
+            return {
+                "skip_caption_generation": item.skip_caption_generation,
+                "log_verbosity": item.log_verbosity,
+            }
+        return {"skip_caption_generation": False, "log_verbosity": "NORMAL"}
 
     def clear_manual_process_request(self, path: str):
         """
         Clear a manual process request after handling it.
+        Now removes from database via ManualQueueService.
         """
-        if path in self.manual_process_paths:
-            del self.manual_process_paths[path]
-            self._persist_state(self.last_ts, self.manual_process_paths)
+        service = self._get_service()
+        service.remove_from_queue(path)
 
     def get_manual_process_queue(self) -> list:
         """
         Return list of paths awaiting manual processing.
+        Now retrieves from database via ManualQueueService.
         """
-        return list(self.manual_process_paths.keys())
+        service = self._get_service()
+        return service.get_queue_paths()
 
-    def _persist_state(self, ts: datetime, manual_process_paths: dict):
+    def _persist_state(self, ts: datetime):
         """
-        Persist state safely using an atomic write.
+        Persist last_ts safely using an atomic write.
+        Manual queue is now persisted in database.
         """
         directory = os.path.dirname(self.path)
         if directory and not os.path.exists(directory):
@@ -130,7 +178,7 @@ class StateBackend:
         with open(tmp, "w") as f:
             data = {
                 "last_timestamp": ts.isoformat() if ts else None,
-                "manual_process_paths": manual_process_paths,
+                # manual_process_paths removed - now in database
             }
             json.dump(data, f)
 
