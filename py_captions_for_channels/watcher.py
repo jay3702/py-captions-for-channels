@@ -14,6 +14,8 @@ from .pipeline import Pipeline
 from .whitelist import Whitelist
 from .health_check import run_health_checks
 from .execution_tracker import get_tracker, build_manual_process_job_id
+from .database import get_db
+from .services.heartbeat_service import HeartbeatService
 from .config import (
     CHANNELWATCH_URL,
     CHANNELS_API_URL,
@@ -388,18 +390,17 @@ async def main():
             "Starting manual process background loop (interval: %ds)",
             MANUAL_PROCESS_POLL_SECONDS,
         )
+        # Get database session for heartbeat
+        db = next(get_db())
+        heartbeat_service = HeartbeatService(db)
+
         try:
             while True:
                 await asyncio.sleep(MANUAL_PROCESS_POLL_SECONDS)
                 LOG.debug("Manual process loop checking queue...")
-                # Update heartbeat file for UI
+                # Update heartbeat in database
                 try:
-                    from pathlib import Path
-
-                    heartbeat_file = (
-                        Path(state.state_file).parent / "heartbeat_manual.txt"
-                    )
-                    heartbeat_file.write_text(datetime.now(timezone.utc).isoformat())
+                    heartbeat_service.beat("manual", "alive")
                 except Exception:
                     pass  # Don't fail on heartbeat
                 try:
