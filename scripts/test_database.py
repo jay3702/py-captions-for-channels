@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Test script for database setup and settings migration."""
 
+import os
 import sys
+import tempfile
 from pathlib import Path
+
+# Set up temp database for testing BEFORE importing database module
+temp_dir = tempfile.mkdtemp()
+os.environ["DB_PATH"] = str(Path(temp_dir) / "test.db")
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))  # noqa: E402
