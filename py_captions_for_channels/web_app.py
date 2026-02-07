@@ -7,11 +7,12 @@ try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
     ZoneInfo = None
-from fastapi import FastAPI, Request, Body
+from fastapi import FastAPI, Request, Body, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
+from sqlalchemy.orm import Session
 import logging
 import threading
 import requests
@@ -34,6 +35,8 @@ from .logging_config import get_verbosity, set_verbosity
 from .version import VERSION, BUILD_NUMBER
 from .progress_tracker import get_progress_tracker
 from .whitelist import Whitelist
+from .database import get_db, init_db
+from .services.settings_service import SettingsService
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
@@ -42,6 +45,9 @@ STATIC_DIR = WEB_ROOT / "static"
 
 app = FastAPI(title="Py Captions Web GUI", version=VERSION)
 state_backend = StateBackend(STATE_FILE)
+
+# Initialize database on startup
+init_db()
 
 app.add_middleware(
     CORSMiddleware,
@@ -102,87 +108,129 @@ SETTINGS_PATH = Path(__file__).parent.parent / "data" / "settings.json"
 SETTINGS_LOCK = threading.Lock()
 
 
-def load_settings():
-    # Try to load from settings.json
-    if SETTINGS_PATH.exists():
-        with SETTINGS_LOCK, open(SETTINGS_PATH, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-        # Always update whitelist from project root whitelist.txt
+def load_settings(db: Session = None) -> dict:
+    """Load settings from database, migrating from JSON/env if needed."""
+    # Get or create database session
+    if db is None:
+        db = next(get_db())
+        close_db = True
+    else:
+        close_db = False
+
+    try:
+        settings_service = SettingsService(db)
+
+        # Check if database is empty (first run)
+        all_settings = settings_service.get_all()
+
+        if not all_settings:
+            # Migrate from settings.json or .env
+            LOG.info("Migrating settings to database...")
+
+            # Try settings.json first
+            if SETTINGS_PATH.exists():
+                try:
+                    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                        json_settings = json.load(f)
+                    settings_service.set_many(json_settings)
+                    LOG.info("Migrated settings from settings.json")
+                except Exception as e:
+                    LOG.warning(f"Failed to migrate from settings.json: {e}")
+
+            # Fall back to .env defaults
+            else:
+                env_path = Path(__file__).parent.parent / ".env"
+                env_vars = {}
+                if env_path.exists():
+                    with open(env_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if (
+                                line.strip()
+                                and not line.strip().startswith("#")
+                                and "=" in line
+                            ):
+                                k, v = line.split("=", 1)
+                                env_vars[k.strip()] = v.strip()
+
+                def env_bool(key, default):
+                    return env_vars.get(key, str(default)).lower() in (
+                        "true",
+                        "1",
+                        "yes",
+                        "on",
+                    )
+
+                defaults = {
+                    "dry_run": env_bool("DRY_RUN", DRY_RUN),
+                    "keep_original": env_bool("KEEP_ORIGINAL", True),
+                    "log_verbosity": env_vars.get("LOG_VERBOSITY", LOG_VERBOSITY),
+                    "whisper_model": env_vars.get(
+                        "WHISPER_MODEL", os.getenv("WHISPER_MODEL", "medium")
+                    ),
+                }
+                settings_service.set_many(defaults)
+                LOG.info("Initialized settings from .env defaults")
+
+            # Refresh after migration
+            all_settings = settings_service.get_all()
+
+        # Always read whitelist from file (not stored in DB)
         whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
         try:
             with open(whitelist_path, "r", encoding="utf-8") as f:
-                settings["whitelist"] = f.read()
+                all_settings["whitelist"] = f.read()
         except Exception:
-            settings["whitelist"] = ""
-        return settings
-    # If missing, initialize from .env and whitelist.txt
-    env_path = Path(__file__).parent.parent / ".env"
-    env_vars = {}
-    if env_path.exists():
-        with open(env_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip() and not line.strip().startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    env_vars[k.strip()] = v.strip()
+            all_settings["whitelist"] = ""
 
-    def env_bool(key, default):
-        return env_vars.get(key, str(default)).lower() in ("true", "1", "yes", "on")
+        return all_settings
+    finally:
+        if close_db:
+            db.close()
 
-    settings = {
-        "dry_run": env_bool("DRY_RUN", DRY_RUN),
-        "keep_original": env_bool("KEEP_ORIGINAL", True),
-        "log_verbosity": env_vars.get("LOG_VERBOSITY", LOG_VERBOSITY),
-        "whisper_model": env_vars.get(
-            "WHISPER_MODEL", os.getenv("WHISPER_MODEL", "medium")
-        ),
-        "whitelist": "",
-    }
-    # Always read whitelist from project root whitelist.txt
-    whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
+
+def save_settings(settings: dict, db: Session = None):
+    """Save settings to database."""
+    # Get or create database session
+    if db is None:
+        db = next(get_db())
+        close_db = True
+    else:
+        close_db = False
+
     try:
-        with open(whitelist_path, "r", encoding="utf-8") as f:
-            settings["whitelist"] = f.read()
-    except Exception:
-        settings["whitelist"] = ""
-    # Save to settings.json for future use
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    save_settings(settings)
-    return settings
+        settings_service = SettingsService(db)
 
+        # Extract whitelist before saving (stored separately in file)
+        whitelist_content = settings.pop("whitelist", None)
 
-def save_settings(settings: dict):
-    with SETTINGS_LOCK, open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2)
-    # Also update .env as backup
-    env_path = Path(__file__).parent.parent / ".env"
-    log_verbosity = settings.get("log_verbosity", "NORMAL").upper()
-    env_lines = [
-        f"DRY_RUN={'true' if settings.get('dry_run') else 'false'}\n",
-        f"KEEP_ORIGINAL={'true' if settings.get('keep_original') else 'false'}\n",
-        f"LOG_VERBOSITY={log_verbosity}\n",
-        f"WHISPER_MODEL={settings.get('whisper_model', 'medium')}\n",
-    ]
-    with open(env_path, "w", encoding="utf-8") as f:
-        f.writelines(env_lines)
-    # Whitelist is managed separately
-    if "whitelist" in settings:
-        whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
-        with open(whitelist_path, "w", encoding="utf-8") as f:
-            f.write(settings["whitelist"])
+        # Save non-whitelist settings to database
+        settings_service.set_many(settings)
+
+        # Save whitelist to file
+        if whitelist_content is not None:
+            whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
+            with open(whitelist_path, "w", encoding="utf-8") as f:
+                f.write(whitelist_content)
+
+        LOG.info("Settings saved to database")
+    finally:
+        if close_db:
+            db.close()
 
 
 @app.get("/api/settings")
-async def get_settings() -> dict:
-    """Get pipeline settings and whitelist from settings.json."""
+async def get_settings(db: Session = Depends(get_db)) -> dict:
+    """Get pipeline settings and whitelist from database."""
     try:
-        return load_settings()
+        return load_settings(db)
     except Exception as e:
+        LOG.error(f"Error loading settings: {e}")
         return {"error": str(e)}
 
 
 @app.post("/api/settings")
-async def set_settings(data: dict = Body(...)) -> dict:
-    """Update pipeline settings and whitelist in settings.json and .env."""
+async def set_settings(data: dict = Body(...), db: Session = Depends(get_db)) -> dict:
+    """Update pipeline settings and whitelist in database."""
     try:
         allowed = {
             "dry_run",
@@ -191,13 +239,14 @@ async def set_settings(data: dict = Body(...)) -> dict:
             "whisper_model",
             "whitelist",
         }
-        current = load_settings()
+        current = load_settings(db)
         for k in allowed:
             if k in data:
                 current[k] = data[k]
-        save_settings(current)
+        save_settings(current, db)
         return {"ok": True}
     except Exception as e:
+        LOG.error(f"Error saving settings: {e}")
         return {"error": str(e)}
 
 

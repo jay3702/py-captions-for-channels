@@ -8,6 +8,9 @@ openai-whisper
 fastapi
 uvicorn[standard]
 jinja2
+# Database persistence layer
+sqlalchemy>=2.0.0
+alembic>=1.13.0
 
 
 
