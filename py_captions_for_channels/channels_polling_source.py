@@ -14,6 +14,7 @@ import requests
 
 from .channels_api import ChannelsAPI
 from .config import LOCAL_TEST_DIR
+from .execution_tracker import get_tracker
 
 LOG = logging.getLogger(__name__)
 
@@ -257,6 +258,31 @@ class ChannelsPollingSource:
                     }
 
                     path = rec.get("path")  # Get file path from API
+
+                    # Check if this recording has already been processed
+                    # (execution tracker persists across restarts)
+                    if path:
+                        try:
+                            tracker = get_tracker()
+                            all_executions = tracker.get_executions(limit=1000)
+                            existing_by_path = next(
+                                (e for e in all_executions if e.get("path") == path),
+                                None,
+                            )
+                            if existing_by_path:
+                                status = existing_by_path.get("status")
+                                # Skip if already processed/running/pending
+                                if status in ("completed", "running", "pending"):
+                                    LOG.info(
+                                        "Skipping already processed recording: '%s' "
+                                        "(status: %s)",
+                                        title,
+                                        status,
+                                    )
+                                    continue
+                                # If failed, allow retry (fall through)
+                        except Exception as e:
+                            LOG.warning("Error checking execution tracker: %s", e)
 
                     LOG.info(
                         "New completed recording: '%s' (created: %s, path: %s)",
