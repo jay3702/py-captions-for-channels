@@ -126,6 +126,7 @@ class ManualQueueItem(Base):
     """Manual processing queue.
 
     Replaces: state.py manual_process_queue list
+    Tracks paths marked for manual processing with settings.
     """
 
     __tablename__ = "manual_queue"
@@ -133,8 +134,16 @@ class ManualQueueItem(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     path = Column(String(1000), unique=True, nullable=False)
+    skip_caption_generation = Column(Boolean, default=False, nullable=False)
+    log_verbosity = Column(String(50), default="NORMAL", nullable=False)
     added_at = Column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
     priority = Column(Integer, default=0, nullable=False)
 
