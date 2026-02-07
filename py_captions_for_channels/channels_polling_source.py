@@ -241,8 +241,14 @@ class ChannelsPollingSource:
                                 age_seconds / 60.0,
                             )
                             continue
-                        # Expired - remove from cache
-                        del self._yielded_cache[rec_id]
+                        # Expired but already processed - skip reprocessing
+                        LOG.info(
+                            "Skipping previously yielded recording: '%s' "
+                            "(%.1f min ago, expired from cache)",
+                            title,
+                            age_seconds / 60.0,
+                        )
+                        continue
 
                     # Clean up old cache entries (older than 15 minutes)
                     cutoff_time = now - timedelta(minutes=15)
