@@ -15,6 +15,9 @@ import requests
 from .channels_api import ChannelsAPI
 from .config import LOCAL_TEST_DIR
 from .execution_tracker import get_tracker
+from .database import get_db
+from .services.polling_cache_service import PollingCacheService
+from .services.heartbeat_service import HeartbeatService
 
 LOG = logging.getLogger(__name__)
 
@@ -64,9 +67,8 @@ class ChannelsPollingSource:
         self.max_age_hours = max_age_hours
         self._api = ChannelsAPI(api_url, timeout=timeout)
         self._use_local_mock = LOCAL_TEST_DIR is not None
-        # Track yielded recordings with timestamp to prevent duplicates
-        # within a time window (10 minutes)
-        self._yielded_cache = {}  # {rec_id: timestamp}
+        # Migration: Load old in-memory cache on first run
+        self._migrated = False
 
     def _get_smart_interval(self) -> int:
         """Calculate smart polling interval based on current time.
@@ -137,19 +139,25 @@ class ChannelsPollingSource:
             self.limit,
         )
 
+        # Get database session for polling cache
+        db = next(get_db())
+        cache_service = PollingCacheService(db)
+        heartbeat_service = HeartbeatService(db)
+
+        # Cleanup old cache entries on startup (keep last 24 hours)
+        cleaned = cache_service.cleanup_old(max_age_hours=24)
+        if cleaned > 0:
+            LOG.info("Cleaned %d old polling cache entries on startup", cleaned)
+
         while True:
             try:
                 # Track recordings yielded in THIS poll cycle only
                 # (cleared at start of each iteration)
                 seen_this_cycle = set()
 
-                # Update heartbeat file for UI
+                # Update heartbeat in database
                 try:
-                    from pathlib import Path
-
-                    heartbeat_file = Path.cwd() / "data" / "heartbeat_polling.txt"
-                    heartbeat_file.parent.mkdir(parents=True, exist_ok=True)
-                    heartbeat_file.write_text(datetime.now(timezone.utc).isoformat())
+                    heartbeat_service.beat("polling", "alive")
                 except Exception:
                     pass  # Don't fail on heartbeat
 
@@ -223,39 +231,19 @@ class ChannelsPollingSource:
                             )
                             continue
 
-                    # Check if we've already yielded this recording recently
-                    # (within 10 minutes) to prevent duplicate processing
+                    # Check if we've already yielded this recording
+                    # (using persistent database cache)
                     LOG.info(
-                        "Checking cache for rec_id=%s, cache size=%d, in cache=%s",
+                        "Checking cache for rec_id=%s",
                         rec_id,
-                        len(self._yielded_cache),
-                        rec_id in self._yielded_cache,
                     )
-                    if rec_id in self._yielded_cache:
-                        last_yielded = self._yielded_cache[rec_id]
-                        age_seconds = (now - last_yielded).total_seconds()
-                        if age_seconds < 600:  # 10 minutes
-                            LOG.info(
-                                "Skipping recently yielded recording: '%s' "
-                                "(%.1f min ago)",
-                                title,
-                                age_seconds / 60.0,
-                            )
-                            continue
-                        # Expired but already processed - skip reprocessing
+                    if cache_service.has_yielded(rec_id):
+                        # Already processed, skip
                         LOG.info(
-                            "Skipping previously yielded recording: '%s' "
-                            "(%.1f min ago, expired from cache)",
+                            "Skipping previously yielded recording: '%s'",
                             title,
-                            age_seconds / 60.0,
                         )
                         continue
-
-                    # Clean up old cache entries (older than 15 minutes)
-                    cutoff_time = now - timedelta(minutes=15)
-                    self._yielded_cache = {
-                        k: v for k, v in self._yielded_cache.items() if v > cutoff_time
-                    }
 
                     path = rec.get("path")  # Get file path from API
 
@@ -291,12 +279,11 @@ class ChannelsPollingSource:
                         path or "Unknown",
                     )
 
-                    # Mark as yielded to prevent duplicates
-                    self._yielded_cache[rec_id] = now
+                    # Mark as yielded in database to prevent duplicates
+                    cache_service.add_yielded(rec_id, now)
                     LOG.info(
-                        "Added rec_id=%s to cache, cache size now=%d",
+                        "Added rec_id=%s to database cache",
                         rec_id,
-                        len(self._yielded_cache),
                     )
 
                     yield PartialProcessingEvent(

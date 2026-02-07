@@ -37,6 +37,7 @@ from .progress_tracker import get_progress_tracker
 from .whitelist import Whitelist
 from .database import get_db, init_db
 from .services.settings_service import SettingsService
+from .services.heartbeat_service import HeartbeatService
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
@@ -343,24 +344,11 @@ async def status() -> dict:
 
         settings = load_settings()
 
-        # Check heartbeat files
+        # Check heartbeat database
         heartbeat_data = {}
         try:
-            for name in ["polling", "manual"]:
-                hb_file = (
-                    Path(__file__).parent.parent / "data" / f"heartbeat_{name}.txt"
-                )
-                if hb_file.exists():
-                    hb_text = hb_file.read_text().strip()
-                    hb_dt = datetime.fromisoformat(hb_text)
-                    if hb_dt.tzinfo is None:
-                        hb_dt = hb_dt.replace(tzinfo=timezone.utc)
-                    age_seconds = (datetime.now(timezone.utc) - hb_dt).total_seconds()
-                    heartbeat_data[name] = {
-                        "last": hb_text,
-                        "age_seconds": age_seconds,
-                        "alive": age_seconds < 30,  # Recent if < 30 seconds
-                    }
+            heartbeat_service = HeartbeatService(next(get_db()))
+            heartbeat_data = heartbeat_service.get_all_heartbeats()
         except Exception as e:
             LOG.debug("Error reading heartbeat: %s", e)
 
