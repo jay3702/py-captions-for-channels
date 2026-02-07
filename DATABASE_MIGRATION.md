@@ -47,8 +47,9 @@ ssh niu@192.168.3.150
 # Navigate to the project directory on host (NOT container path)
 cd ~/py-captions-for-channels  # or wherever you cloned the repo
 
-# Backup all JSON files and state
-tar -czf ~/backup-$(date +%Y%m%d-%H%M%S).tar.gz data/*.json data/*.txt data/logs/
+# Backup all JSON files and state (ignore errors for missing files)
+tar -czf ~/backup-$(date +%Y%m%d-%H%M%S).tar.gz data/*.json data/*.txt 2>/dev/null || true
+# Note: Logs are typically too large; backup only state files
 ```
 
 ### 2. Pull Latest Code
