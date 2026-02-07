@@ -42,6 +42,10 @@ RUN git clone --branch n12.0.16.0 --depth 1 https://github.com/FFmpeg/nv-codec-h
 ARG FFMPEG_VERSION=6.1.1
 RUN git clone --branch n${FFMPEG_VERSION} --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
 WORKDIR /ffmpeg
+
+# Set PKG_CONFIG_PATH so configure can find nv-codec-headers
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+
 RUN ./configure \
     --prefix=/ffmpeg_build \
     --pkg-config-flags="--static" \
