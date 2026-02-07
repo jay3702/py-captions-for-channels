@@ -36,7 +36,7 @@ All application state has been migrated from JSON files and in-memory storage to
 
 ### Prerequisites
 Determine your deployment type:
-- **Docker**: Using docker-compose (recommended)
+- **Docker**: Using docker compose (recommended)
 - **Systemd**: Running directly with systemd services
 
 ### 1. Backup Current State
@@ -64,14 +64,14 @@ git pull origin main
 **Option A: Docker Deployment (Recommended)**
 ```bash
 # Rebuild containers with latest code
-docker-compose build
+docker compose build
 
 # Restart services
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
 
 # View logs to watch migrations
-docker-compose logs -f
+docker compose logs -f
 ```
 
 **Option B: Systemd Deployment**
@@ -99,7 +99,7 @@ ls -la data/.*.migrated
 **Watch Logs for Migration Messages**
 ```bash
 # Docker
-docker-compose logs -f | grep -i migrat
+docker compose logs -f | grep -i migrat
 
 # Systemd
 tail -f data/logs/py_captions.log | grep -i migrat
@@ -211,7 +211,7 @@ If issues occur, rollback procedure:
 ```bash
 # 1. Stop services (on host)
 # Docker
-docker-compose down
+docker compose down
 
 # Systemd
 sudo systemctl stop py-captions.service
@@ -229,7 +229,7 @@ rm -f data/py_captions.db data/.*.migrated
 
 # 5. Restart
 # Docker
-docker-compose up -d
+docker compose up -d
 
 # Systemd
 sudo systemctl start py-captions.service
@@ -289,7 +289,7 @@ Watch for these log messages indicating healthy operation:
 Issues or questions? Check logs first:
 ```bash
 # Docker
-docker-compose logs -f
+docker compose logs -f
 
 # Systemd
 tail -f data/logs/py_captions.log
