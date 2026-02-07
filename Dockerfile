@@ -45,8 +45,8 @@ WORKDIR /ffmpeg
 RUN ./configure \
     --prefix=/ffmpeg_build \
     --pkg-config-flags="--static" \
-    --extra-cflags="-I/usr/local/include" \
-    --extra-ldflags="-L/usr/local/lib" \
+    --extra-cflags="-I/usr/local/include -I/usr/local/cuda/include" \
+    --extra-ldflags="-L/usr/local/lib -L/usr/local/cuda/lib64" \
     --extra-libs="-lpthread -lm" \
     --bindir=/ffmpeg_build/bin \
     --enable-gpl \
