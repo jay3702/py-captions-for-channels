@@ -68,10 +68,12 @@ class ProgressService:
         except Exception as e:
             # Handle "no transaction is active" errors from concurrent access
             error_msg = str(e).lower()
-            if "no transaction" not in error_msg:
+            if "no transaction" in error_msg:
+                # Transaction already handled by concurrent process
+                pass
+            else:
+                self.db.rollback()
                 raise
-            # If transaction already committed/rolled back, that's okay
-            self.db.rollback()
         return progress
 
     def get_progress(self, job_id: str) -> Optional[Progress]:
@@ -109,9 +111,12 @@ class ProgressService:
                 self.db.commit()
             except Exception as e:
                 error_msg = str(e).lower()
-                if "no transaction" not in error_msg:
+                if "no transaction" in error_msg:
+                    # Transaction already handled by concurrent process
+                    pass
+                else:
+                    self.db.rollback()
                     raise
-                self.db.rollback()
             return True
         return False
 
@@ -127,9 +132,12 @@ class ProgressService:
             self.db.commit()
         except Exception as e:
             error_msg = str(e).lower()
-            if "no transaction" not in error_msg:
+            if "no transaction" in error_msg:
+                # Transaction already handled by concurrent process
+                pass
+            else:
+                self.db.rollback()
                 raise
-            self.db.rollback()
         return count
 
     def to_dict(self, progress: Progress) -> dict:
