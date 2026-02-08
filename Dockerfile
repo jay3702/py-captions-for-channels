@@ -33,18 +33,20 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# nv-codec-headers - use n12.0.16.0 tag compatible with FFmpeg 6.1.x and CUDA 11.8
-RUN git clone --branch n12.0.16.0 --depth 1 https://github.com/FFmpeg/nv-codec-headers.git && \
-    cd nv-codec-headers && \
-    make && make install
+# Install nv-codec-headers (NVENC/NVDEC headers)
+RUN git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-headers && \
+    cd /tmp/nv-codec-headers && \
+    git checkout n12.0.16.0 && \
+    make install && \
+    rm -rf /tmp/nv-codec-headers
 
-# FFmpeg
+# Set PKG_CONFIG_PATH so FFmpeg configure can find ffnvcodec
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+
+# FFmpeg - GPU-enabled build with NVENC
 ARG FFMPEG_VERSION=6.1.1
 RUN git clone --branch n${FFMPEG_VERSION} --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
 WORKDIR /ffmpeg
-
-# Set PKG_CONFIG_PATH so configure can find nv-codec-headers
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
 RUN ./configure \
     --prefix=/ffmpeg_build \
@@ -55,10 +57,6 @@ RUN ./configure \
     --bindir=/ffmpeg_build/bin \
     --enable-gpl \
     --enable-nonfree \
-    --enable-cuda-nvcc \
-    --enable-libnpp \
-    --enable-nvenc \
-    --enable-cuda \
     --enable-libx264 \
     --enable-libx265 \
     --enable-libvpx \
@@ -70,6 +68,10 @@ RUN ./configure \
     --enable-libfontconfig \
     --enable-libfribidi \
     --enable-openssl \
+    --enable-cuda-nvcc \
+    --enable-libnpp \
+    --enable-nvenc \
+    --enable-cuda \
     --disable-debug \
     --disable-doc \
     --disable-static \
