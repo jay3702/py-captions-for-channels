@@ -59,10 +59,12 @@ async def process_manual_process_queue(state, pipeline, api, parser):
             job_id = build_manual_process_job_id(path)
             existing = tracker.get_execution(job_id)
             # Create pending execution if none exists,
-            # or if previous one is completed/failed
+            # or if previous one is in a terminal state
             if not existing or existing.get("status") in (
                 "completed",
                 "failed",
+                "cancelled",
+                "dry_run",
             ):
                 filename = path.split("/")[-1]
                 title = f"Manual: {filename}"
