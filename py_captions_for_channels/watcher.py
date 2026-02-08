@@ -29,6 +29,7 @@ from .config import (
     POLL_INTERVAL_SECONDS,
     POLL_LIMIT,
     POLL_MAX_AGE_HOURS,
+    POLL_MAX_QUEUE_SIZE,
     DRY_RUN,
     WHITELIST_FILE,
     STALE_EXECUTION_SECONDS,
@@ -329,6 +330,7 @@ async def main():
             poll_interval_seconds=POLL_INTERVAL_SECONDS,
             limit=POLL_LIMIT,
             max_age_hours=POLL_MAX_AGE_HOURS,
+            max_queue_size=POLL_MAX_QUEUE_SIZE,
         )
     elif USE_WEBHOOK:
         from .channelwatch_webhook_source import ChannelWatchWebhookSource
