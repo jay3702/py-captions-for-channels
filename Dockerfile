@@ -46,15 +46,15 @@ RUN git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-heade
     rm -rf /tmp/nv-codec-headers && \
     git clone --branch n${FFMPEG_VERSION} --depth 1 https://github.com/FFmpeg/FFmpeg.git /ffmpeg && \
     cd /ffmpeg && \
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig && \
     echo "=== Debugging pkg-config ===" && \
     ls -la /usr/local/lib/pkgconfig/ffnvcodec.pc && \
     cat /usr/local/lib/pkgconfig/ffnvcodec.pc && \
-    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig pkg-config --exists ffnvcodec && echo "pkg-config found ffnvcodec" && \
-    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig pkg-config --modversion ffnvcodec && \
+    pkg-config --exists ffnvcodec && echo "pkg-config found ffnvcodec" && \
+    pkg-config --modversion ffnvcodec && \
     echo "=== Running configure ===" && \
-    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig ./configure \
+    ./configure \
     --prefix=/ffmpeg_build \
-    --pkg-config-flags="--static" \
     --extra-cflags="-I/usr/local/include -I/usr/local/cuda/include" \
     --extra-ldflags="-L/usr/local/lib -L/usr/local/cuda/lib64" \
     --extra-libs="-lpthread -lm" \
