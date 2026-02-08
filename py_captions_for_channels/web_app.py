@@ -934,7 +934,14 @@ async def add_to_manual_process_queue(request: Request) -> dict:
             title = f"Manual: {filename}"
             job_id = build_manual_process_job_id(path)
             existing = tracker.get_execution(job_id)
-            if not existing or existing.get("status") != "running":
+            # Only create pending execution if no active execution exists
+            # Terminal states: completed, failed, cancelled, dry_run
+            if not existing or existing.get("status") in (
+                "completed",
+                "failed",
+                "cancelled",
+                "dry_run",
+            ):
                 tracker.start_execution(
                     job_id,
                     title,
