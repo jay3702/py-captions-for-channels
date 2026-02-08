@@ -218,10 +218,25 @@ class ExecutionService:
         # Debug: Check ALL executions to see what's in the database
         all_execs = self.db.query(Execution).all()
         LOG.info(f"Total executions in database: {len(all_execs)}")
-        for exec in all_execs[:5]:  # Show first 5
+
+        # Show executions with specific statuses
+        for status_name in ["running", "canceling", "pending", "cancelled"]:
+            status_count = (
+                self.db.query(Execution).filter(Execution.status == status_name).count()
+            )
+            if status_count > 0:
+                LOG.info(f"  Status '{status_name}': {status_count} executions")
+
+        # Show Fareed Zakaria executions specifically
+        fareed_execs = (
+            self.db.query(Execution)
+            .filter(Execution.title.like("%Fareed Zakaria%"))
+            .all()
+        )
+        LOG.info(f"Fareed Zakaria executions: {len(fareed_execs)}")
+        for exec in fareed_execs:
             LOG.info(
-                f"  - {exec.id[:50]}... status={exec.status} "
-                f"started={exec.started_at}"
+                f"  - {exec.id[:60]} status={exec.status} " f"started={exec.started_at}"
             )
 
         # Handle stuck "running" executions
