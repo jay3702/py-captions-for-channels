@@ -1,10 +1,13 @@
 """Execution service for database-backed execution tracking."""
 
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 from ..models import Execution, ExecutionStep
+
+LOG = logging.getLogger(__name__)
 
 
 class ExecutionService:
@@ -214,11 +217,16 @@ class ExecutionService:
 
         # Handle stuck "running" executions
         running_execs = self.get_executions(limit=1000, status="running")
+        LOG.info(f"Checking {len(running_execs)} running executions for staleness")
         for execution in running_execs:
             started_at = execution.started_at
             if started_at.tzinfo is None:
                 started_at = started_at.replace(tzinfo=timezone.utc)
             elapsed = (now - started_at).total_seconds()
+            LOG.debug(
+                f"Running execution {execution.id}: elapsed={elapsed}s, "
+                f"timeout={timeout_seconds}s"
+            )
 
             if elapsed > timeout_seconds:
                 execution.status = "completed"
@@ -230,9 +238,14 @@ class ExecutionService:
                     f"(exceeded {timeout_seconds}s)"
                 )
                 marked += 1
+                LOG.info(f"Marked running execution as failed: {execution.id}")
 
         # Handle stuck "canceling" executions from previous run
         canceling_execs = self.get_executions(limit=1000, status="canceling")
+        LOG.info(
+            f"Checking {len(canceling_execs)} canceling executions from "
+            f"previous run"
+        )
         for execution in canceling_execs:
             execution.status = "cancelled"
             execution.success = False
@@ -243,9 +256,11 @@ class ExecutionService:
             execution.elapsed_seconds = (now - started_at).total_seconds()
             execution.error_message = "Execution was canceling when service restarted"
             marked += 1
+            LOG.info(f"Marked canceling execution as cancelled: {execution.id}")
 
         if marked > 0:
             self.db.commit()
+            LOG.info(f"Committed {marked} stale execution updates to database")
 
         return marked
 
