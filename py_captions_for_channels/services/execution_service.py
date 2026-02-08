@@ -235,9 +235,8 @@ class ExecutionService:
         )
         LOG.info(f"Fareed Zakaria executions: {len(fareed_execs)}")
         for exec in fareed_execs:
-            LOG.info(
-                f"  - {exec.id[:60]} status={exec.status} " f"started={exec.started_at}"
-            )
+            LOG.info(f"  - FULL ID: {exec.id}")
+            LOG.info(f"    status={exec.status} started={exec.started_at}")
 
         # Handle stuck "running" executions
         running_execs = self.get_executions(limit=1000, status="running")
