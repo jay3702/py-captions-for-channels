@@ -342,10 +342,16 @@ class ExecutionTracker:
         Returns:
             Number of executions marked as stale
         """
+        LOG.info(
+            f"ExecutionTracker.mark_stale_executions called "
+            f"(timeout={timeout_seconds}s)"
+        )
         with self._get_service() as service:
             marked = service.mark_stale_executions(timeout_seconds)
             if marked > 0:
-                LOG.warning("Marked %d stale execution(s) as failed", marked)
+                LOG.warning("Marked %d stale execution(s) as failed/cancelled", marked)
+            else:
+                LOG.info("No stale executions found")
             return marked
 
     def get_interrupted_paths(self) -> list[str]:
