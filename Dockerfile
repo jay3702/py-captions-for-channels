@@ -34,14 +34,15 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install nv-codec-headers (NVENC/NVDEC headers)
+# Set PKG_CONFIG_PATH first so it's available during verification
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+
 RUN git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-headers && \
     cd /tmp/nv-codec-headers && \
     git checkout n12.0.16.0 && \
     make install && \
+    pkg-config --exists --print-errors ffnvcodec && \
     rm -rf /tmp/nv-codec-headers
-
-# Set PKG_CONFIG_PATH so FFmpeg configure can find ffnvcodec
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
 # FFmpeg - GPU-enabled build with NVENC
 ARG FFMPEG_VERSION=6.1.1
