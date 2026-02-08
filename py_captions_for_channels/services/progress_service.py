@@ -41,6 +41,7 @@ class ProgressService:
 
         # Serialize details to JSON if present
         details_json = json.dumps(details) if details else None
+        now = datetime.now(timezone.utc)
 
         if progress:
             # Update existing
@@ -48,7 +49,7 @@ class ProgressService:
             progress.percent = percent
             progress.message = message
             progress.progress_metadata = details_json
-            progress.updated_at = datetime.now(timezone.utc)
+            progress.updated_at = now
         else:
             # Create new
             progress = Progress(
@@ -57,6 +58,7 @@ class ProgressService:
                 percent=percent,
                 message=message,
                 progress_metadata=details_json,
+                updated_at=now,
             )
             self.db.add(progress)
 
