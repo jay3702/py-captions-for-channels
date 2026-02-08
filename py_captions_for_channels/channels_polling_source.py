@@ -50,7 +50,8 @@ class ChannelsPollingSource:
         poll_interval_seconds: int = 120,
         limit: int = 50,
         timeout: int = 10,
-        max_age_hours: int = 2,
+        max_age_hours: int = 24,
+        max_queue_size: int = 5,
     ):
         """Initialize polling source.
 
@@ -59,12 +60,16 @@ class ChannelsPollingSource:
             poll_interval_seconds: Base polling interval (default 2 minutes)
             limit: Maximum number of recent recordings to fetch per poll
             timeout: HTTP request timeout in seconds
+            max_age_hours: Maximum age of recordings to consider (default 24 hours)
+            max_queue_size: Maximum pending/running executions before pausing
+                           queue growth (default 5)
         """
         self.api_url = api_url.rstrip("/")
         self.base_interval = poll_interval_seconds
         self.limit = limit
         self.timeout = timeout
         self.max_age_hours = max_age_hours
+        self.max_queue_size = max_queue_size
         self._api = ChannelsAPI(api_url, timeout=timeout)
         self._use_local_mock = LOCAL_TEST_DIR is not None
         # Migration: Load old in-memory cache on first run
@@ -223,13 +228,36 @@ class ChannelsPollingSource:
                     if self.max_age_hours is not None and not self._use_local_mock:
                         cutoff = now - timedelta(hours=self.max_age_hours)
                         if start_time < cutoff:
-                            LOG.info(
+                            LOG.debug(
                                 "Skipping older recording (>%dh): '%s' (created: %s)",
                                 self.max_age_hours,
                                 title,
                                 start_time.strftime("%Y-%m-%d %H:%M:%S"),
                             )
                             continue
+
+                    # Queue management: check current active execution count
+                    # before yielding new recordings
+                    try:
+                        tracker = get_tracker()
+                        all_executions = tracker.get_executions(limit=1000)
+                        active_count = sum(
+                            1
+                            for e in all_executions
+                            if e.get("status") in ("pending", "running")
+                        )
+                        if active_count >= self.max_queue_size:
+                            LOG.info(
+                                "Queue full (%d/%d active executions), "
+                                "pausing new recordings until capacity available",
+                                active_count,
+                                self.max_queue_size,
+                            )
+                            # Skip all remaining recordings this cycle
+                            # Will check again on next poll
+                            break
+                    except Exception as e:
+                        LOG.warning("Error checking queue size: %s", e)
 
                     # Check if we've already yielded this recording
                     # (using persistent database cache)

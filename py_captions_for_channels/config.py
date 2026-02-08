@@ -76,8 +76,11 @@ WEBHOOK_PORT = get_env_int("WEBHOOK_PORT", 9000)
 POLL_INTERVAL_SECONDS = get_env_int("POLL_INTERVAL_SECONDS", 120)  # 2 minutes default
 POLL_LIMIT = get_env_int("POLL_LIMIT", 50)  # Fetch 50 most recent recordings
 POLL_MAX_AGE_HOURS = get_env_int(
-    "POLL_MAX_AGE_HOURS", 2
-)  # Only auto-process recent recordings
+    "POLL_MAX_AGE_HOURS", 24
+)  # Consider recordings up to 24 hours old
+POLL_MAX_QUEUE_SIZE = get_env_int(
+    "POLL_MAX_QUEUE_SIZE", 5
+)  # Max pending/running executions before pausing queue growth
 
 # Pipeline configuration
 DRY_RUN = get_env_bool("DRY_RUN", False)
