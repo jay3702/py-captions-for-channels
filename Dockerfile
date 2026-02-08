@@ -91,6 +91,21 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     tzdata \
+    libx264-163 \
+    libx265-199 \
+    libnuma1 \
+    libvpx7 \
+    libfdk-aac2 \
+    libmp3lame0 \
+    libopus0 \
+    libass9 \
+    libfreetype6 \
+    libfontconfig1 \
+    libfribidi0 \
+    libxcb1 \
+    libxcb-shm0 \
+    libxcb-xfixes0 \
+    libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
