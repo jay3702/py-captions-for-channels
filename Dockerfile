@@ -46,6 +46,12 @@ RUN git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-heade
     rm -rf /tmp/nv-codec-headers && \
     git clone --branch n${FFMPEG_VERSION} --depth 1 https://github.com/FFmpeg/FFmpeg.git /ffmpeg && \
     cd /ffmpeg && \
+    echo "=== Debugging pkg-config ===" && \
+    ls -la /usr/local/lib/pkgconfig/ffnvcodec.pc && \
+    cat /usr/local/lib/pkgconfig/ffnvcodec.pc && \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig pkg-config --exists ffnvcodec && echo "pkg-config found ffnvcodec" && \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig pkg-config --modversion ffnvcodec && \
+    echo "=== Running configure ===" && \
     PKG_CONFIG_PATH=/usr/local/lib/pkgconfig ./configure \
     --prefix=/ffmpeg_build \
     --pkg-config-flags="--static" \
