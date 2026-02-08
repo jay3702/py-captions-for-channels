@@ -345,20 +345,6 @@ async function fetchLogs() {
   }
 }
 
-function switchTab(tabName) {
-  // Update tab buttons
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.classList.remove('active');
-  });
-  event.target.classList.add('active');
-  
-  // Update tab content
-  document.querySelectorAll('.tab-content').forEach(content => {
-    content.classList.remove('active');
-  });
-  document.getElementById(`${tabName}-tab`).classList.add('active');
-}
-
 async function showManualProcessModal() {
   const modal = document.getElementById('manual-process-modal');
   const listContainer = document.getElementById('manual-process-list');
@@ -590,13 +576,13 @@ function switchTab(tabName) {
     content.classList.remove('active');
   });
   document.getElementById(`${tabName}-tab`).classList.add('active');
-  // Handle log streaming
+  // Handle log streaming - only when logs tab is active
   if (tabName === 'logs') {
     stopLogPolling();
     startLogWebSocket();
   } else {
     stopLogWebSocket();
-    startLogPolling();
+    stopLogPolling();  // Stop polling when NOT on logs tab
   }
 }
 
@@ -658,8 +644,8 @@ async function saveSettings(event) {
 // Initial fetch
 fetchStatus();
 fetchExecutions();
-startLogPolling();
 loadSettings();
+// Note: Don't start log polling on init - only when logs tab is clicked
 
 // Poll status and executions every 5 seconds
 setInterval(fetchStatus, 5000);
