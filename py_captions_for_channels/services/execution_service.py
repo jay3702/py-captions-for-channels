@@ -258,6 +258,40 @@ class ExecutionService:
             marked += 1
             LOG.info(f"Marked canceling execution as cancelled: {execution.id}")
 
+        # Cleanup duplicate timestamped executions (bug fix from earlier versions)
+        # Find executions with ::YYYYmmdd-HHMMSS pattern
+        import re
+
+        all_execs = self.db.query(Execution).all()
+        duplicates_removed = 0
+        timestamp_pattern = re.compile(r"::\d{8}-\d{6}$")
+
+        for execution in all_execs:
+            # Check if this is a timestamped duplicate
+            if timestamp_pattern.search(execution.id):
+                # Extract base ID (everything before ::timestamp)
+                base_id = execution.id.rsplit("::", 1)[0]
+
+                # Check if base execution exists
+                base_exec = (
+                    self.db.query(Execution).filter(Execution.id == base_id).first()
+                )
+
+                # Only delete timestamped duplicate if:
+                # 1. It's in pending/cancelled status (not running/completed)
+                # 2. Base execution exists
+                if base_exec and execution.status in ("pending", "cancelled"):
+                    LOG.info(
+                        f"Removing duplicate timestamped execution: {execution.id} "
+                        f"(base exists as {base_exec.status})"
+                    )
+                    self.db.delete(execution)
+                    duplicates_removed += 1
+
+        if duplicates_removed > 0:
+            LOG.info(f"Removed {duplicates_removed} duplicate timestamped executions")
+            marked += duplicates_removed
+
         if marked > 0:
             self.db.commit()
             LOG.info(f"Committed {marked} stale execution updates to database")
