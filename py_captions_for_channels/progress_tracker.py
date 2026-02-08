@@ -22,11 +22,6 @@ class ProgressTracker:
         self.progress_file = progress_file
         self._migrate_from_json()
 
-    def _get_service(self) -> ProgressService:
-        """Get ProgressService with database session."""
-        db = next(get_db())
-        return ProgressService(db)
-
     def _migrate_from_json(self):
         """Migrate progress data from JSON to database on first run."""
         if not self.progress_file.exists():
@@ -36,12 +31,14 @@ class ProgressTracker:
         if migration_marker.exists():
             return  # Already migrated
 
+        db_gen = get_db()
         try:
+            db = next(db_gen)
             with open(self.progress_file, "r", encoding="utf-8") as f:
                 progress_data = json.load(f)
 
             if progress_data:
-                service = self._get_service()
+                service = ProgressService(db)
                 for job_id, prog_info in progress_data.items():
                     service.update_progress(
                         job_id=job_id,
@@ -61,6 +58,11 @@ class ProgressTracker:
 
         except Exception as e:
             LOG.debug("Error migrating progress from JSON: %s", e)
+        finally:
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass  # Generator cleanup completed
 
     def update_progress(
         self,
@@ -79,11 +81,18 @@ class ProgressTracker:
             message: Optional progress message
             details: Optional additional details dict
         """
+        db_gen = get_db()
         try:
-            service = self._get_service()
+            db = next(db_gen)
+            service = ProgressService(db)
             service.update_progress(job_id, process_type, percent, message, details)
         except Exception as e:
-            LOG.debug("Error updating progress for %s: %s", job_id, e)
+            LOG.error("Error updating progress for %s: %s", job_id, e, exc_info=True)
+        finally:
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass  # Generator cleanup completed
 
     def clear_progress(self, job_id: str):
         """Remove progress data for a completed job (now from database).
@@ -91,11 +100,18 @@ class ProgressTracker:
         Args:
             job_id: Job identifier to remove
         """
+        db_gen = get_db()
         try:
-            service = self._get_service()
+            db = next(db_gen)
+            service = ProgressService(db)
             service.clear_progress(job_id)
         except Exception as e:
             LOG.debug("Error clearing progress for %s: %s", job_id, e)
+        finally:
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass  # Generator cleanup completed
 
     def get_all_progress(self) -> dict:
         """Get all current progress data (now from database).
@@ -103,12 +119,19 @@ class ProgressTracker:
         Returns:
             Dict mapping job_id to progress info (matches old JSON format)
         """
+        db_gen = get_db()
         try:
-            service = self._get_service()
+            db = next(db_gen)
+            service = ProgressService(db)
             return service.get_all_progress_dict()
         except Exception as e:
             LOG.debug("Error reading progress: %s", e)
             return {}
+        finally:
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass  # Generator cleanup completed
 
     def get_progress(self, job_id: str) -> Optional[dict]:
         """Get progress for a specific job (now from database).
@@ -119,13 +142,20 @@ class ProgressTracker:
         Returns:
             Progress dict or None if not found (matches old JSON format)
         """
+        db_gen = get_db()
         try:
-            service = self._get_service()
+            db = next(db_gen)
+            service = ProgressService(db)
             progress = service.get_progress(job_id)
             return service.to_dict(progress) if progress else None
         except Exception as e:
             LOG.debug("Error getting progress for %s: %s", job_id, e)
             return None
+        finally:
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass  # Generator cleanup completed
 
 
 # Global progress tracker instance
