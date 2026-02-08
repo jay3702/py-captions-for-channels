@@ -205,8 +205,19 @@ class ExecutionTracker:
         Args:
             job_id: Job identifier
             **kwargs: Fields to update (status, started_at, etc.)
+                     DateTime fields (started_at, completed_at) can be
+                     datetime objects or ISO strings
         """
         with self.lock:
+            # Parse datetime fields if they're ISO strings
+            datetime_fields = ["started_at", "completed_at"]
+            for field in datetime_fields:
+                if field in kwargs and isinstance(kwargs[field], str):
+                    dt = datetime.fromisoformat(kwargs[field])
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    kwargs[field] = dt
+
             service = self._get_service()
             if service.update_execution(job_id, **kwargs):
                 LOG.debug("Updated execution %s: %s", job_id, kwargs)
