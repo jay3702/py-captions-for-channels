@@ -14,7 +14,7 @@ from .pipeline import Pipeline
 from .whitelist import Whitelist
 from .health_check import run_health_checks
 from .execution_tracker import get_tracker, build_manual_process_job_id
-from .database import get_db
+from .database import get_db, init_db
 from .services.heartbeat_service import HeartbeatService
 from .config import (
     CHANNELWATCH_URL,
@@ -277,6 +277,10 @@ async def main():
     LOG.info("=" * 80)
     LOG.info("Py Captions for Channels - Starting up")
     LOG.info("=" * 80)
+
+    # Initialize database tables
+    init_db()
+    LOG.info("Database initialized")
 
     # Initialize API first (needed for health checks)
     api = ChannelsAPI(CHANNELS_API_URL)
