@@ -197,7 +197,11 @@ class ExecutionService:
         return False
 
     def mark_stale_executions(self, timeout_seconds: int = 7200) -> int:
-        """Mark long-running executions as failed (interrupted).
+        """Mark long-running and stuck executions as failed/cancelled.
+
+        Handles:
+        - Running executions that exceeded timeout -> mark as failed
+        - Canceling executions (stuck from previous run) -> mark as cancelled
 
         Args:
             timeout_seconds: Maximum execution time before marking as stale
@@ -208,6 +212,7 @@ class ExecutionService:
         now = datetime.now(timezone.utc)
         marked = 0
 
+        # Handle stuck "running" executions
         running_execs = self.get_executions(limit=1000, status="running")
         for execution in running_execs:
             started_at = execution.started_at
@@ -225,6 +230,19 @@ class ExecutionService:
                     f"(exceeded {timeout_seconds}s)"
                 )
                 marked += 1
+
+        # Handle stuck "canceling" executions from previous run
+        canceling_execs = self.get_executions(limit=1000, status="canceling")
+        for execution in canceling_execs:
+            execution.status = "cancelled"
+            execution.success = False
+            execution.completed_at = now
+            started_at = execution.started_at
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            execution.elapsed_seconds = (now - started_at).total_seconds()
+            execution.error_message = "Execution was canceling when service restarted"
+            marked += 1
 
         if marked > 0:
             self.db.commit()
