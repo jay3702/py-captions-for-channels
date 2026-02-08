@@ -49,7 +49,9 @@ ARG FFMPEG_VERSION=6.1.1
 RUN git clone --branch n${FFMPEG_VERSION} --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
 WORKDIR /ffmpeg
 
-RUN ./configure \
+RUN export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig && \
+    pkg-config --exists --print-errors ffnvcodec && \
+    ./configure \
     --prefix=/ffmpeg_build \
     --pkg-config-flags="--static" \
     --extra-cflags="-I/usr/local/include -I/usr/local/cuda/include" \
