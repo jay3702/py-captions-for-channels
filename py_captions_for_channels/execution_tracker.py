@@ -8,6 +8,7 @@ Now uses database backend via ExecutionService.
 import json
 import logging
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -33,10 +34,23 @@ class ExecutionTracker:
         self._migrated = False
         self._migrate_from_json()
 
-    def _get_service(self) -> ExecutionService:
-        """Get ExecutionService with a new database session."""
-        db = next(get_db())
-        return ExecutionService(db)
+    @contextmanager
+    def _get_service(self):
+        """Get ExecutionService with properly managed database session.
+
+        Usage:
+            with self._get_service() as service:
+                service.create_execution(...)
+        """
+        db_gen = get_db()
+        try:
+            db = next(db_gen)
+            yield ExecutionService(db)
+        finally:
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass  # Generator cleanup completed
 
     def _migrate_from_json(self):
         """Migrate existing executions from JSON file to database (one-time)."""
@@ -58,47 +72,47 @@ class ExecutionTracker:
                 return
 
             LOG.info(f"Migrating {len(executions)} executions from JSON to database...")
-            service = self._get_service()
-            migrated_count = 0
+            with self._get_service() as service:
+                migrated_count = 0
 
-            for exec_id, exec_data in executions.items():
-                # Check if already exists in database
-                existing = service.get_execution(exec_id)
-                if existing:
-                    continue
+                for exec_id, exec_data in executions.items():
+                    # Check if already exists in database
+                    existing = service.get_execution(exec_id)
+                    if existing:
+                        continue
 
-                # Create execution in database
-                try:
-                    started_at = None
-                    if exec_data.get("started_at"):
-                        started_at = datetime.fromisoformat(exec_data["started_at"])
+                    # Create execution in database
+                    try:
+                        started_at = None
+                        if exec_data.get("started_at"):
+                            started_at = datetime.fromisoformat(exec_data["started_at"])
 
-                    service.create_execution(
-                        job_id=exec_id,
-                        title=exec_data.get("title", "Unknown"),
-                        path=exec_data.get("path"),
-                        status=exec_data.get("status", "completed"),
-                        kind=exec_data.get("kind", "normal"),
-                        started_at=started_at,
-                    )
-
-                    # Update with completion data if completed
-                    if exec_data.get("completed_at"):
-                        service.update_execution(
-                            exec_id,
-                            completed_at=datetime.fromisoformat(
-                                exec_data["completed_at"]
-                            ),
-                            success=exec_data.get("success"),
-                            elapsed_seconds=exec_data.get("elapsed_seconds", 0.0),
-                            error_message=exec_data.get("error"),
+                        service.create_execution(
+                            job_id=exec_id,
+                            title=exec_data.get("title", "Unknown"),
+                            path=exec_data.get("path"),
+                            status=exec_data.get("status", "completed"),
+                            kind=exec_data.get("kind", "normal"),
+                            started_at=started_at,
                         )
 
-                    migrated_count += 1
-                except Exception as e:
-                    LOG.warning(f"Failed to migrate execution {exec_id}: {e}")
+                        # Update with completion data if completed
+                        if exec_data.get("completed_at"):
+                            service.update_execution(
+                                exec_id,
+                                completed_at=datetime.fromisoformat(
+                                    exec_data["completed_at"]
+                                ),
+                                success=exec_data.get("success"),
+                                elapsed_seconds=exec_data.get("elapsed_seconds", 0.0),
+                                error_message=exec_data.get("error"),
+                            )
 
-            LOG.info(f"Migrated {migrated_count} executions to database")
+                        migrated_count += 1
+                    except Exception as e:
+                        LOG.warning(f"Failed to migrate execution {exec_id}: {e}")
+
+                LOG.info(f"Migrated {migrated_count} executions to database")
 
             # Rename JSON file to indicate migration complete
             backup_path = self.storage_path.with_suffix(".json.migrated")
@@ -142,50 +156,51 @@ class ExecutionTracker:
             Execution ID
         """
         with self.lock:
-            service = self._get_service()
-            exec_id = job_id
+            with self._get_service() as service:
+                exec_id = job_id
 
-            # Handle reprocessing: If same job_id exists with completed/failed status,
-            # create a new unique ID by appending timestamp
-            existing = service.get_execution(job_id)
-            if existing and existing.status in ("completed", "failed"):
-                now_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-                exec_id = f"{job_id}::{now_ts}"
-                LOG.info(
-                    "Reprocessing existing execution - creating new ID: %s -> %s",
-                    job_id,
-                    exec_id,
+                # Handle reprocessing: If same job_id exists with
+                # completed/failed status, create a new unique ID by
+                # appending timestamp
+                existing = service.get_execution(job_id)
+                if existing and existing.status in ("completed", "failed"):
+                    now_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+                    exec_id = f"{job_id}::{now_ts}"
+                    LOG.info(
+                        "Reprocessing existing execution - new ID: %s -> %s",
+                        job_id,
+                        exec_id,
+                    )
+
+                # Increment execution counter for unique tracking
+                self.execution_counter += 1
+
+                # Parse started_at timestamp
+                if timestamp:
+                    dt = datetime.fromisoformat(timestamp)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    started_at = dt
+                else:
+                    started_at = datetime.now(timezone.utc)
+
+                # Create execution in database
+                service.create_execution(
+                    job_id=exec_id,
+                    title=title,
+                    path=path,
+                    status=status,
+                    kind=kind,
+                    started_at=started_at,
                 )
 
-            # Increment execution counter for unique tracking
-            self.execution_counter += 1
-
-            # Parse started_at timestamp
-            if timestamp:
-                dt = datetime.fromisoformat(timestamp)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                started_at = dt
-            else:
-                started_at = datetime.now(timezone.utc)
-
-            # Create execution in database
-            service.create_execution(
-                job_id=exec_id,
-                title=title,
-                path=path,
-                status=status,
-                kind=kind,
-                started_at=started_at,
-            )
-
-            LOG.info(
-                "Started tracking execution #%d: %s [%s]",
-                self.execution_counter,
-                exec_id,
-                status,
-            )
-            return exec_id
+                LOG.info(
+                    "Started tracking execution #%d: %s [%s]",
+                    self.execution_counter,
+                    exec_id,
+                    status,
+                )
+                return exec_id
 
     def update_status(self, job_id: str, status: str):
         """Update the status of an execution.
@@ -195,9 +210,9 @@ class ExecutionTracker:
             status: New status (pending, running, completed)
         """
         with self.lock:
-            service = self._get_service()
-            if service.update_status(job_id, status):
-                LOG.debug("Updated execution status: %s -> %s", job_id, status)
+            with self._get_service() as service:
+                if service.update_status(job_id, status):
+                    LOG.debug("Updated execution status: %s -> %s", job_id, status)
 
     def update_execution(self, job_id: str, **kwargs):
         """Update execution fields.
@@ -218,9 +233,9 @@ class ExecutionTracker:
                         dt = dt.replace(tzinfo=timezone.utc)
                     kwargs[field] = dt
 
-            service = self._get_service()
-            if service.update_execution(job_id, **kwargs):
-                LOG.debug("Updated execution %s: %s", job_id, kwargs)
+            with self._get_service() as service:
+                if service.update_execution(job_id, **kwargs):
+                    LOG.debug("Updated execution %s: %s", job_id, kwargs)
 
     def request_cancel(self, job_id: str) -> bool:
         """Request cancellation of a running execution.
@@ -228,17 +243,17 @@ class ExecutionTracker:
         Returns True if the job exists and was marked for cancel.
         """
         with self.lock:
-            service = self._get_service()
-            if service.request_cancel(job_id):
-                LOG.info("Cancel requested for execution: %s", job_id)
-                return True
-            return False
+            with self._get_service() as service:
+                if service.request_cancel(job_id):
+                    LOG.info("Cancel requested for execution: %s", job_id)
+                    return True
+                return False
 
     def is_cancel_requested(self, job_id: str) -> bool:
         """Check if cancellation has been requested for a job."""
         with self.lock:
-            service = self._get_service()
-            return service.is_cancel_requested(job_id)
+            with self._get_service() as service:
+                return service.is_cancel_requested(job_id)
 
     def remove_execution(self, job_id: str) -> bool:
         """Remove an execution from the tracker.
@@ -246,11 +261,11 @@ class ExecutionTracker:
         Returns True if the job existed and was removed.
         """
         with self.lock:
-            service = self._get_service()
-            if service.remove_execution(job_id):
-                LOG.info("Removed execution from tracker: %s", job_id)
-                return True
-            return False
+            with self._get_service() as service:
+                if service.remove_execution(job_id):
+                    LOG.info("Removed execution from tracker: %s", job_id)
+                    return True
+                return False
 
     def add_log(self, job_id: str, log_line: str):
         """Add a log line to an execution (legacy - now no-op).
@@ -281,16 +296,16 @@ class ExecutionTracker:
             error: Error message if failed
         """
         with self.lock:
-            service = self._get_service()
-            if service.complete_execution(job_id, success, elapsed_seconds, error):
-                LOG.info(
-                    "Completed execution: %s (success=%s, elapsed=%.1fs)",
-                    job_id,
-                    success,
-                    elapsed_seconds,
-                )
-            else:
-                LOG.warning("Attempted to complete unknown execution: %s", job_id)
+            with self._get_service() as service:
+                if service.complete_execution(job_id, success, elapsed_seconds, error):
+                    LOG.info(
+                        "Completed execution: %s (success=%s, elapsed=%.1fs)",
+                        job_id,
+                        success,
+                        elapsed_seconds,
+                    )
+                else:
+                    LOG.warning("Attempted to complete unknown execution: %s", job_id)
 
     def get_executions(self, limit: int = 50) -> List[dict]:
         """Get recent executions, most recent first.
@@ -301,9 +316,9 @@ class ExecutionTracker:
         Returns:
             List of execution dicts
         """
-        service = self._get_service()
-        executions = service.get_executions(limit=limit)
-        return [service.to_dict(exec) for exec in executions]
+        with self._get_service() as service:
+            executions = service.get_executions(limit=limit)
+            return [service.to_dict(exec) for exec in executions]
 
     def get_execution(self, job_id: str) -> Optional[dict]:
         """Get a specific execution by ID.
@@ -314,9 +329,9 @@ class ExecutionTracker:
         Returns:
             Execution dict or None
         """
-        service = self._get_service()
-        execution = service.get_execution(job_id)
-        return service.to_dict(execution) if execution else None
+        with self._get_service() as service:
+            execution = service.get_execution(job_id)
+            return service.to_dict(execution) if execution else None
 
     def mark_stale_executions(self, timeout_seconds: int = 7200) -> int:
         """Mark long-running executions as failed (interrupted).
@@ -327,11 +342,11 @@ class ExecutionTracker:
         Returns:
             Number of executions marked as stale
         """
-        service = self._get_service()
-        marked = service.mark_stale_executions(timeout_seconds)
-        if marked > 0:
-            LOG.warning("Marked %d stale execution(s) as failed", marked)
-        return marked
+        with self._get_service() as service:
+            marked = service.mark_stale_executions(timeout_seconds)
+            if marked > 0:
+                LOG.warning("Marked %d stale execution(s) as failed", marked)
+            return marked
 
     def get_interrupted_paths(self) -> list[str]:
         """Get file paths from recently interrupted executions.
@@ -339,19 +354,19 @@ class ExecutionTracker:
         Returns:
             List of file paths that were interrupted
         """
-        service = self._get_service()
-        executions = service.get_executions(limit=1000)
-        paths = []
-        for execution in executions:
-            if (
-                execution.status == "completed"
-                and not execution.success
-                and execution.error_message
-                and "interrupted" in execution.error_message.lower()
-            ):
-                if execution.path:
-                    paths.append(execution.path)
-        return paths
+        with self._get_service() as service:
+            executions = service.get_executions(limit=1000)
+            paths = []
+            for execution in executions:
+                if (
+                    execution.status == "completed"
+                    and not execution.success
+                    and execution.error_message
+                    and "interrupted" in execution.error_message.lower()
+                ):
+                    if execution.path:
+                        paths.append(execution.path)
+            return paths
 
     def clear_old_executions(self, keep_count: int = 100):
         """Remove old executions, keeping only the most recent.
@@ -359,10 +374,10 @@ class ExecutionTracker:
         Args:
             keep_count: Number of executions to keep
         """
-        service = self._get_service()
-        removed = service.clear_old_executions(keep_count)
-        if removed > 0:
-            LOG.info("Removed %d old execution(s)", removed)
+        with self._get_service() as service:
+            removed = service.clear_old_executions(keep_count)
+            if removed > 0:
+                LOG.info("Removed %d old execution(s)", removed)
 
 
 # Global instance
