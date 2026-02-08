@@ -33,25 +33,20 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install nv-codec-headers (NVENC/NVDEC headers)
-# Set PKG_CONFIG_PATH first so it's available during verification
+# Install nv-codec-headers and build FFmpeg in single layer to ensure pkg-config works
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+ARG FFMPEG_VERSION=6.1.1
 
 RUN git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-headers && \
     cd /tmp/nv-codec-headers && \
     git checkout n12.0.16.0 && \
     make install && \
-    pkg-config --exists --print-errors ffnvcodec && \
-    rm -rf /tmp/nv-codec-headers
-
-# FFmpeg - GPU-enabled build with NVENC
-ARG FFMPEG_VERSION=6.1.1
-RUN git clone --branch n${FFMPEG_VERSION} --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
-WORKDIR /ffmpeg
-
-RUN export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig && \
-    pkg-config --exists --print-errors ffnvcodec && \
-    ./configure \
+    ldconfig && \
+    cd / && \
+    rm -rf /tmp/nv-codec-headers && \
+    git clone --branch n${FFMPEG_VERSION} --depth 1 https://github.com/FFmpeg/FFmpeg.git /ffmpeg && \
+    cd /ffmpeg && \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig ./configure \
     --prefix=/ffmpeg_build \
     --pkg-config-flags="--static" \
     --extra-cflags="-I/usr/local/include -I/usr/local/cuda/include" \
