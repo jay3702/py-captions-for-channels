@@ -39,7 +39,7 @@ ARG FFMPEG_VERSION=6.1.1
 
 RUN git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-headers && \
     cd /tmp/nv-codec-headers && \
-    git checkout n12.0.16.0 && \
+    git checkout n11.1.5.3 && \
     make install && \
     ldconfig && \
     cd / && \
