@@ -215,6 +215,15 @@ class ExecutionService:
         now = datetime.now(timezone.utc)
         marked = 0
 
+        # Debug: Check ALL executions to see what's in the database
+        all_execs = self.db.query(Execution).all()
+        LOG.info(f"Total executions in database: {len(all_execs)}")
+        for exec in all_execs[:5]:  # Show first 5
+            LOG.info(
+                f"  - {exec.id[:50]}... status={exec.status} "
+                f"started={exec.started_at}"
+            )
+
         # Handle stuck "running" executions
         running_execs = self.get_executions(limit=1000, status="running")
         LOG.info(f"Checking {len(running_execs)} running executions for staleness")
