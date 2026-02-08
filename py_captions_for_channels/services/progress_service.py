@@ -1,5 +1,6 @@
 """Service layer for progress tracking operations."""
 
+import json
 from datetime import datetime, timezone
 from typing import List, Optional, Dict
 from sqlalchemy.orm import Session
@@ -38,12 +39,15 @@ class ProgressService:
         # Check if progress entry exists
         progress = self.db.query(Progress).filter(Progress.job_id == job_id).first()
 
+        # Serialize details to JSON if present
+        details_json = json.dumps(details) if details else None
+
         if progress:
             # Update existing
             progress.process_type = process_type
             progress.percent = percent
             progress.message = message
-            progress.progress_metadata = details
+            progress.progress_metadata = details_json
             progress.updated_at = datetime.now(timezone.utc)
         else:
             # Create new
@@ -52,7 +56,7 @@ class ProgressService:
                 process_type=process_type,
                 percent=percent,
                 message=message,
-                progress_metadata=details,
+                progress_metadata=details_json,
             )
             self.db.add(progress)
 
@@ -115,11 +119,19 @@ class ProgressService:
         Returns:
             Dict representation matching old JSON format
         """
+        # Deserialize metadata from JSON
+        metadata = {}
+        if progress.progress_metadata:
+            try:
+                metadata = json.loads(progress.progress_metadata)
+            except (json.JSONDecodeError, TypeError):
+                metadata = {}
+
         return {
             "process_type": progress.process_type,
             "percent": progress.percent,
             "message": progress.message,
-            "details": progress.progress_metadata or {},
+            "details": metadata,
             "updated_at": progress.updated_at.isoformat(),
         }
 
