@@ -87,12 +87,17 @@ class ProgressTracker:
             service = ProgressService(db)
             service.update_progress(job_id, process_type, percent, message, details)
         except Exception as e:
-            LOG.error("Error updating progress for %s: %s", job_id, e, exc_info=True)
+            error_msg = str(e).lower()
+            # Ignore "no transaction" errors - they indicate transaction already handled
+            if "no transaction" not in error_msg:
+                LOG.error("Error updating progress for %s: %s", job_id, e)
         finally:
             try:
                 next(db_gen)
             except StopIteration:
                 pass  # Generator cleanup completed
+            except Exception:
+                pass  # Ignore cleanup errors
 
     def clear_progress(self, job_id: str):
         """Remove progress data for a completed job (now from database).
@@ -106,12 +111,14 @@ class ProgressTracker:
             service = ProgressService(db)
             service.clear_progress(job_id)
         except Exception as e:
-            LOG.debug("Error clearing progress for %s: %s", job_id, e)
+            error_msg = str(e).lower()
+            if "no transaction" not in error_msg:
+                LOG.error("Error clearing progress for %s: %s", job_id, e)
         finally:
             try:
                 next(db_gen)
-            except StopIteration:
-                pass  # Generator cleanup completed
+            except (StopIteration, Exception):
+                pass  # Ignore cleanup errors
 
     def get_all_progress(self) -> dict:
         """Get all current progress data (now from database).
@@ -130,8 +137,8 @@ class ProgressTracker:
         finally:
             try:
                 next(db_gen)
-            except StopIteration:
-                pass  # Generator cleanup completed
+            except (StopIteration, Exception):
+                pass  # Ignore cleanup errors
 
     def get_progress(self, job_id: str) -> Optional[dict]:
         """Get progress for a specific job (now from database).
