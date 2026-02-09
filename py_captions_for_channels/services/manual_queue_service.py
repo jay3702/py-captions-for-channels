@@ -38,7 +38,15 @@ class ManualQueueService:
             existing.skip_caption_generation = skip_caption_generation
             existing.log_verbosity = log_verbosity
             existing.updated_at = datetime.now(timezone.utc)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             self.db.refresh(existing)
             return existing
 
@@ -49,7 +57,15 @@ class ManualQueueService:
             log_verbosity=log_verbosity,
         )
         self.db.add(item)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         self.db.refresh(item)
         return item
 
@@ -109,7 +125,15 @@ class ManualQueueService:
         item = self.get_queue_item(path)
         if item:
             self.db.delete(item)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             return True
         return False
 
@@ -121,7 +145,15 @@ class ManualQueueService:
         """
         count = self.db.query(ManualQueueItem).count()
         self.db.query(ManualQueueItem).delete()
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         return count
 
     def to_dict(self, item: ManualQueueItem) -> dict:

@@ -48,7 +48,7 @@ class ChannelsPollingSource:
         self,
         api_url: str,
         poll_interval_seconds: int = 120,
-        limit: int = 50,
+        limit: int = 150,
         timeout: int = 10,
         max_age_hours: int = 24,
         max_queue_size: int = 5,
@@ -175,7 +175,7 @@ class ChannelsPollingSource:
                     resp = requests.get(
                         f"{self.api_url}/api/v1/all",
                         params={
-                            "sort": "created_at",
+                            "sort": "updated_at",
                             "order": "desc",
                             "limit": self.limit,
                         },
@@ -198,6 +198,13 @@ class ChannelsPollingSource:
                     len(recordings),
                 )
 
+                # Track statistics for summary logging
+                checked_count = 0
+                skipped_cache_count = 0
+                skipped_processed_count = 0
+                skipped_old_count = 0
+                yielded_count = 0
+
                 # Yield events for new completed recordings
                 for rec in completed_recordings:
                     rec_id = rec.get("id") or rec.get("FileID")
@@ -205,6 +212,9 @@ class ChannelsPollingSource:
                     if not rec_id:
                         LOG.warning("Recording missing ID: %s", rec.get("title"))
                         continue
+
+                    # Count as checked
+                    checked_count += 1
 
                     # Skip if already yielded in this poll cycle
                     if rec_id in seen_this_cycle:
@@ -234,6 +244,7 @@ class ChannelsPollingSource:
                                 title,
                                 start_time.strftime("%Y-%m-%d %H:%M:%S"),
                             )
+                            skipped_old_count += 1
                             continue
 
                     # Queue management: check current active execution count
@@ -261,16 +272,17 @@ class ChannelsPollingSource:
 
                     # Check if we've already yielded this recording
                     # (using persistent database cache)
-                    LOG.info(
+                    LOG.debug(
                         "Checking cache for rec_id=%s",
                         rec_id,
                     )
                     if cache_service.has_yielded(rec_id):
                         # Already processed, skip
-                        LOG.info(
+                        LOG.debug(
                             "Skipping previously yielded recording: '%s'",
                             title,
                         )
+                        skipped_cache_count += 1
                         continue
 
                     path = rec.get("path")  # Get file path from API
@@ -289,12 +301,13 @@ class ChannelsPollingSource:
                                 status = existing_by_path.get("status")
                                 # Skip if already processed/running/pending
                                 if status in ("completed", "running", "pending"):
-                                    LOG.info(
+                                    LOG.debug(
                                         "Skipping already processed recording: '%s' "
                                         "(status: %s)",
                                         title,
                                         status,
                                     )
+                                    skipped_processed_count += 1
                                     continue
                                 # If failed, allow retry (fall through)
                         except Exception as e:
@@ -309,10 +322,12 @@ class ChannelsPollingSource:
 
                     # Mark as yielded in database to prevent duplicates
                     cache_service.add_yielded(rec_id, now)
-                    LOG.info(
+                    LOG.debug(
                         "Added rec_id=%s to database cache",
                         rec_id,
                     )
+
+                    yielded_count += 1
 
                     yield PartialProcessingEvent(
                         timestamp=now,
@@ -320,6 +335,16 @@ class ChannelsPollingSource:
                         start_time=start_time,
                         path=path,
                     )
+
+                # Log polling summary
+                LOG.info(
+                    "Poll complete: checked %d recordings, skipped %d (cache), "
+                    "%d (already processed), yielded %d new",
+                    checked_count,
+                    skipped_cache_count,
+                    skipped_processed_count,
+                    yielded_count,
+                )
 
                 # Calculate smart wait time
                 smart_interval = self._get_smart_interval()

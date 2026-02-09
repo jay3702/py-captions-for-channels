@@ -39,13 +39,29 @@ class PollingCacheService:
         if existing:
             # Update timestamp
             existing.yielded_at = yielded_at
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             return False
 
         # Add new entry
         cache_item = PollingCache(rec_id=rec_id, yielded_at=yielded_at)
         self.db.add(cache_item)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         return True
 
     def has_yielded(self, rec_id: str) -> bool:
@@ -86,7 +102,15 @@ class PollingCacheService:
             .filter(PollingCache.yielded_at < cutoff)
             .delete()
         )
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         return result
 
     def get_all(self) -> dict:
@@ -105,5 +129,13 @@ class PollingCacheService:
             Number of entries removed
         """
         result = self.db.query(PollingCache).delete()
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         return result
