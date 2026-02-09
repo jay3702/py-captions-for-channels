@@ -541,6 +541,7 @@ async def clear_list_executions(cancel_pending: bool = False) -> dict:
 
     Removes:
     - Failed executions (completed with success=False)
+    - Cancelled executions (status="cancelled")
     - Dry-run executions (status="dry_run")
     - Invalid pending executions (not in manual process queue and stale)
 
@@ -570,6 +571,11 @@ async def clear_list_executions(cancel_pending: bool = False) -> dict:
 
             # Remove failed executions
             if status == "completed" and exec_data.get("success") is False:
+                if job_id and tracker.remove_execution(job_id):
+                    removed_ids.append(job_id)
+
+            # Remove cancelled executions
+            elif status == "cancelled":
                 if job_id and tracker.remove_execution(job_id):
                     removed_ids.append(job_id)
 
