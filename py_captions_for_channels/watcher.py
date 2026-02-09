@@ -369,6 +369,9 @@ async def main():
         from dataclasses import dataclass
         from typing import Optional
 
+        # Load whitelist for filtering
+        whitelist = Whitelist(WHITELIST_FILE)
+
         @dataclass
         class PartialProcessingEvent:
             timestamp: datetime
@@ -377,17 +380,11 @@ async def main():
             source: str = "restart_recovery"
             path: Optional[str] = None
 
+        requeued_count = 0
+        skipped_whitelist_count = 0
+
         for execution in orphaned_executions:
             try:
-                # Promote discovered → pending for automatic processing
-                if execution.get("status") == "discovered":
-                    tracker.update_status(execution["id"], "pending")
-                    LOG.info(
-                        "Promoted orphaned discovered → pending: %s",
-                        execution.get("title", "Unknown"),
-                    )
-
-                # Create event to re-queue
                 # Parse job_id format: "Title @ YYYY-MM-DD HH:MM:SS"
                 job_id = execution["id"]
                 if " @ " in job_id:
@@ -401,6 +398,42 @@ async def main():
                         timezone.utc
                     )
 
+                # Check whitelist before re-queuing
+                if not whitelist.is_allowed(title, start_time):
+                    skipped_whitelist_count += 1
+                    LOG.info(
+                        "Skipped orphaned execution (not whitelisted): %s @ %s",
+                        title,
+                        start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                    # Mark as failed instead of leaving it pending
+                    if execution.get("status") in ("pending", "discovered"):
+                        elapsed = 0.0
+                        if execution.get("started_at"):
+                            started_dt = execution.get("started_at")
+                            if isinstance(started_dt, str):
+                                started_dt = datetime.fromisoformat(started_dt)
+                            if started_dt.tzinfo is None:
+                                started_dt = started_dt.replace(tzinfo=timezone.utc)
+                            elapsed = (
+                                datetime.now(timezone.utc) - started_dt
+                            ).total_seconds()
+                        tracker.complete_execution(
+                            job_id=job_id,
+                            success=False,
+                            elapsed_seconds=elapsed,
+                            error="Not whitelisted for automatic processing",
+                        )
+                    continue
+
+                # Promote discovered → pending for automatic processing
+                if execution.get("status") == "discovered":
+                    tracker.update_status(execution["id"], "pending")
+                    LOG.info(
+                        "Promoted orphaned discovered → pending: %s",
+                        execution.get("title", "Unknown"),
+                    )
+
                 event = PartialProcessingEvent(
                     title=title,
                     start_time=start_time,
@@ -411,6 +444,7 @@ async def main():
                 # Add to queue for processing
                 # (will be picked up by polling processor)
                 asyncio.create_task(_polling_queue.put(event))
+                requeued_count += 1
                 LOG.info(
                     "Re-queued orphaned execution: %s",
                     execution.get("title", "Unknown"),
@@ -421,6 +455,13 @@ async def main():
                     execution.get("id", "unknown"),
                     e,
                 )
+
+        if requeued_count > 0 or skipped_whitelist_count > 0:
+            LOG.info(
+                "Startup recovery complete: %d re-queued, %d skipped (not whitelisted)",
+                requeued_count,
+                skipped_whitelist_count,
+            )
 
     LOG.info("=" * 80)
 
