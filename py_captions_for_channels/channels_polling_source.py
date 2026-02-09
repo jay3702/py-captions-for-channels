@@ -175,7 +175,7 @@ class ChannelsPollingSource:
                     resp = requests.get(
                         f"{self.api_url}/api/v1/all",
                         params={
-                            "sort": "updated_at",
+                            "sort": "date_updated",
                             "order": "desc",
                             "limit": self.limit,
                         },
