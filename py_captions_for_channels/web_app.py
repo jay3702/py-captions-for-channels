@@ -932,10 +932,17 @@ async def get_recordings() -> dict:
             path = rec.get("path", "")
             title = rec.get("title", "Unknown")
             episode_title = rec.get("episode_title", "")
-            full_title = f"{title} - {episode_title}" if episode_title else title
 
-            # Check whitelist
-            passes_whitelist = whitelist.is_allowed(full_title)
+            # Get recording start time from created_at (milliseconds timestamp)
+            created_at = rec.get("created_at", 0)
+            start_time = (
+                datetime.fromtimestamp(created_at / 1000, tz=timezone.utc)
+                if created_at
+                else None
+            )
+
+            # Check whitelist (requires both title and start time)
+            passes_whitelist = whitelist.is_allowed(title, start_time)
 
             # Check if processed (look for execution with this path)
             processed_exec = next(
