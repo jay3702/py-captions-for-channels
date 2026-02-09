@@ -431,6 +431,10 @@ class Pipeline:
         job_id = job_id_override or f"{event.title} @ {timestamp_str}"
         log = get_logger("pipeline", job_id=job_id)
 
+        # Clear any stale progress from previous runs
+        progress_tracker = get_progress_tracker()
+        progress_tracker.clear_progress(job_id)
+
         start_time = time.time()
         try:
             # Format command with safe-quoted event path to handle spaces/special chars
