@@ -304,6 +304,7 @@ async def main():
     running_execs = [
         e for e in tracker.get_executions(limit=1000) if e.get("status") == "running"
     ]
+    interrupted_for_retry = []
     if running_execs:
         LOG.warning(
             "Found %d running execution(s) from previous run - "
@@ -331,6 +332,8 @@ async def main():
                     error="Execution interrupted by container restart",
                 )
                 LOG.info("Marked interrupted execution as failed: %s", job_id)
+                # Save for potential retry
+                interrupted_for_retry.append(exec_data)
 
     # Also check for stale executions (long-running beyond timeout)
     stale_count = tracker.mark_stale_executions(timeout_seconds=STALE_EXECUTION_SECONDS)
@@ -349,6 +352,114 @@ async def main():
             # Note: We don't auto-queue to avoid infinite retry loops
             # User can manually trigger processing via web UI or state file
 
+    # Re-queue interrupted jobs for one retry attempt
+    if interrupted_for_retry:
+        LOG.info(
+            "Checking %d interrupted execution(s) for retry eligibility",
+            len(interrupted_for_retry),
+        )
+
+        # Load whitelist for filtering
+        whitelist = Whitelist(WHITELIST_FILE)
+
+        # Import here to avoid circular dependency
+        from dataclasses import dataclass
+        from typing import Optional
+
+        @dataclass
+        class PartialProcessingEvent:
+            timestamp: datetime
+            title: str
+            start_time: datetime
+            source: str = "restart_recovery"
+            path: Optional[str] = None
+
+        retried_count = 0
+        skipped_count = 0
+
+        for exec_data in interrupted_for_retry:
+            try:
+                job_id = exec_data.get("id")
+                path = exec_data.get("path")
+                title = exec_data.get("title", "Unknown")
+
+                # Parse start time from job_id
+                if " @ " in job_id:
+                    _, timestamp_str = job_id.rsplit(" @ ", 1)
+                    start_time = datetime.strptime(
+                        timestamp_str, "%Y-%m-%d %H:%M:%S"
+                    ).replace(tzinfo=timezone.utc)
+                else:
+                    start_time = exec_data.get("started_at") or datetime.now(
+                        timezone.utc
+                    )
+                    if isinstance(start_time, str):
+                        start_time = datetime.fromisoformat(start_time)
+
+                # Check if already retried
+                # (look for another execution with same path)
+                all_execs = tracker.get_executions(limit=1000)
+                retry_count = sum(
+                    1
+                    for e in all_execs
+                    if e.get("path") == path
+                    and e.get("id") != job_id
+                    and e.get("error_message", "").startswith(
+                        "Execution interrupted by container restart"
+                    )
+                )
+
+                if retry_count > 0:
+                    skipped_count += 1
+                    LOG.info(
+                        "Skipped retry for %s (already retried %d time(s))",
+                        title,
+                        retry_count,
+                    )
+                    continue
+
+                # Check if SRT file already exists
+                if path:
+                    srt_path = path.rsplit(".", 1)[0] + ".srt"
+                    if os.path.exists(srt_path):
+                        skipped_count += 1
+                        LOG.info(
+                            "Skipped retry for %s (SRT file already exists)", title
+                        )
+                        continue
+
+                # Check whitelist
+                if not whitelist.is_allowed(title, start_time):
+                    skipped_count += 1
+                    LOG.info("Skipped retry for %s (not whitelisted)", title)
+                    continue
+
+                # Re-queue for retry
+                tracker.update_status(job_id, "pending")
+                event = PartialProcessingEvent(
+                    title=title,
+                    start_time=start_time,
+                    timestamp=start_time,
+                    path=path,
+                )
+                asyncio.create_task(_polling_queue.put(event))
+                retried_count += 1
+                LOG.info("Re-queued interrupted execution for retry: %s", title)
+
+            except Exception as e:
+                LOG.warning(
+                    "Error checking interrupted execution %s for retry: %s",
+                    exec_data.get("id", "unknown"),
+                    e,
+                )
+
+        if retried_count > 0 or skipped_count > 0:
+            LOG.info(
+                "Interrupted job retry: %d re-queued, %d skipped",
+                retried_count,
+                skipped_count,
+            )
+
     # Re-queue orphaned discovered/pending executions from previous run
     # These were interrupted and need to be processed
     all_executions = tracker.get_executions(limit=1000)
@@ -362,10 +473,6 @@ async def main():
             "will re-queue for processing",
             len(orphaned_executions),
         )
-
-        # Import here to avoid circular dependency
-        from dataclasses import dataclass
-        from typing import Optional
 
         # Load whitelist for filtering
         whitelist = Whitelist(WHITELIST_FILE)
