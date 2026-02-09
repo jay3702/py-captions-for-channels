@@ -13,11 +13,12 @@ from typing import AsyncIterator, Optional
 import requests
 
 from .channels_api import ChannelsAPI
-from .config import LOCAL_TEST_DIR
+from .config import LOCAL_TEST_DIR, WHITELIST_FILE
 from .execution_tracker import get_tracker
 from .database import get_db
 from .services.polling_cache_service import PollingCacheService
 from .services.heartbeat_service import HeartbeatService
+from .whitelist import Whitelist
 
 LOG = logging.getLogger(__name__)
 
@@ -74,6 +75,8 @@ class ChannelsPollingSource:
         self._use_local_mock = LOCAL_TEST_DIR is not None
         # Migration: Load old in-memory cache on first run
         self._migrated = False
+        # Load whitelist for filtering
+        self._whitelist = Whitelist(WHITELIST_FILE)
 
     def _get_smart_interval(self) -> int:
         """Calculate smart polling interval based on current time.
@@ -353,6 +356,18 @@ class ChannelsPollingSource:
                                 # If failed or cancelled, allow retry (fall through)
                         except Exception as e:
                             LOG.warning("Error checking execution tracker: %s", e)
+
+                    # Check whitelist before creating discovered execution
+                    if not self._whitelist.is_allowed(title, start_time):
+                        LOG.debug(
+                            "Skipping non-whitelisted recording: '%s' @ %s",
+                            title,
+                            start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        )
+                        # Mark as yielded so we don't check it again
+                        cache_service.add_yielded(rec_id)
+                        skipped_processed_count += 1
+                        continue
 
                     # If queue is full, create a "discovered" execution
                     # for backlog visibility
