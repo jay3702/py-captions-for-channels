@@ -128,6 +128,11 @@ def configure_logging(
         file_handler.addFilter(verbosity_filter)
         root_logger.addHandler(file_handler)
 
+    # Suppress SQLAlchemy pool noise (cannot rollback errors)
+    # We already handle these in our code with try/except
+    sqlalchemy_pool_logger = logging.getLogger("sqlalchemy.pool")
+    sqlalchemy_pool_logger.setLevel(logging.CRITICAL)
+
     # Ensure no duplicate propagation
     for logger in logging.Logger.manager.loggerDict.values():
         if isinstance(logger, logging.Logger):
