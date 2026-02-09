@@ -31,59 +31,64 @@ class ProgressService:
             details: Optional additional details dict
 
         Returns:
-            Updated or created Progress object
+            Updated or created Progress object or None if database error
         """
-        # Clamp percent to 0-100 range
-        percent = min(100.0, max(0.0, percent))
-
-        # Check if progress entry exists
-        progress = self.db.query(Progress).filter(Progress.job_id == job_id).first()
-
-        # Serialize details to JSON if present
-        details_json = json.dumps(details) if details else None
-        now = datetime.now(timezone.utc)
-
-        if progress:
-            # Update existing
-            progress.process_type = process_type
-            progress.percent = percent
-            progress.message = message
-            progress.progress_metadata = details_json
-            progress.updated_at = now
-        else:
-            # Create new
-            progress = Progress(
-                job_id=job_id,
-                process_type=process_type,
-                percent=percent,
-                message=message,
-                progress_metadata=details_json,
-                updated_at=now,
-            )
-            self.db.add(progress)
-
         try:
-            self.db.commit()
-        except Exception as e:
-            # Handle "no transaction is active" errors from concurrent access
-            error_msg = str(e).lower()
-            if "no transaction" in error_msg:
-                # Transaction already handled by concurrent process
-                pass
+            # Clamp percent to 0-100 range
+            percent = min(100.0, max(0.0, percent))
+
+            # Check if progress entry exists
+            progress = self.db.query(Progress).filter(Progress.job_id == job_id).first()
+
+            # Serialize details to JSON if present
+            details_json = json.dumps(details) if details else None
+            now = datetime.now(timezone.utc)
+
+            if progress:
+                # Update existing
+                progress.process_type = process_type
+                progress.percent = percent
+                progress.message = message
+                progress.progress_metadata = details_json
+                progress.updated_at = now
             else:
-                try:
-                    self.db.rollback()
-                except Exception:
-                    pass  # Rollback itself may fail if no transaction
-                raise
+                # Create new
+                progress = Progress(
+                    job_id=job_id,
+                    process_type=process_type,
+                    percent=percent,
+                    message=message,
+                    progress_metadata=details_json,
+                    updated_at=now,
+                )
+                self.db.add(progress)
 
-        # Only refresh if commit succeeded
-        try:
-            self.db.refresh(progress)
+            try:
+                self.db.commit()
+            except Exception as e:
+                # Handle "no transaction is active" errors from concurrent access
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    # Transaction already handled by concurrent process
+                    pass
+                else:
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
+                    raise
+
+            # Only refresh if commit succeeded
+            try:
+                self.db.refresh(progress)
+            except Exception:
+                pass  # Refresh may fail if commit didn't succeed
+
+            return progress
         except Exception:
-            pass  # Refresh may fail if commit didn't succeed
-
-        return progress
+            # Database operations can fail in various states, don't crash the job
+            # Return None to indicate failure
+            return None
 
     def get_progress(self, job_id: str) -> Optional[Progress]:
         """Get progress for a specific job.
@@ -113,24 +118,28 @@ class ProgressService:
         Returns:
             True if removed, False if not found
         """
-        progress = self.get_progress(job_id)
-        if progress:
-            self.db.delete(progress)
-            try:
-                self.db.commit()
-            except Exception as e:
-                error_msg = str(e).lower()
-                if "no transaction" in error_msg:
-                    # Transaction already handled by concurrent process
-                    pass
-                else:
-                    try:
-                        self.db.rollback()
-                    except Exception:
-                        pass  # Rollback itself may fail if no transaction
-                    raise
-            return True
-        return False
+        try:
+            progress = self.get_progress(job_id)
+            if progress:
+                self.db.delete(progress)
+                try:
+                    self.db.commit()
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if "no transaction" in error_msg:
+                        # Transaction already handled by concurrent process
+                        pass
+                    else:
+                        try:
+                            self.db.rollback()
+                        except Exception:
+                            pass  # Rollback itself may fail if no transaction
+                        raise
+                return True
+            return False
+        except Exception:
+            # Database queries can fail in various states, don't crash the job
+            return False
 
     def clear_all_progress(self) -> int:
         """Remove all progress entries.
