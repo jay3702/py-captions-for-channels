@@ -52,7 +52,15 @@ class HeartbeatService:
             )
             self.db.add(heartbeat)
 
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
 
     def get_heartbeat(self, service_name: str) -> Optional[Dict]:
         """Get heartbeat for a service.
@@ -132,7 +140,15 @@ class HeartbeatService:
             True if removed, False if not found
         """
         result = self.db.query(Heartbeat).filter_by(service_name=service_name).delete()
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         return result > 0
 
     def clear_all(self) -> int:
@@ -142,5 +158,13 @@ class HeartbeatService:
             Number of entries removed
         """
         result = self.db.query(Heartbeat).delete()
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         return result

@@ -85,7 +85,15 @@ class SettingsService:
             )
             self.db.add(setting)
 
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
 
     def get_all(self) -> Dict[str, Any]:
         """Get all settings as a dictionary.
@@ -121,7 +129,15 @@ class SettingsService:
         setting = self.db.query(Setting).filter(Setting.key == key).first()
         if setting:
             self.db.delete(setting)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             return True
         return False
 
