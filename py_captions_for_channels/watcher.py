@@ -330,7 +330,7 @@ async def main():
                     job_id=job_id,
                     success=False,
                     elapsed_seconds=elapsed,
-                    error_message="Execution interrupted by container restart",
+                    error="Execution interrupted by container restart",
                 )
                 LOG.info("Marked interrupted execution as failed: %s", job_id)
 
