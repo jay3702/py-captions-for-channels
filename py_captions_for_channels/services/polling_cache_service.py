@@ -4,6 +4,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from ..models import PollingCache
+from ..logging.structured_logger import get_logger
+
+LOG = get_logger(__name__)
 
 
 class PollingCacheService:
@@ -79,7 +82,18 @@ class PollingCacheService:
         Returns:
             True if recording has been yielded
         """
-        return self.db.query(PollingCache).filter_by(rec_id=rec_id).first() is not None
+        try:
+            return (
+                self.db.query(PollingCache).filter_by(rec_id=rec_id).first() is not None
+            )
+        except Exception as e:
+            # Handle session errors by rolling back and returning False
+            try:
+                self.db.rollback()
+            except Exception:
+                pass  # Rollback itself may fail
+            LOG.warning("Error checking polling cache for %s: %s", rec_id, e)
+            return False  # Assume not yielded on error to allow retry
 
     def get_yielded_time(self, rec_id: str) -> Optional[datetime]:
         """Get when a recording was yielded.
@@ -90,8 +104,17 @@ class PollingCacheService:
         Returns:
             Datetime when yielded, or None if not found
         """
-        cache_item = self.db.query(PollingCache).filter_by(rec_id=rec_id).first()
-        return cache_item.yielded_at if cache_item else None
+        try:
+            cache_item = self.db.query(PollingCache).filter_by(rec_id=rec_id).first()
+            return cache_item.yielded_at if cache_item else None
+        except Exception as e:
+            # Handle session errors by rolling back and returning None
+            try:
+                self.db.rollback()
+            except Exception:
+                pass  # Rollback itself may fail
+            LOG.warning("Error getting yielded time for %s: %s", rec_id, e)
+            return None
 
     def cleanup_old(self, max_age_hours: int = 24) -> int:
         """Remove old cache entries.
@@ -102,25 +125,34 @@ class PollingCacheService:
         Returns:
             Number of entries removed
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
-        result = (
-            self.db.query(PollingCache)
-            .filter(PollingCache.yielded_at < cutoff)
-            .delete()
-        )
         try:
-            self.db.commit()
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+            result = (
+                self.db.query(PollingCache)
+                .filter(PollingCache.yielded_at < cutoff)
+                .delete()
+            )
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
+                    raise
+            return result
         except Exception as e:
-            error_msg = str(e).lower()
-            if "no transaction" in error_msg:
+            # Handle session errors
+            try:
+                self.db.rollback()
+            except Exception:
                 pass
-            else:
-                try:
-                    self.db.rollback()
-                except Exception:
-                    pass  # Rollback itself may fail if no transaction
-                raise
-        return result
+            LOG.warning("Error cleaning up old polling cache entries: %s", e)
+            return 0
 
     def get_all(self) -> dict:
         """Get all cache entries as dict (for debugging/migration).
@@ -128,8 +160,17 @@ class PollingCacheService:
         Returns:
             Dict mapping rec_id to yielded_at datetime
         """
-        items = self.db.query(PollingCache).all()
-        return {item.rec_id: item.yielded_at for item in items}
+        try:
+            items = self.db.query(PollingCache).all()
+            return {item.rec_id: item.yielded_at for item in items}
+        except Exception as e:
+            # Handle session errors
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            LOG.warning("Error getting all polling cache entries: %s", e)
+            return {}
 
     def clear_all(self) -> int:
         """Clear all cache entries (for testing).
@@ -137,17 +178,26 @@ class PollingCacheService:
         Returns:
             Number of entries removed
         """
-        result = self.db.query(PollingCache).delete()
         try:
-            self.db.commit()
+            result = self.db.query(PollingCache).delete()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
+                    raise
+            return result
         except Exception as e:
-            error_msg = str(e).lower()
-            if "no transaction" in error_msg:
+            # Handle session errors
+            try:
+                self.db.rollback()
+            except Exception:
                 pass
-            else:
-                try:
-                    self.db.rollback()
-                except Exception:
-                    pass  # Rollback itself may fail if no transaction
-                raise
-        return result
+            LOG.warning("Error clearing polling cache: %s", e)
+            return 0
