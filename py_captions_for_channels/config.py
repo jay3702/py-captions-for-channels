@@ -74,7 +74,7 @@ WEBHOOK_PORT = get_env_int("WEBHOOK_PORT", 9000)
 
 # Polling configuration (when USE_POLLING=True)
 POLL_INTERVAL_SECONDS = get_env_int("POLL_INTERVAL_SECONDS", 120)  # 2 minutes default
-POLL_LIMIT = get_env_int("POLL_LIMIT", 50)  # Fetch 50 most recent recordings
+POLL_LIMIT = get_env_int("POLL_LIMIT", 150)  # Fetch 150 most recent recordings
 POLL_MAX_AGE_HOURS = get_env_int(
     "POLL_MAX_AGE_HOURS", 24
 )  # Consider recordings up to 24 hours old
