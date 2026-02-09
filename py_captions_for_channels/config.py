@@ -79,8 +79,8 @@ POLL_MAX_AGE_HOURS = get_env_int(
     "POLL_MAX_AGE_HOURS", 24
 )  # Consider recordings up to 24 hours old
 POLL_MAX_QUEUE_SIZE = get_env_int(
-    "POLL_MAX_QUEUE_SIZE", 5
-)  # Max pending/running executions before pausing queue growth
+    "POLL_MAX_QUEUE_SIZE", 1
+)  # Max pending/running executions (1=serial to avoid Whisper model race conditions)
 
 # Pipeline configuration
 DRY_RUN = get_env_bool("DRY_RUN", False)
