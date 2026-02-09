@@ -160,6 +160,43 @@ class ChannelsPollingSource:
                 # (cleared at start of each iteration)
                 seen_this_cycle = set()
 
+                # Promote discovered executions to pending if capacity available
+                try:
+                    tracker = get_tracker()
+                    all_executions = tracker.get_executions(limit=1000)
+                    active_count = sum(
+                        1
+                        for e in all_executions
+                        if e.get("status") in ("pending", "running")
+                    )
+
+                    # Get discovered executions (oldest first by started_at)
+                    discovered = [
+                        e for e in all_executions if e.get("status") == "discovered"
+                    ]
+                    discovered.sort(key=lambda x: x.get("started_at", ""))
+
+                    # Promote as many discovered → pending as capacity allows
+                    promoted_count = 0
+                    for exec in discovered:
+                        if active_count >= self.max_queue_size:
+                            break
+                        tracker.update_status(exec["id"], "pending")
+                        active_count += 1
+                        promoted_count += 1
+                        LOG.info(
+                            "Promoted discovered → pending: %s",
+                            exec.get("title", "Unknown"),
+                        )
+
+                    if promoted_count > 0:
+                        LOG.info(
+                            "Promoted %d discovered execution(s) to pending",
+                            promoted_count,
+                        )
+                except Exception as e:
+                    LOG.warning("Error promoting discovered executions: %s", e)
+
                 # Update heartbeat in database
                 try:
                     heartbeat_service.beat("polling", "alive")
@@ -249,6 +286,7 @@ class ChannelsPollingSource:
 
                     # Queue management: check current active execution count
                     # before yielding new recordings
+                    queue_full = False
                     try:
                         tracker = get_tracker()
                         all_executions = tracker.get_executions(limit=1000)
@@ -258,15 +296,13 @@ class ChannelsPollingSource:
                             if e.get("status") in ("pending", "running")
                         )
                         if active_count >= self.max_queue_size:
-                            LOG.info(
+                            queue_full = True
+                            LOG.debug(
                                 "Queue full (%d/%d active executions), "
-                                "pausing new recordings until capacity available",
+                                "will create discovered entries for remaining",
                                 active_count,
                                 self.max_queue_size,
                             )
-                            # Skip all remaining recordings this cycle
-                            # Will check again on next poll
-                            break
                     except Exception as e:
                         LOG.warning("Error checking queue size: %s", e)
 
@@ -299,19 +335,50 @@ class ChannelsPollingSource:
                             )
                             if existing_by_path:
                                 status = existing_by_path.get("status")
-                                # Skip if already processed/running/pending
-                                if status in ("completed", "running", "pending"):
+                                # Skip if already processed/running/pending/discovered
+                                if status in (
+                                    "completed",
+                                    "running",
+                                    "pending",
+                                    "discovered",
+                                ):
                                     LOG.debug(
-                                        "Skipping already processed recording: '%s' "
+                                        "Skipping already tracked recording: '%s' "
                                         "(status: %s)",
                                         title,
                                         status,
                                     )
                                     skipped_processed_count += 1
                                     continue
-                                # If failed, allow retry (fall through)
+                                # If failed or cancelled, allow retry (fall through)
                         except Exception as e:
                             LOG.warning("Error checking execution tracker: %s", e)
+
+                    # If queue is full, create a "discovered" execution
+                    # for backlog visibility
+                    if queue_full:
+                        try:
+                            tracker = get_tracker()
+                            job_id = (
+                                f"{title} @ {start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+                            )
+                            tracker.start_execution(
+                                job_id=job_id,
+                                title=title,
+                                path=path,
+                                status="discovered",  # Mark as discovered, not pending
+                                kind="polling",
+                            )
+                            LOG.info(
+                                "Discovered recording (queue full): '%s' (created: %s)",
+                                title,
+                                start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                            )
+                            # Mark as yielded so we don't re-discover it every poll
+                            cache_service.mark_yielded(rec_id, title)
+                        except Exception as e:
+                            LOG.warning("Error creating discovered execution: %s", e)
+                        continue  # Don't yield, just record as discovered
 
                     LOG.info(
                         "New completed recording: '%s' (created: %s, path: %s)",
