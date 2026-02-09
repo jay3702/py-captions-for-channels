@@ -46,7 +46,10 @@ class PollingCacheService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return False
 
@@ -60,7 +63,10 @@ class PollingCacheService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         return True
 
@@ -109,7 +115,10 @@ class PollingCacheService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         return result
 
@@ -136,6 +145,9 @@ class PollingCacheService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         return result

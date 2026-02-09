@@ -64,7 +64,10 @@ class ExecutionService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         self.db.refresh(execution)
         return execution
@@ -115,7 +118,10 @@ class ExecutionService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return True
         return False
@@ -142,7 +148,10 @@ class ExecutionService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return True
         return False
@@ -180,7 +189,10 @@ class ExecutionService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return True
         return False
@@ -206,7 +218,10 @@ class ExecutionService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return True
         return False
@@ -242,7 +257,10 @@ class ExecutionService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return True
         return False
@@ -348,7 +366,10 @@ class ExecutionService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             LOG.info(f"Committed {marked} stale execution updates to database")
 
@@ -382,7 +403,10 @@ class ExecutionService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         return removed
 
@@ -427,7 +451,10 @@ class ExecutionService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         self.db.refresh(step)
         return step
@@ -466,7 +493,10 @@ class ExecutionService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return True
         return False

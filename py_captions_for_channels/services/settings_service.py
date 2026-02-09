@@ -92,7 +92,10 @@ class SettingsService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
 
     def get_all(self) -> Dict[str, Any]:
@@ -136,7 +139,10 @@ class SettingsService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return True
         return False
