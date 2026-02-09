@@ -121,6 +121,10 @@ async function fetchStatus() {
       statusClass = 'exec-pending';
       statusIcon = '⏸';
       statusText = 'Pending';
+    } else if (exec.status === 'discovered') {
+      statusClass = 'exec-pending';
+      statusIcon = '🔍';
+      statusText = 'Discovered';
     } else if (exec.status === 'dry_run') {
       statusClass = 'exec-dryrun';
       statusIcon = '🔄';
