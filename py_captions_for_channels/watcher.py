@@ -311,9 +311,7 @@ async def main():
         for e in all_execs
         if e.get("status") == "completed"
         and e.get("success") is False
-        and e.get("error_message", "").startswith(
-            "Execution interrupted by container restart"
-        )
+        and e.get("error", "").startswith("Execution interrupted by container restart")
     ]
 
     interrupted_for_retry = []
@@ -424,7 +422,7 @@ async def main():
                     for e in all_execs
                     if e.get("path") == path
                     and e.get("id") != job_id
-                    and e.get("error_message", "").startswith(
+                    and e.get("error", "").startswith(
                         "Execution interrupted by container restart"
                     )
                 )
