@@ -562,7 +562,8 @@ async def main():
                     title=title,
                     start_time=start_time,
                     timestamp=start_time,
-                    path=execution.get("path"),                    exec_id=job_id,                    exec_id=job_id,
+                    path=execution.get("path"),
+                    exec_id=job_id,
                 )
 
                 # Add to queue for processing
@@ -736,7 +737,8 @@ async def main():
                         # otherwise use the job_id (created when added to queue)
                         exec_id = (
                             event_partial.exec_id
-                            if hasattr(event_partial, "exec_id") and event_partial.exec_id
+                            if hasattr(event_partial, "exec_id")
+                            and event_partial.exec_id
                             else job_id
                         )
 
