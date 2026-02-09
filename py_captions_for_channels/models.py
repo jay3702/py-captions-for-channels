@@ -59,7 +59,7 @@ class Execution(Base):
     path = Column(String(1000), nullable=True)
     status = Column(
         String(50), nullable=False
-    )  # pending, running, completed, failed, cancelled
+    )  # discovered, pending, running, completed, failed, cancelled
     kind = Column(String(50), nullable=True)  # manual_process, polling, webhook
     started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime, nullable=True)
