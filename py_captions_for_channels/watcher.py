@@ -310,8 +310,6 @@ async def main():
             "marking as interrupted (container restart)",
             len(running_execs),
         )
-        from datetime import datetime, timezone
-
         now = datetime.now(timezone.utc)
         for exec_data in running_execs:
             job_id = exec_data.get("id")
