@@ -632,6 +632,29 @@ class Pipeline:
                 elapsed = time.time() - start_time
                 log.error("Exception running caption pipeline: %s", e)
                 log.error("Command attempted: %s", cmd)
+
+                # Clean up subprocess if still running to prevent orphans
+                try:
+                    if proc and proc.poll() is None:
+                        log.warning("Terminating subprocess due to exception")
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            log.warning("Subprocess didn't terminate, killing it")
+                            proc.kill()
+                            proc.wait()
+                except Exception as cleanup_err:
+                    log.error("Error cleaning up subprocess: %s", cleanup_err)
+
+                # Clear progress tracking
+                try:
+                    progress_tracker.clear_progress(job_id)
+                except Exception as progress_err:
+                    log.error(
+                        "Error clearing progress after exception: %s", progress_err
+                    )
+
                 return PipelineResult(
                     success=False,
                     returncode=-1,
