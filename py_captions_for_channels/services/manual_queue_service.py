@@ -45,7 +45,10 @@ class ManualQueueService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             self.db.refresh(existing)
             return existing
@@ -64,7 +67,10 @@ class ManualQueueService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         self.db.refresh(item)
         return item
@@ -132,7 +138,10 @@ class ManualQueueService:
                 if "no transaction" in error_msg:
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return True
         return False
@@ -152,7 +161,10 @@ class ManualQueueService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         return count
 

@@ -59,7 +59,10 @@ class HeartbeatService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
 
     def get_heartbeat(self, service_name: str) -> Optional[Dict]:
@@ -147,7 +150,10 @@ class HeartbeatService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         return result > 0
 
@@ -165,6 +171,9 @@ class HeartbeatService:
             if "no transaction" in error_msg:
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         return result

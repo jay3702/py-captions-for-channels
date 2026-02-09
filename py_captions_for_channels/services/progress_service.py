@@ -72,7 +72,10 @@ class ProgressService:
                 # Transaction already handled by concurrent process
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         return progress
 
@@ -115,7 +118,10 @@ class ProgressService:
                     # Transaction already handled by concurrent process
                     pass
                 else:
-                    self.db.rollback()
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass  # Rollback itself may fail if no transaction
                     raise
             return True
         return False
@@ -136,7 +142,10 @@ class ProgressService:
                 # Transaction already handled by concurrent process
                 pass
             else:
-                self.db.rollback()
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass  # Rollback itself may fail if no transaction
                 raise
         return count
 
