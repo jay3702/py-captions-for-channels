@@ -730,6 +730,80 @@ async def clear_polling_cache() -> dict:
         }
 
 
+@app.post("/api/processes/cleanup")
+async def cleanup_orphaned_processes() -> dict:
+    """Kill orphaned whisper and ffmpeg processes.
+
+    This is useful when processes are left running after container
+    restarts or job failures. Only kills processes within this container.
+    """
+    try:
+        import subprocess
+
+        killed = []
+        errors = []
+
+        # Find all whisper processes
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "whisper"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                pids = result.stdout.strip().split("\n")
+                for pid in pids:
+                    try:
+                        subprocess.run(["kill", "-9", pid], check=True, timeout=5)
+                        killed.append({"type": "whisper", "pid": int(pid)})
+                    except Exception as e:
+                        errors.append(
+                            {"type": "whisper", "pid": int(pid), "error": str(e)}
+                        )
+        except subprocess.TimeoutExpired:
+            errors.append({"type": "whisper", "error": "pgrep timeout"})
+        except Exception as e:
+            errors.append({"type": "whisper", "error": str(e)})
+
+        # Find all ffmpeg processes
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "ffmpeg"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                pids = result.stdout.strip().split("\n")
+                for pid in pids:
+                    try:
+                        subprocess.run(["kill", "-9", pid], check=True, timeout=5)
+                        killed.append({"type": "ffmpeg", "pid": int(pid)})
+                    except Exception as e:
+                        errors.append(
+                            {"type": "ffmpeg", "pid": int(pid), "error": str(e)}
+                        )
+        except subprocess.TimeoutExpired:
+            errors.append({"type": "ffmpeg", "error": "pgrep timeout"})
+        except Exception as e:
+            errors.append({"type": "ffmpeg", "error": str(e)})
+
+        return {
+            "killed": len(killed),
+            "processes": killed,
+            "errors": errors,
+            "message": f"Killed {len(killed)} orphaned processes",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        return {
+            "killed": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+
 def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
     """Extract log lines for a specific job from the main log file.
 
