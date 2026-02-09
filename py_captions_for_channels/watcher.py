@@ -389,6 +389,7 @@ async def main():
             start_time: datetime
             source: str = "restart_recovery"
             path: Optional[str] = None
+            exec_id: Optional[str] = None
 
         retried_count = 0
         skipped_count = 0
@@ -457,6 +458,7 @@ async def main():
                     start_time=start_time,
                     timestamp=start_time,
                     path=path,
+                    exec_id=job_id,
                 )
                 asyncio.create_task(_polling_queue.put(event))
                 retried_count += 1
@@ -500,6 +502,7 @@ async def main():
             start_time: datetime
             source: str = "restart_recovery"
             path: Optional[str] = None
+            exec_id: Optional[str] = None
 
         requeued_count = 0
         skipped_whitelist_count = 0
@@ -559,7 +562,7 @@ async def main():
                     title=title,
                     start_time=start_time,
                     timestamp=start_time,
-                    path=execution.get("path"),
+                    path=execution.get("path"),                    exec_id=job_id,                    exec_id=job_id,
                 )
 
                 # Add to queue for processing
@@ -729,9 +732,13 @@ async def main():
                             )
                         event = parser.from_channelwatch(event_partial, path)
 
-                        # Get the existing pending execution
-                        # (created when added to queue)
-                        exec_id = job_id
+                        # Use exec_id from event if provided (from startup recovery),
+                        # otherwise use the job_id (created when added to queue)
+                        exec_id = (
+                            event_partial.exec_id
+                            if hasattr(event_partial, "exec_id") and event_partial.exec_id
+                            else job_id
+                        )
 
                         # Update to running when we actually start processing
                         tracker.update_status(exec_id, "running")
