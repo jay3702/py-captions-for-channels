@@ -698,6 +698,32 @@ async def clear_pending_executions(max_age_minutes: int = 60) -> dict:
         }
 
 
+@app.post("/api/polling-cache/clear")
+async def clear_polling_cache() -> dict:
+    """Clear all polling cache entries.
+
+    This allows previously processed recordings to be picked up again
+    on the next poll. Useful for reprocessing failed recordings.
+    """
+    try:
+        from .services.polling_cache_service import PollingCacheService
+
+        db = next(get_db())
+        cache_service = PollingCacheService(db)
+        count = cache_service.clear_all()
+        return {
+            "cleared": count,
+            "message": f"Cleared {count} polling cache entries",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        return {
+            "cleared": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+
 def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
     """Extract log lines for a specific job from the main log file.
 
