@@ -57,7 +57,15 @@ class ExecutionService:
             cancel_requested=False,
         )
         self.db.add(execution)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         self.db.refresh(execution)
         return execution
 
@@ -100,7 +108,15 @@ class ExecutionService:
         execution = self.get_execution(job_id)
         if execution:
             execution.status = status
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             return True
         return False
 
@@ -119,7 +135,15 @@ class ExecutionService:
             for key, value in kwargs.items():
                 if hasattr(execution, key):
                     setattr(execution, key, value)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             return True
         return False
 
@@ -149,7 +173,15 @@ class ExecutionService:
             execution.elapsed_seconds = elapsed_seconds
             execution.error_message = error_message
             execution.cancel_requested = False
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             return True
         return False
 
@@ -167,7 +199,15 @@ class ExecutionService:
             execution.cancel_requested = True
             if execution.status == "running":
                 execution.status = "canceling"
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             return True
         return False
 
@@ -195,7 +235,15 @@ class ExecutionService:
         execution = self.get_execution(job_id)
         if execution:
             self.db.delete(execution)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             return True
         return False
 
@@ -293,7 +341,15 @@ class ExecutionService:
             marked += duplicates_removed
 
         if marked > 0:
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             LOG.info(f"Committed {marked} stale execution updates to database")
 
         return marked
@@ -319,7 +375,15 @@ class ExecutionService:
         for execution in to_delete:
             self.db.delete(execution)
 
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         return removed
 
     # ExecutionStep methods
@@ -356,7 +420,15 @@ class ExecutionService:
             output_path=output_path,
         )
         self.db.add(step)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                self.db.rollback()
+                raise
         self.db.refresh(step)
         return step
 
@@ -387,7 +459,15 @@ class ExecutionService:
                 step.started_at = datetime.now(timezone.utc)
             elif status in ("completed", "failed"):
                 step.completed_at = datetime.now(timezone.utc)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "no transaction" in error_msg:
+                    pass
+                else:
+                    self.db.rollback()
+                    raise
             return True
         return False
 
