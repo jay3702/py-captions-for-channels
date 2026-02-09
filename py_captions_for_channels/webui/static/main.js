@@ -125,7 +125,11 @@ async function fetchStatus() {
       statusClass = 'exec-dryrun';
       statusIcon = '🔄';
       statusText = 'Dry Run';
-    } else if (exec.status === 'canceling' || exec.cancel_requested) {
+    } else if (exec.status === 'cancelled') {
+      statusClass = 'exec-failure';
+      statusIcon = '⏹';
+      statusText = 'Cancelled';
+    } else if (exec.status === 'canceling' || (exec.status === 'running' && exec.cancel_requested)) {
       statusClass = 'exec-running';
       statusIcon = '⏹';
       statusText = 'Canceling';
