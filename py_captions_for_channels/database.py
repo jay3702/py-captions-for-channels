@@ -13,10 +13,13 @@ DB_URL = f"sqlite:///{DB_PATH}"
 
 # Create engine with connection pooling for SQLite
 # check_same_thread=False is safe because we use session-per-request pattern
+# pool_reset_on_return=None disables automatic rollback on connection return
+# This prevents "cannot rollback - no transaction is active" errors
 engine = create_engine(
     DB_URL,
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,  # Keep connection alive
+    pool_reset_on_return=None,  # Don't auto-rollback on connection return
     echo=False,  # Set to True for SQL query logging
 )
 
