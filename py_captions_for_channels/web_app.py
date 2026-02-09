@@ -543,6 +543,7 @@ async def clear_list_executions(cancel_pending: bool = False) -> dict:
     - Failed executions (completed with success=False)
     - Cancelled executions (status="cancelled")
     - Dry-run executions (status="dry_run")
+    - Discovered executions (status="discovered")
     - Invalid pending executions (not in manual process queue and stale)
 
     If there are legitimate pending executions (in queue and recent),
@@ -581,6 +582,11 @@ async def clear_list_executions(cancel_pending: bool = False) -> dict:
 
             # Remove dry-run executions
             elif status == "dry_run":
+                if job_id and tracker.remove_execution(job_id):
+                    removed_ids.append(job_id)
+
+            # Remove discovered executions (backlog that hasn't been queued yet)
+            elif status == "discovered":
                 if job_id and tracker.remove_execution(job_id):
                     removed_ids.append(job_id)
 
