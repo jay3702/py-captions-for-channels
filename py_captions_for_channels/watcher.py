@@ -315,6 +315,77 @@ async def main():
             # Note: We don't auto-queue to avoid infinite retry loops
             # User can manually trigger processing via web UI or state file
 
+    # Re-queue orphaned discovered/pending executions from previous run
+    # These were interrupted and need to be processed
+    all_executions = tracker.get_executions(limit=1000)
+    orphaned_executions = [
+        e for e in all_executions if e.get("status") in ("pending", "discovered")
+    ]
+
+    if orphaned_executions:
+        LOG.info(
+            "Found %d orphaned execution(s) from previous run, "
+            "will re-queue for processing",
+            len(orphaned_executions),
+        )
+
+        # Import here to avoid circular dependency
+        from dataclasses import dataclass
+        from typing import Optional
+
+        @dataclass
+        class PartialProcessingEvent:
+            timestamp: datetime
+            title: str
+            start_time: datetime
+            source: str = "restart_recovery"
+            path: Optional[str] = None
+
+        for execution in orphaned_executions:
+            try:
+                # Promote discovered → pending for automatic processing
+                if execution.get("status") == "discovered":
+                    tracker.update_status(execution["id"], "pending")
+                    LOG.info(
+                        "Promoted orphaned discovered → pending: %s",
+                        execution.get("title", "Unknown"),
+                    )
+
+                # Create event to re-queue
+                # Parse job_id format: "Title @ YYYY-MM-DD HH:MM:SS"
+                job_id = execution["id"]
+                if " @ " in job_id:
+                    title, timestamp_str = job_id.rsplit(" @ ", 1)
+                    start_time = datetime.strptime(
+                        timestamp_str, "%Y-%m-%d %H:%M:%S"
+                    ).replace(tzinfo=timezone.utc)
+                else:
+                    title = execution.get("title", "Unknown")
+                    start_time = execution.get("started_at") or datetime.now(
+                        timezone.utc
+                    )
+
+                event = PartialProcessingEvent(
+                    title=title,
+                    start_time=start_time,
+                    timestamp=start_time,
+                    path=execution.get("path"),
+                )
+
+                # Add to queue for processing
+                # (will be picked up by polling processor)
+                asyncio.create_task(_polling_queue.put(event))
+                LOG.info(
+                    "Re-queued orphaned execution: %s",
+                    execution.get("title", "Unknown"),
+                )
+            except Exception as e:
+                LOG.warning(
+                    "Error re-queuing orphaned execution %s: %s",
+                    execution.get("id", "unknown"),
+                    e,
+                )
+
     LOG.info("=" * 80)
 
     # Now select and initialize event source (may start background services)
