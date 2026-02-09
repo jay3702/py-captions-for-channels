@@ -312,13 +312,25 @@ async def main():
         )
         from datetime import datetime, timezone
 
+        now = datetime.now(timezone.utc)
         for exec_data in running_execs:
             job_id = exec_data.get("id")
             if job_id:
+                # Calculate elapsed time from started_at
+                started_at = exec_data.get("started_at")
+                if isinstance(started_at, str):
+                    started_dt = datetime.fromisoformat(started_at)
+                    if started_dt.tzinfo is None:
+                        started_dt = started_dt.replace(tzinfo=timezone.utc)
+                    elapsed = (now - started_dt).total_seconds()
+                else:
+                    elapsed = 0.0
+
                 tracker.complete_execution(
                     job_id=job_id,
                     success=False,
-                    error="Execution interrupted by container restart",
+                    elapsed_seconds=elapsed,
+                    error_message="Execution interrupted by container restart",
                 )
                 LOG.info("Marked interrupted execution as failed: %s", job_id)
 
