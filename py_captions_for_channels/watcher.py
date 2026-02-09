@@ -301,9 +301,21 @@ async def main():
 
     # On container startup, ALL running executions are interrupted
     # (processes don't survive container restart)
-    running_execs = [
-        e for e in tracker.get_executions(limit=1000) if e.get("status") == "running"
+    all_execs = tracker.get_executions(limit=1000)
+    running_execs = [e for e in all_execs if e.get("status") == "running"]
+
+    # Also check for recently failed jobs with restart error
+    # (in case they were interrupted in a previous restart)
+    recently_interrupted = [
+        e
+        for e in all_execs
+        if e.get("status") == "completed"
+        and e.get("success") is False
+        and e.get("error_message", "").startswith(
+            "Execution interrupted by container restart"
+        )
     ]
+
     interrupted_for_retry = []
     if running_execs:
         LOG.warning(
@@ -334,6 +346,14 @@ async def main():
                 LOG.info("Marked interrupted execution as failed: %s", job_id)
                 # Save for potential retry
                 interrupted_for_retry.append(exec_data)
+
+    # Add recently interrupted jobs to retry list
+    if recently_interrupted:
+        LOG.info(
+            "Found %d previously interrupted execution(s) eligible for retry",
+            len(recently_interrupted),
+        )
+        interrupted_for_retry.extend(recently_interrupted)
 
     # Also check for stale executions (long-running beyond timeout)
     stale_count = tracker.mark_stale_executions(timeout_seconds=STALE_EXECUTION_SECONDS)
