@@ -64,7 +64,6 @@ class ProgressService:
 
         try:
             self.db.commit()
-            self.db.refresh(progress)
         except Exception as e:
             # Handle "no transaction is active" errors from concurrent access
             error_msg = str(e).lower()
@@ -77,6 +76,13 @@ class ProgressService:
                 except Exception:
                     pass  # Rollback itself may fail if no transaction
                 raise
+
+        # Only refresh if commit succeeded
+        try:
+            self.db.refresh(progress)
+        except Exception:
+            pass  # Refresh may fail if commit didn't succeed
+
         return progress
 
     def get_progress(self, job_id: str) -> Optional[Progress]:
