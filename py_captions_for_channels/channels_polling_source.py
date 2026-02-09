@@ -375,7 +375,7 @@ class ChannelsPollingSource:
                                 start_time.strftime("%Y-%m-%d %H:%M:%S"),
                             )
                             # Mark as yielded so we don't re-discover it every poll
-                            cache_service.mark_yielded(rec_id, title)
+                            cache_service.add_yielded(rec_id)
                         except Exception as e:
                             LOG.warning("Error creating discovered execution: %s", e)
                         continue  # Don't yield, just record as discovered
