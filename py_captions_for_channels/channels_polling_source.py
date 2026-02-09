@@ -353,6 +353,10 @@ class ChannelsPollingSource:
 
             except requests.RequestException as e:
                 LOG.error("API polling failed: %s (retrying in 60s)", e)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
                 await asyncio.sleep(60)
 
             except Exception as e:
@@ -361,4 +365,8 @@ class ChannelsPollingSource:
                     e,
                     exc_info=True,
                 )
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
                 await asyncio.sleep(60)
