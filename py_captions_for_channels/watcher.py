@@ -2,6 +2,8 @@ import asyncio
 from .logging.structured_logger import get_logger
 from datetime import datetime, timezone
 from functools import partial
+from dataclasses import dataclass
+from typing import Optional
 
 import shutil
 import os
@@ -379,10 +381,6 @@ async def main():
 
         # Load whitelist for filtering
         whitelist = Whitelist(WHITELIST_FILE)
-
-        # Import here to avoid circular dependency
-        from dataclasses import dataclass
-        from typing import Optional
 
         @dataclass
         class PartialProcessingEvent:
