@@ -302,6 +302,20 @@ async function clearPendingExecutions() {
   }
 }
 
+async function clearPollingCache() {
+  try {
+    if (!confirm('Clear polling cache? This will allow the system to re-discover and process recordings that were previously seen.\n\nUse this if recordings are not being picked up after fixing issues.')) {
+      return;
+    }
+    const res = await fetch('/api/polling-cache/clear', { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to clear polling cache');
+    const data = await res.json();
+    alert(`Polling cache cleared: ${data.cleared} entries removed.\n\nRecordings will be re-evaluated on the next poll.`);
+  } catch (err) {
+    alert('Clear polling cache error: ' + err.message);
+  }
+}
+
   function escapeAttr(text) {
     return text.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
   }
