@@ -235,8 +235,18 @@ class ExecutionService:
         Returns:
             True if cancel was requested
         """
-        execution = self.get_execution(job_id)
-        return bool(execution and execution.cancel_requested)
+        try:
+            execution = self.get_execution(job_id)
+            return bool(execution and execution.cancel_requested)
+        except Exception as e:
+            # If we can't check the database (connection closed, etc.),
+            # assume not canceled so the process can continue
+            LOG.warning(
+                "Failed to check cancel status for %s: %s (assuming not canceled)",
+                job_id,
+                e,
+            )
+            return False
 
     def remove_execution(self, job_id: str) -> bool:
         """Remove an execution from the database.
