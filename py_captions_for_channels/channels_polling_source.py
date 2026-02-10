@@ -163,63 +163,58 @@ class ChannelsPollingSource:
                 # (cleared at start of each iteration)
                 seen_this_cycle = set()
 
-                # Promote discovered executions to pending if capacity available
+                # Promote discovered executions to pending to maintain queue depth
+                # Strategy: Keep exactly 1 pending job so next job can start immediately
                 try:
                     tracker = get_tracker()
                     all_executions = tracker.get_executions(limit=1000)
-                    active_count = sum(
-                        1
-                        for e in all_executions
-                        if e.get("status") in ("pending", "running")
+
+                    # Count pending jobs (not running, just waiting)
+                    pending_count = sum(
+                        1 for e in all_executions if e.get("status") == "pending"
                     )
 
-                    # Get discovered executions (oldest first by started_at)
-                    discovered = [
-                        e for e in all_executions if e.get("status") == "discovered"
-                    ]
-                    discovered.sort(key=lambda x: x.get("started_at", ""))
+                    # Only promote if we have NO pending jobs (bootstrap case)
+                    # Normal flow: job starts → promotes next discovered → pending
+                    if pending_count == 0:
+                        # Get discovered executions (oldest first by started_at)
+                        discovered = [
+                            e for e in all_executions if e.get("status") == "discovered"
+                        ]
 
-                    # Promote as many discovered → pending as capacity allows
-                    promoted_count = 0
-                    for exec in discovered:
-                        if active_count >= self.max_queue_size:
-                            break
-                        tracker.update_status(exec["id"], "pending")
-                        active_count += 1
-                        promoted_count += 1
-                        LOG.info(
-                            "Promoted discovered → pending: %s",
-                            exec.get("title", "Unknown"),
-                        )
+                        if discovered:
+                            discovered.sort(key=lambda x: x.get("started_at", ""))
+                            exec = discovered[0]
 
-                        # Yield the promoted execution for processing
-                        # Extract start_time from job_id
-                        # format: "Title @ YYYY-MM-DD HH:MM:SS"
-                        job_id = exec.get("id", "")
-                        if " @ " in job_id:
-                            try:
-                                _, timestamp_str = job_id.rsplit(" @ ", 1)
-                                start_time = datetime.strptime(
-                                    timestamp_str, "%Y-%m-%d %H:%M:%S"
-                                ).replace(tzinfo=timezone.utc)
-                                yield PartialProcessingEvent(
-                                    timestamp=start_time,
-                                    title=exec.get("title", "Unknown"),
-                                    start_time=start_time,
-                                    path=exec.get("path"),
-                                )
-                            except (ValueError, AttributeError) as e:
-                                LOG.warning(
-                                    "Failed to parse start_time from job_id '%s': %s",
-                                    job_id,
-                                    e,
-                                )
+                            tracker.update_status(exec["id"], "pending")
+                            LOG.info(
+                                "Promoted discovered → pending (bootstrap): %s",
+                                exec.get("title", "Unknown"),
+                            )
 
-                    if promoted_count > 0:
-                        LOG.info(
-                            "Promoted %d discovered execution(s) to pending",
-                            promoted_count,
-                        )
+                            # Yield the promoted execution for processing
+                            # Extract start_time from job_id
+                            # format: "Title @ YYYY-MM-DD HH:MM:SS"
+                            job_id = exec.get("id", "")
+                            if " @ " in job_id:
+                                try:
+                                    _, timestamp_str = job_id.rsplit(" @ ", 1)
+                                    start_time = datetime.strptime(
+                                        timestamp_str, "%Y-%m-%d %H:%M:%S"
+                                    ).replace(tzinfo=timezone.utc)
+                                    yield PartialProcessingEvent(
+                                        timestamp=start_time,
+                                        title=exec.get("title", "Unknown"),
+                                        start_time=start_time,
+                                        path=exec.get("path"),
+                                    )
+                                except (ValueError, AttributeError) as e:
+                                    LOG.warning(
+                                        "Failed to parse start_time from "
+                                        "job_id '%s': %s",
+                                        job_id,
+                                        e,
+                                    )
                 except Exception as e:
                     LOG.warning("Error promoting discovered executions: %s", e)
 

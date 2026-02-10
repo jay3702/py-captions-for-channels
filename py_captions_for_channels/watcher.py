@@ -53,21 +53,20 @@ _polling_queue = asyncio.Queue()
 
 def promote_next_discovered_to_pending():
     """
-    Promote the next discovered execution to pending if queue has capacity.
+    Promote the next discovered execution to pending to maintain queue depth.
     Returns PartialProcessingEvent if promoted, None otherwise.
 
-    This ensures continuous processing without waiting for the next poll cycle.
+    Strategy: Maintain exactly 1 pending job so next job can start immediately
+    when current job completes. Only promotes if no pending jobs exist.
     """
     tracker = get_tracker()
     all_executions = tracker.get_executions(limit=1000)
 
-    # Count active (pending or running) executions
-    active_count = sum(
-        1 for e in all_executions if e.get("status") in ("pending", "running")
-    )
+    # Count pending jobs (not running, just waiting)
+    pending_count = sum(1 for e in all_executions if e.get("status") == "pending")
 
-    # Check if we have capacity
-    if active_count >= POLL_MAX_QUEUE_SIZE:
+    # Only promote if we have NO pending jobs (keep exactly 1 pending queued)
+    if pending_count > 0:
         return None
 
     # Get oldest discovered execution (by started_at)
@@ -81,7 +80,7 @@ def promote_next_discovered_to_pending():
     # Promote to pending
     tracker.update_status(next_exec["id"], "pending")
     LOG.info(
-        "Auto-promoted discovered → pending after job completion: %s",
+        "Auto-promoted discovered → pending: %s",
         next_exec.get("title", "Unknown"),
     )
 
@@ -245,6 +244,11 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                         job_id, status="running", started_at=event.timestamp.isoformat()
                     )
                     LOG.debug("Updated pending execution to running: %s", path)
+
+                    # When job starts, promote next discovered → pending
+                    promoted_event = promote_next_discovered_to_pending()
+                    if promoted_event:
+                        await _polling_queue.put(promoted_event)
                 else:
                     _ = tracker.start_execution(
                         job_id,
@@ -329,11 +333,6 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                         path,
                     )
 
-                # After job completion, promote next discovered→pending
-                # This creates continuous processing without waiting for poll
-                promoted_event = promote_next_discovered_to_pending()
-                if promoted_event:
-                    await _polling_queue.put(promoted_event)
             except Exception as e:
                 LOG.error(
                     "Error during manual processing of %s: %s", path, e, exc_info=True
@@ -347,10 +346,6 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     "Removed failed manual process request after retry: %s",
                     path,
                 )
-                # Promote next job even after exception
-                promoted_event = promote_next_discovered_to_pending()
-                if promoted_event:
-                    await _polling_queue.put(promoted_event)
             finally:
                 set_job_id(None)
 
@@ -645,6 +640,7 @@ async def main():
 
         requeued_count = 0
         skipped_whitelist_count = 0
+        first_discovered_promoted = False  # Track if we've promoted first discovered
 
         for execution in orphaned_executions:
             try:
@@ -689,11 +685,21 @@ async def main():
                         )
                     continue
 
-                # Promote discovered → pending for automatic processing
-                if execution.get("status") == "discovered":
+                # Promote ONLY the first discovered → pending (keep others discovered)
+                # This maintains visibility in UI and creates proper chaining
+                if (
+                    execution.get("status") == "discovered"
+                    and not first_discovered_promoted
+                ):
                     tracker.update_status(execution["id"], "pending")
+                    first_discovered_promoted = True
                     LOG.info(
-                        "Promoted orphaned discovered → pending: %s",
+                        "Promoted first orphaned discovered → pending: %s",
+                        execution.get("title", "Unknown"),
+                    )
+                elif execution.get("status") == "discovered":
+                    LOG.debug(
+                        "Keeping as discovered (will be promoted later): %s",
                         execution.get("title", "Unknown"),
                     )
 
@@ -884,6 +890,11 @@ async def main():
                         # Update to running when we actually start processing
                         tracker.update_status(exec_id, "running")
 
+                        # When job starts, promote next discovered → pending
+                        promoted_event = promote_next_discovered_to_pending()
+                        if promoted_event:
+                            await _polling_queue.put(promoted_event)
+
                         # Run pipeline in executor to not block event loop
                         loop = asyncio.get_event_loop()
                         result = await loop.run_in_executor(
@@ -952,12 +963,6 @@ async def main():
                         # after successful processing
                         state.clear_manual_process_request(event.path)
 
-                        # After job completion, promote next discovered→pending
-                        # This creates continuous processing without waiting for poll
-                        promoted_event = promote_next_discovered_to_pending()
-                        if promoted_event:
-                            await _polling_queue.put(promoted_event)
-
                     except RuntimeError as e:
                         LOG.error(
                             "Failed to process event '%s': %s", event_partial.title, e
@@ -966,10 +971,6 @@ async def main():
                             tracker.complete_execution(
                                 exec_id, success=False, elapsed_seconds=0, error=str(e)
                             )
-                        # Promote next job even after failure
-                        promoted_event = promote_next_discovered_to_pending()
-                        if promoted_event:
-                            await _polling_queue.put(promoted_event)
 
                     except Exception as e:
                         LOG.error(
@@ -982,10 +983,6 @@ async def main():
                             tracker.complete_execution(
                                 exec_id, success=False, elapsed_seconds=0, error=str(e)
                             )
-                        # Promote next job even after exception
-                        promoted_event = promote_next_discovered_to_pending()
-                        if promoted_event:
-                            await _polling_queue.put(promoted_event)
                     finally:
                         set_job_id(None)
 
