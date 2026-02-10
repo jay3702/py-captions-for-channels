@@ -38,6 +38,7 @@ from .whitelist import Whitelist
 from .database import get_db, init_db
 from .services.settings_service import SettingsService
 from .services.heartbeat_service import HeartbeatService
+from .shutdown_control import get_shutdown_controller
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
@@ -1154,4 +1155,72 @@ async def set_logging_verbosity(request: Request) -> dict:
 
         return {"verbosity": verbosity}
     except Exception as e:
+        return {"error": str(e)}
+
+
+# --- Shutdown Control ---
+
+
+@app.post("/api/shutdown/immediate")
+async def shutdown_immediate() -> dict:
+    """Request immediate shutdown (kill switch).
+
+    Stops all processing immediately and exits the application.
+    Use for emergency shutdown.
+    """
+    try:
+        shutdown_controller = get_shutdown_controller()
+        shutdown_controller.request_immediate_shutdown(initiated_by="web_api")
+        return {
+            "status": "shutdown_requested",
+            "type": "immediate",
+            "message": "Immediate shutdown initiated. Application will exit now.",
+        }
+    except Exception as e:
+        LOG.error("Error requesting immediate shutdown: %s", e, exc_info=True)
+        return {"error": str(e)}
+
+
+@app.post("/api/shutdown/graceful")
+async def shutdown_graceful() -> dict:
+    """Request graceful shutdown.
+
+    Waits for currently running job to complete, then exits the application.
+    No new jobs will be started after this is called.
+    """
+    try:
+        shutdown_controller = get_shutdown_controller()
+        shutdown_controller.request_graceful_shutdown(initiated_by="web_api")
+
+        # Get current execution status to inform the user
+        tracker = get_tracker()
+        all_executions = tracker.get_executions(limit=1000)
+        running = [e for e in all_executions if e.get("status") == "running"]
+
+        message = "Graceful shutdown initiated. "
+        if running:
+            current_job = running[0].get("title", "Unknown")
+            message += f"Will exit after completing: {current_job}"
+        else:
+            message += "No jobs currently running, will exit shortly."
+
+        return {
+            "status": "shutdown_requested",
+            "type": "graceful",
+            "message": message,
+            "current_running_jobs": len(running),
+        }
+    except Exception as e:
+        LOG.error("Error requesting graceful shutdown: %s", e, exc_info=True)
+        return {"error": str(e)}
+
+
+@app.get("/api/shutdown/status")
+async def shutdown_status() -> dict:
+    """Get current shutdown status."""
+    try:
+        shutdown_controller = get_shutdown_controller()
+        return shutdown_controller.get_state()
+    except Exception as e:
+        LOG.error("Error getting shutdown status: %s", e, exc_info=True)
         return {"error": str(e)}
