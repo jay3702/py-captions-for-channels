@@ -15,8 +15,9 @@ DB_URL = f"sqlite:///{DB_PATH}"
 # check_same_thread=False is safe because we use session-per-request pattern
 engine = create_engine(
     DB_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
     poolclass=StaticPool,  # Keep connection alive
+    pool_pre_ping=True,  # Test connection health before using
     echo=False,  # Set to True for SQL query logging
 )
 
