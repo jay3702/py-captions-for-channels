@@ -86,6 +86,23 @@ async def process_manual_process_queue(state, pipeline, api, parser):
         # Process items in queue
         for path in queue:
             _maybe_update_log_verbosity()
+
+            # Check queue capacity before processing
+            # Count currently running OR canceling executions
+            all_execs = tracker.get_executions(limit=100)
+            running_count = sum(
+                1 for e in all_execs if e.get("status") in ("running", "canceling")
+            )
+
+            if running_count >= POLL_MAX_QUEUE_SIZE:
+                LOG.info(
+                    "Queue full (%d/%d running), deferring manual process: %s",
+                    running_count,
+                    POLL_MAX_QUEUE_SIZE,
+                    path,
+                )
+                break  # Stop processing, will retry on next poll
+
             # Set job ID for this manual processing task
             job_id = build_manual_process_job_id(path)
             set_job_id(job_id)
