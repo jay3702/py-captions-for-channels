@@ -319,7 +319,7 @@ def cleanup_orphaned_processes():
         if killed_count > 0:
             LOG.info("Killed %d orphaned process(es)", killed_count)
         else:
-            LOG.debug("No orphaned processes found")
+            LOG.info("No orphaned processes found during startup cleanup")
     except Exception as e:
         LOG.warning("Failed to cleanup orphaned processes: %s", e)
 
