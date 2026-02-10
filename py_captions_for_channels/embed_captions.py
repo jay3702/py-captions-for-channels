@@ -231,6 +231,8 @@ def encode_av_only(mpg_orig, temp_av, log):
     cmd_nvenc = [
         "ffmpeg",
         "-y",
+        "-fps_mode",
+        "vfr",  # Preserve variable frame rate (critical for Chrome-captured content)
         "-i",
         mpg_orig,
         "-c:v",
@@ -259,6 +261,8 @@ def encode_av_only(mpg_orig, temp_av, log):
     cmd_cpu = [
         "ffmpeg",
         "-y",
+        "-fps_mode",
+        "vfr",  # Preserve variable frame rate (critical for Chrome-captured content)
         "-i",
         mpg_orig,
         "-c:v",
