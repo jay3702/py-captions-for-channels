@@ -104,6 +104,10 @@ class ExecutionService:
     def update_status(self, job_id: str, status: str) -> bool:
         """Update execution status.
 
+        When transitioning to 'running', also updates started_at to current time.
+        This ensures elapsed time is calculated from actual processing start,
+        not from initial discovery time.
+
         Args:
             job_id: Job identifier
             status: New status
@@ -114,6 +118,13 @@ class ExecutionService:
         execution = self.get_execution(job_id)
         if execution:
             execution.status = status
+            # Reset started_at when transitioning to running state
+            # This ensures elapsed time is calculated from actual processing start,
+            # not from discovery/pending time
+            if status == "running":
+                from datetime import datetime, timezone
+
+                execution.started_at = datetime.now(timezone.utc)
             try:
                 self.db.commit()
             except Exception as e:
