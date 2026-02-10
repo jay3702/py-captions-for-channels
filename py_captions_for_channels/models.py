@@ -61,6 +61,7 @@ class Execution(Base):
         String(50), nullable=False
     )  # discovered, pending, running, completed, failed, cancelled
     kind = Column(String(50), nullable=True)  # manual_process, polling, webhook
+    job_number = Column(Integer, nullable=True)  # Sequential job number (resets daily)
     started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime, nullable=True)
     success = Column(Boolean, nullable=True)

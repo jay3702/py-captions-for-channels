@@ -14,6 +14,7 @@ from .config import (
     PIPELINE_TIMEOUT,
 )
 from .progress_tracker import get_progress_tracker
+from .execution_tracker import get_tracker
 
 
 class PipelineResult:
@@ -176,6 +177,16 @@ class Pipeline:
         stdout_lines = []
         stderr_lines = []
 
+        # Get job number for progress display
+        job_number = None
+        try:
+            tracker = get_tracker()
+            execution = tracker.get_execution(job_id)
+            if execution and execution.get("job_number"):
+                job_number = execution.get("job_number")
+        except Exception:
+            pass  # If we can't get job number, just continue without it
+
         current_process_type = (
             "whisper"  # Start with whisper, switch to ffmpeg when detected
         )
@@ -205,24 +216,27 @@ class Pipeline:
                                 * 100,
                             )
                             speed = ffmpeg_progress.get("speed", 0)
+                            job_prefix = f"#{job_number} " if job_number else ""
                             progress_tracker.update_progress(
                                 job_id,
                                 "ffmpeg",
                                 percent,
                                 (
-                                    f"Encoding... {speed:.1f}x"
+                                    f"{job_prefix}Encoding... {speed:.1f}x"
                                     if speed > 0
-                                    else "Encoding..."
+                                    else f"{job_prefix}Encoding..."
                                 ),
                                 ffmpeg_progress,
                             )
                         else:
                             # Don't know duration, just show time processed
+                            job_prefix = f"#{job_number} " if job_number else ""
+                            time_sec = ffmpeg_progress["time_seconds"]
                             progress_tracker.update_progress(
                                 job_id,
                                 "ffmpeg",
                                 0,
-                                f"{ffmpeg_progress['time_seconds']:.1f}s processed",
+                                f"{job_prefix}{time_sec:.1f}s processed",
                                 ffmpeg_progress,
                             )
 
@@ -232,13 +246,14 @@ class Pipeline:
                     if whisper_time is not None:
                         current_process_type = "whisper"
                         last_whisper_time = whisper_time
+                        job_prefix = f"#{job_number} " if job_number else ""
                         if input_duration > 0:
                             percent = min(100.0, (whisper_time / input_duration) * 100)
                             progress_tracker.update_progress(
                                 job_id,
                                 "whisper",
                                 percent,
-                                f"Transcribing... {whisper_time:.1f}s",
+                                f"{job_prefix}Transcribing... {whisper_time:.1f}s",
                                 {"time_seconds": whisper_time},
                             )
                         else:
@@ -246,7 +261,7 @@ class Pipeline:
                                 job_id,
                                 "whisper",
                                 0,
-                                f"{whisper_time:.1f}s transcribed",
+                                f"{job_prefix}{whisper_time:.1f}s transcribed",
                                 {"time_seconds": whisper_time},
                             )
 

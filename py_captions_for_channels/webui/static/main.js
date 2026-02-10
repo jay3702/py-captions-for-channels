@@ -161,10 +161,12 @@ async function fetchStatus() {
     const cancelHtml = (exec.status === 'running' && !exec.cancel_requested)
       ? `<button class="exec-cancel" data-exec-id="${encodeURIComponent(exec.id)}" onclick="cancelExecutionFromEl(this, event)">Cancel</button>`
       : '';
+    const jobNumberHtml = exec.job_number ? `<span class="exec-job-number">#${exec.job_number}</span>` : '';
   
     return `
       <li class="exec-item ${statusClass}" data-exec-id="${encodeURIComponent(exec.id)}" onclick="showExecutionDetailFromEl(this)">
         <span class="exec-status">${statusIcon}</span>
+        ${jobNumberHtml}
         <span class="exec-title">${escapeHtml(exec.title)}</span>
         ${tagHtml}
         <span class="exec-time">${startTime}</span>

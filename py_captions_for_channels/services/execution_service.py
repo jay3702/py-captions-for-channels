@@ -28,6 +28,7 @@ class ExecutionService:
         status: str = "running",
         kind: str = "normal",
         started_at: datetime = None,
+        job_number: int = None,
     ) -> Execution:
         """Create a new execution record.
 
@@ -38,6 +39,7 @@ class ExecutionService:
             status: Initial status (pending, running, completed)
             kind: Execution type (normal, manual_process, polling, webhook)
             started_at: Start timestamp (defaults to now)
+            job_number: Sequential job number (optional)
 
         Returns:
             Created Execution object
@@ -53,6 +55,7 @@ class ExecutionService:
             path=path,
             status=status,
             kind=kind,
+            job_number=job_number,
             started_at=started_at,
             cancel_requested=False,
         )
@@ -541,6 +544,7 @@ class ExecutionService:
             "path": execution.path,
             "status": execution.status,
             "kind": execution.kind,
+            "job_number": execution.job_number,
             "cancel_requested": execution.cancel_requested,
             "started_at": (
                 execution.started_at.isoformat() if execution.started_at else None

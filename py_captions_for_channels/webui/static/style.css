@@ -380,6 +380,14 @@ h1 {
     flex-shrink: 0;
   }
 
+  .exec-job-number {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 13px;
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
   .exec-title {
     flex: 1;
     font-weight: 500;
