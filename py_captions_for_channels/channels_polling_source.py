@@ -192,6 +192,29 @@ class ChannelsPollingSource:
                             exec.get("title", "Unknown"),
                         )
 
+                        # Yield the promoted execution for processing
+                        # Extract start_time from job_id
+                        # format: "Title @ YYYY-MM-DD HH:MM:SS"
+                        job_id = exec.get("id", "")
+                        if " @ " in job_id:
+                            try:
+                                _, timestamp_str = job_id.rsplit(" @ ", 1)
+                                start_time = datetime.strptime(
+                                    timestamp_str, "%Y-%m-%d %H:%M:%S"
+                                ).replace(tzinfo=timezone.utc)
+                                yield PartialProcessingEvent(
+                                    timestamp=start_time,
+                                    title=exec.get("title", "Unknown"),
+                                    start_time=start_time,
+                                    path=exec.get("path"),
+                                )
+                            except (ValueError, AttributeError) as e:
+                                LOG.warning(
+                                    "Failed to parse start_time from job_id '%s': %s",
+                                    job_id,
+                                    e,
+                                )
+
                     if promoted_count > 0:
                         LOG.info(
                             "Promoted %d discovered execution(s) to pending",
