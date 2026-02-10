@@ -16,6 +16,55 @@ from pathlib import Path
 from py_captions_for_channels.logging.structured_logger import get_logger
 
 
+def detect_variable_frame_rate(video_path, log):
+    """
+    Detect if video uses variable frame rate (VFR).
+    Returns True for VFR (Chrome capture), False for CFR (broadcast).
+
+    Detection strategy:
+    - Check avg_frame_rate: 0/0 indicates VFR
+    - Also check if r_frame_rate looks like timebase (90000/1) vs fps
+    """
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=avg_frame_rate,r_frame_rate",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(video_path),
+    ]
+    try:
+        result = subprocess.check_output(cmd, text=True).strip().split("\n")
+        if len(result) >= 2:
+            r_frame_rate = result[0].strip()
+            avg_frame_rate = result[1].strip()
+
+            # avg_frame_rate of 0/0 is definitive VFR indicator
+            if avg_frame_rate == "0/0":
+                log.info(
+                    f"Detected VFR content "
+                    f"(avg_frame_rate=0/0, r_frame_rate={r_frame_rate})"
+                )
+                return True
+
+            # Check for high frame rate like 90000/1 (timebase, not fps)
+            if r_frame_rate.startswith("90000/"):
+                log.info(f"Detected potential VFR (r_frame_rate={r_frame_rate})")
+                return True
+
+            log.info(
+                f"Detected CFR content " f"(avg={avg_frame_rate}, r={r_frame_rate})"
+            )
+            return False
+    except subprocess.CalledProcessError as e:
+        log.warning(f"Failed to probe frame rate, assuming CFR: {e}")
+        return False
+
+
 def probe_muxed_durations(muxed_path, log):
     """Return (video_duration, audio_duration, subtitle_duration) for muxed file."""
 
@@ -227,60 +276,71 @@ def validate_and_trim_srt(srt_path, max_end_time, log):
 
 def encode_av_only(mpg_orig, temp_av, log):
     """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs."""
-    # Try NVENC first
-    cmd_nvenc = [
-        "ffmpeg",
-        "-y",
-        "-fps_mode",
-        "vfr",  # Preserve variable frame rate (critical for Chrome-captured content)
-        "-i",
-        mpg_orig,
-        "-c:v",
-        "h264_nvenc",
-        "-preset",
-        "fast",
-        "-c:a",
-        "copy",
-        "-analyzeduration",
-        "2147483647",
-        "-probesize",
-        "2147483647",
-        "-map",
-        "0:v",
-        "-map",
-        "0:a?",
-        temp_av,
-    ]
+    # Detect if content is VFR (Chrome capture) or CFR (broadcast TV)
+    is_vfr = detect_variable_frame_rate(mpg_orig, log)
+
+    # Build base command for NVENC
+    cmd_nvenc = ["ffmpeg", "-y"]
+
+    # Add VFR handling if needed (critical for Chrome-captured content)
+    if is_vfr:
+        cmd_nvenc.extend(["-fps_mode", "vfr"])
+
+    cmd_nvenc.extend(
+        [
+            "-i",
+            mpg_orig,
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            "fast",
+            "-c:a",
+            "copy",
+            "-analyzeduration",
+            "2147483647",
+            "-probesize",
+            "2147483647",
+            "-map",
+            "0:v",
+            "-map",
+            "0:a?",
+            temp_av,
+        ]
+    )
     log.info(f"Trying NVENC encode: {' '.join(cmd_nvenc)}")
     try:
         subprocess.check_call(cmd_nvenc)
         return
     except subprocess.CalledProcessError:
         log.warning("NVENC failed, falling back to CPU (libx264)")
-    # Fallback to CPU
-    cmd_cpu = [
-        "ffmpeg",
-        "-y",
-        "-fps_mode",
-        "vfr",  # Preserve variable frame rate (critical for Chrome-captured content)
-        "-i",
-        mpg_orig,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "fast",
-        "-c:a",
-        "copy",
-        "-analyzeduration",
-        "2147483647",
-        "-probesize",
-        "2147483647",
-        "-map",
-        "0:v",
-        "-map",
-        "0:a?",
-        temp_av,
-    ]
+
+    # Fallback to CPU with same VFR handling
+    cmd_cpu = ["ffmpeg", "-y"]
+
+    if is_vfr:
+        cmd_cpu.extend(["-fps_mode", "vfr"])
+
+    cmd_cpu.extend(
+        [
+            "-i",
+            mpg_orig,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-c:a",
+            "copy",
+            "-analyzeduration",
+            "2147483647",
+            "-probesize",
+            "2147483647",
+            "-map",
+            "0:v",
+            "-map",
+            "0:a?",
+            temp_av,
+        ]
+    )
     log.info(f"Trying CPU encode: {' '.join(cmd_cpu)}")
     try:
         subprocess.check_call(cmd_cpu)
