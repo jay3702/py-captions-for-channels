@@ -20,6 +20,7 @@ from .health_check import run_health_checks
 from .execution_tracker import get_tracker, build_manual_process_job_id
 from .database import get_db, init_db
 from .services.heartbeat_service import HeartbeatService
+from .shutdown_control import get_shutdown_controller
 from .config import (
     CHANNELWATCH_URL,
     CHANNELS_API_URL,
@@ -824,9 +825,15 @@ async def main():
         # Get database session for heartbeat
         db = next(get_db())
         heartbeat_service = HeartbeatService(db)
+        shutdown_controller = get_shutdown_controller()
 
         try:
             while True:
+                # Check for shutdown request
+                if shutdown_controller.is_shutdown_requested():
+                    LOG.info("Shutdown requested, stopping manual process loop")
+                    break
+
                 await asyncio.sleep(MANUAL_PROCESS_POLL_SECONDS)
                 LOG.debug("Manual process loop checking queue...")
                 # Update heartbeat in database
@@ -852,12 +859,29 @@ async def main():
     # Background loop to process polling queue serially
     async def _polling_processor_loop():
         LOG.info("Starting polling processor background loop")
+        shutdown_controller = get_shutdown_controller()
         try:
             while True:
+                # Check for immediate shutdown (emergency stop)
+                if shutdown_controller.is_immediate_shutdown():
+                    LOG.warning("Immediate shutdown requested, stopping processor loop")
+                    break
+
                 # Get next item from queue (blocks until available)
                 event_partial = await _polling_queue.get()
 
                 try:
+                    # Check for graceful shutdown (finish current job only)
+                    if shutdown_controller.is_graceful_shutdown():
+                        LOG.info(
+                            "Graceful shutdown requested, skipping new job: %s",
+                            event_partial.title,
+                        )
+                        # Put the event back on the queue for next restart
+                        # (it will be orphaned and picked up on next startup)
+                        _polling_queue.task_done()
+                        continue
+
                     _maybe_update_log_verbosity()
 
                     # Set job ID for this processing task
@@ -1008,8 +1032,23 @@ async def main():
     # Track last manual queue check
     last_manual_check = datetime.now()
 
+    # Get shutdown controller for main loop
+    shutdown_controller = get_shutdown_controller()
+
     # Process events as they arrive - add to queue for serial processing
     async for event_partial in source.events():
+        # Check for shutdown request (both graceful and immediate)
+        if shutdown_controller.is_shutdown_requested():
+            LOG.warning(
+                "Shutdown requested (%s), stopping event processing",
+                (
+                    "graceful"
+                    if shutdown_controller.is_graceful_shutdown()
+                    else "immediate"
+                ),
+            )
+            break
+
         # Also check manual queue periodically (every 5 seconds)
         now = datetime.now()
         if (now - last_manual_check).total_seconds() > 5:
@@ -1106,5 +1145,34 @@ async def main():
 
         # Add to queue for processing (non-blocking)
         await _polling_queue.put(event_partial)
+
+    # Event loop ended - cleanup and exit
+    LOG.info("=" * 80)
+    if shutdown_controller.is_shutdown_requested():
+        shutdown_type = (
+            "graceful" if shutdown_controller.is_graceful_shutdown() else "immediate"
+        )
+        LOG.warning("Shutdown requested (%s) - exiting application", shutdown_type)
+
+        # For graceful shutdown, wait for current job to complete
+        if shutdown_controller.is_graceful_shutdown():
+            tracker = get_tracker()
+            all_executions = tracker.get_executions(limit=1000)
+            running = [e for e in all_executions if e.get("status") == "running"]
+            if running:
+                LOG.info(
+                    "Waiting for current job to complete: %s",
+                    running[0].get("title", "Unknown"),
+                )
+                # Wait for job to finish (check every 2 seconds)
+                while running:
+                    await asyncio.sleep(2)
+                    all_executions = tracker.get_executions(limit=1000)
+                    running = [
+                        e for e in all_executions if e.get("status") == "running"
+                    ]
+                LOG.info("Current job completed, proceeding with shutdown")
+    else:
+        LOG.info("Event loop ended normally")
 
     manual_process_task.cancel()
