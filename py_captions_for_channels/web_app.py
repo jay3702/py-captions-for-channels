@@ -571,6 +571,10 @@ async def clear_list_executions(cancel_pending: bool = False) -> dict:
             path = exec_data.get("path", "")
             started_at = exec_data.get("started_at")
 
+            # NEVER remove running executions - they are actively processing
+            if status == "running":
+                continue
+
             # Remove failed executions
             if status == "completed" and exec_data.get("success") is False:
                 if job_id and tracker.remove_execution(job_id):
@@ -610,8 +614,9 @@ async def clear_list_executions(cancel_pending: bool = False) -> dict:
                     except Exception:
                         is_stale = True
 
-                # Remove invalid pending (not in queue OR stale)
-                if not in_queue or is_stale:
+                # Remove invalid pending (not in queue AND stale)
+                # Recent pending items might be legitimately processing
+                if not in_queue and is_stale:
                     if job_id and tracker.remove_execution(job_id):
                         removed_ids.append(job_id)
                 # Collect legitimate pending that need confirmation
