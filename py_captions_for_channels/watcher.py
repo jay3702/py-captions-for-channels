@@ -7,6 +7,8 @@ from typing import Optional
 
 import shutil
 import os
+import subprocess
+import signal
 
 from .logging_config import set_job_id
 from .channels_api import ChannelsAPI
@@ -281,6 +283,47 @@ def _maybe_update_log_verbosity() -> None:
         LOG.warning("Failed to update log verbosity: %s", e)
 
 
+def cleanup_orphaned_processes():
+    """Kill any existing whisper/caption processes from previous runs."""
+    try:
+        # Find all python processes running embed_captions or whisper
+        result = subprocess.run(
+            ["ps", "aux"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+        killed_count = 0
+        for line in result.stdout.splitlines():
+            if "embed_captions" in line or "/whisper " in line or "whisper/" in line:
+                # Skip the grep process itself and this script
+                if "ps aux" in line or "cleanup_orphaned" in line:
+                    continue
+
+                # Extract PID (second column)
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        pid = int(parts[1])
+                        LOG.info(
+                            "Killing orphaned process (PID %d): %s",
+                            pid,
+                            " ".join(parts[10:15]),
+                        )
+                        os.kill(pid, signal.SIGTERM)
+                        killed_count += 1
+                    except (ValueError, ProcessLookupError, PermissionError) as e:
+                        LOG.debug("Failed to kill PID %s: %s", parts[1], e)
+
+        if killed_count > 0:
+            LOG.info("Killed %d orphaned process(es)", killed_count)
+        else:
+            LOG.debug("No orphaned processes found")
+    except Exception as e:
+        LOG.warning("Failed to cleanup orphaned processes: %s", e)
+
+
 async def main():
     """Main watcher loop - receives events and processes recordings."""
 
@@ -291,6 +334,9 @@ async def main():
     # Initialize database tables
     init_db()
     LOG.info("Database initialized")
+
+    # Kill any orphaned processes from previous runs
+    cleanup_orphaned_processes()
 
     # Initialize API first (needed for health checks)
     api = ChannelsAPI(CHANNELS_API_URL)
