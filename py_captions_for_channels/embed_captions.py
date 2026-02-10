@@ -280,20 +280,23 @@ def encode_av_only(mpg_orig, temp_av, log):
     is_vfr = detect_variable_frame_rate(mpg_orig, log)
 
     # Build base command for NVENC
-    cmd_nvenc = ["ffmpeg", "-y"]
+    cmd_nvenc = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        mpg_orig,
+        "-c:v",
+        "h264_nvenc",
+        "-preset",
+        "fast",
+    ]
 
     # Add VFR handling if needed (critical for Chrome-captured content)
     if is_vfr:
-        cmd_nvenc.extend(["-fps_mode", "vfr"])
+        cmd_nvenc.extend(["-vsync", "vfr"])
 
     cmd_nvenc.extend(
         [
-            "-i",
-            mpg_orig,
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "fast",
             "-c:a",
             "copy",
             "-analyzeduration",
@@ -315,19 +318,22 @@ def encode_av_only(mpg_orig, temp_av, log):
         log.warning("NVENC failed, falling back to CPU (libx264)")
 
     # Fallback to CPU with same VFR handling
-    cmd_cpu = ["ffmpeg", "-y"]
+    cmd_cpu = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        mpg_orig,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+    ]
 
     if is_vfr:
-        cmd_cpu.extend(["-fps_mode", "vfr"])
+        cmd_cpu.extend(["-vsync", "vfr"])
 
     cmd_cpu.extend(
         [
-            "-i",
-            mpg_orig,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
             "-c:a",
             "copy",
             "-analyzeduration",
