@@ -619,6 +619,11 @@ async def main():
         e for e in all_executions if e.get("status") in ("pending", "discovered")
     ]
 
+    # Sort orphaned executions by started_at (oldest first) to maintain FIFO queue order
+    orphaned_executions.sort(
+        key=lambda e: e.get("started_at") or datetime.min.replace(tzinfo=timezone.utc)
+    )
+
     if orphaned_executions:
         LOG.info(
             "Found %d orphaned execution(s) from previous run, "
