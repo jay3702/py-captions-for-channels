@@ -371,11 +371,21 @@ async def status() -> dict:
 
                     # Only include recent progress (< 30 seconds old)
                     if age_seconds < 30:
+                        # Look up job number from execution
+                        job_number = None
+                        try:
+                            exec_data = tracker.get_execution(job_id)
+                            if exec_data:
+                                job_number = exec_data.get("job_number")
+                        except Exception:
+                            pass  # If lookup fails, just omit job_number
+
                         progress_data[job_id] = {
                             "process_type": prog.get("process_type", "unknown"),
                             "percent": prog.get("percent", 0),
                             "message": prog.get("message", ""),
                             "age_seconds": age_seconds,
+                            "job_number": job_number,
                         }
         except Exception as e:
             LOG.debug("Error reading progress: %s", e)

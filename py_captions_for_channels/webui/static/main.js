@@ -44,12 +44,13 @@ async function fetchStatus() {
             const progress = Object.values(data.progress).find(p => p.process_type === key);
             if (progress) {
               const percent = Math.round(progress.percent);
+              const jobPrefix = progress.job_number ? `#${progress.job_number} ` : '';
               progressHtml = `
                 <div class="service-progress">
                   <div class="progress-bar-compact">
                     <div class="progress-fill" style="width: ${progress.percent}%"></div>
                   </div>
-                  <span class="progress-text">${percent}%</span>
+                  <span class="progress-text">${jobPrefix}${percent}%</span>
                 </div>
               `;
             }
