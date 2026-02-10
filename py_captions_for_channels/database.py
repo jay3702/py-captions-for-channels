@@ -65,3 +65,33 @@ def init_db():
 
     # Create tables
     Base.metadata.create_all(bind=engine)
+
+    # Apply schema migrations for existing databases
+    _apply_migrations()
+
+
+def _apply_migrations():
+    """Apply schema migrations to existing database."""
+    import logging
+    from sqlalchemy import inspect, text
+
+    LOG = logging.getLogger(__name__)
+
+    try:
+        inspector = inspect(engine)
+
+        # Migration: Add job_number column to executions table
+        if "executions" in inspector.get_table_names():
+            columns = [col["name"] for col in inspector.get_columns("executions")]
+            if "job_number" not in columns:
+                LOG.info("Adding job_number column to executions table")
+                with engine.connect() as conn:
+                    conn.execute(
+                        text("ALTER TABLE executions ADD COLUMN job_number INTEGER")
+                    )
+                    conn.commit()
+                LOG.info("Migration complete: job_number column added")
+
+    except Exception as e:
+        LOG.warning(f"Error applying migrations: {e}")
+        # Don't fail startup if migration fails - column might already exist
