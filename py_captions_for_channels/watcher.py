@@ -51,6 +51,67 @@ LOG = get_logger("watcher")
 _polling_queue = asyncio.Queue()
 
 
+def promote_next_discovered_to_pending():
+    """
+    Promote the next discovered execution to pending if queue has capacity.
+    Returns PartialProcessingEvent if promoted, None otherwise.
+
+    This ensures continuous processing without waiting for the next poll cycle.
+    """
+    tracker = get_tracker()
+    all_executions = tracker.get_executions(limit=1000)
+
+    # Count active (pending or running) executions
+    active_count = sum(
+        1 for e in all_executions if e.get("status") in ("pending", "running")
+    )
+
+    # Check if we have capacity
+    if active_count >= POLL_MAX_QUEUE_SIZE:
+        return None
+
+    # Get oldest discovered execution (by started_at)
+    discovered = [e for e in all_executions if e.get("status") == "discovered"]
+    if not discovered:
+        return None
+
+    discovered.sort(key=lambda x: x.get("started_at", ""))
+    next_exec = discovered[0]
+
+    # Promote to pending
+    tracker.update_status(next_exec["id"], "pending")
+    LOG.info(
+        "Auto-promoted discovered → pending after job completion: %s",
+        next_exec.get("title", "Unknown"),
+    )
+
+    # Create PartialProcessingEvent from execution data
+    # Extract start_time from job_id format: "Title @ YYYY-MM-DD HH:MM:SS"
+    from .channels_polling_source import PartialProcessingEvent
+
+    job_id = next_exec.get("id", "")
+    start_time = None
+
+    if " @ " in job_id:
+        try:
+            _, timestamp_str = job_id.rsplit(" @ ", 1)
+            start_time = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=timezone.utc
+            )
+        except (ValueError, AttributeError) as e:
+            LOG.warning("Failed to parse start_time from job_id '%s': %s", job_id, e)
+            start_time = datetime.now(timezone.utc)
+    else:
+        start_time = datetime.now(timezone.utc)
+
+    return PartialProcessingEvent(
+        timestamp=start_time,
+        title=next_exec.get("title", "Unknown"),
+        start_time=start_time,
+        path=next_exec.get("path"),
+    )
+
+
 async def process_manual_process_queue(state, pipeline, api, parser):
     """Check and process any manual process requests in the queue."""
     state._load()
@@ -267,6 +328,12 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                         "Removed failed manual process request after retry: %s",
                         path,
                     )
+
+                # After job completion, promote next discovered→pending
+                # This creates continuous processing without waiting for poll
+                promoted_event = promote_next_discovered_to_pending()
+                if promoted_event:
+                    await _polling_queue.put(promoted_event)
             except Exception as e:
                 LOG.error(
                     "Error during manual processing of %s: %s", path, e, exc_info=True
@@ -280,6 +347,10 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     "Removed failed manual process request after retry: %s",
                     path,
                 )
+                # Promote next job even after exception
+                promoted_event = promote_next_discovered_to_pending()
+                if promoted_event:
+                    await _polling_queue.put(promoted_event)
             finally:
                 set_job_id(None)
 
@@ -880,6 +951,13 @@ async def main():
                         # Clear any manual process request for this path
                         # after successful processing
                         state.clear_manual_process_request(event.path)
+
+                        # After job completion, promote next discovered→pending
+                        # This creates continuous processing without waiting for poll
+                        promoted_event = promote_next_discovered_to_pending()
+                        if promoted_event:
+                            await _polling_queue.put(promoted_event)
+
                     except RuntimeError as e:
                         LOG.error(
                             "Failed to process event '%s': %s", event_partial.title, e
@@ -888,6 +966,11 @@ async def main():
                             tracker.complete_execution(
                                 exec_id, success=False, elapsed_seconds=0, error=str(e)
                             )
+                        # Promote next job even after failure
+                        promoted_event = promote_next_discovered_to_pending()
+                        if promoted_event:
+                            await _polling_queue.put(promoted_event)
+
                     except Exception as e:
                         LOG.error(
                             "Unexpected error processing '%s': %s",
@@ -899,6 +982,10 @@ async def main():
                             tracker.complete_execution(
                                 exec_id, success=False, elapsed_seconds=0, error=str(e)
                             )
+                        # Promote next job even after exception
+                        promoted_event = promote_next_discovered_to_pending()
+                        if promoted_event:
+                            await _polling_queue.put(promoted_event)
                     finally:
                         set_job_id(None)
 
