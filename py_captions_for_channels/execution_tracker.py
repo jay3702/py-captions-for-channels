@@ -159,18 +159,26 @@ class ExecutionTracker:
             with self._get_service() as service:
                 exec_id = job_id
 
-                # Handle reprocessing: If same job_id exists with
-                # completed/failed status, create a new unique ID by
-                # appending timestamp
+                # Check if execution already exists
                 existing = service.get_execution(job_id)
-                if existing and existing.status in ("completed", "failed"):
-                    now_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-                    exec_id = f"{job_id}::{now_ts}"
-                    LOG.info(
-                        "Reprocessing existing execution - new ID: %s -> %s",
-                        job_id,
-                        exec_id,
-                    )
+                if existing:
+                    # If completed/failed, create new unique ID for reprocessing
+                    if existing.status in ("completed", "failed"):
+                        now_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+                        exec_id = f"{job_id}::{now_ts}"
+                        LOG.info(
+                            "Reprocessing existing execution - new ID: %s -> %s",
+                            job_id,
+                            exec_id,
+                        )
+                    else:
+                        # Execution already exists with active status, don't recreate
+                        LOG.debug(
+                            "Execution already exists: %s [%s]",
+                            job_id,
+                            existing.status,
+                        )
+                        return job_id
 
                 # Increment execution counter for unique tracking
                 self.execution_counter += 1
@@ -212,7 +220,13 @@ class ExecutionTracker:
         with self.lock:
             with self._get_service() as service:
                 if service.update_status(job_id, status):
-                    LOG.debug("Updated execution status: %s -> %s", job_id, status)
+                    LOG.info("Updated execution status: %s -> %s", job_id, status)
+                else:
+                    LOG.warning(
+                        "Failed to update execution status (not found): %s -> %s",
+                        job_id,
+                        status,
+                    )
 
     def update_execution(self, job_id: str, **kwargs):
         """Update execution fields.
