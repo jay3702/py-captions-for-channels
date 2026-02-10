@@ -238,6 +238,11 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                         path,
                         result.returncode,
                     )
+                    # Log stderr output for debugging
+                    if result.stderr:
+                        LOG.error("stderr output: %s", result.stderr.strip())
+                    if result.stdout:
+                        LOG.info("stdout output: %s", result.stdout.strip())
                     state.clear_manual_process_request(path)
                     LOG.warning(
                         "Removed failed manual process request after retry: %s",
@@ -798,6 +803,12 @@ async def main():
 
                         if result.success:
                             pipeline._log_job_statistics(result, exec_id, LOG)
+                        else:
+                            # Log stderr output for failed jobs
+                            if result.stderr:
+                                LOG.error("stderr output: %s", result.stderr.strip())
+                            if result.stdout:
+                                LOG.info("stdout output: %s", result.stdout.strip())
 
                         # Only update state if not a dry-run
                         if not (hasattr(result, "is_dry_run") and result.is_dry_run):
