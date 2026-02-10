@@ -5,19 +5,20 @@ from pathlib import Path
 from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 
 # Database file location
 DB_PATH = os.getenv("DB_PATH", "/app/data/py_captions.db")
 DB_URL = f"sqlite:///{DB_PATH}"
 
-# Create engine with connection pooling for SQLite
-# check_same_thread=False is safe because we use session-per-request pattern
+# Create engine with NullPool for SQLite
+# NullPool creates a new connection for each session, avoiding
+# "another row available" errors from shared connections
+# check_same_thread=False is safe because each session gets its own connection
 engine = create_engine(
     DB_URL,
     connect_args={"check_same_thread": False, "timeout": 30},
-    poolclass=StaticPool,  # Keep connection alive
-    pool_pre_ping=True,  # Test connection health before using
+    poolclass=NullPool,  # No pooling - each session gets its own connection
     echo=False,  # Set to True for SQL query logging
 )
 
