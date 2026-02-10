@@ -298,7 +298,9 @@ def encode_av_only(mpg_orig, temp_av, log):
     cmd_nvenc.extend(
         [
             "-c:a",
-            "copy",
+            "aac",
+            "-b:a",
+            "256k",
             "-analyzeduration",
             "2147483647",
             "-probesize",
@@ -335,7 +337,9 @@ def encode_av_only(mpg_orig, temp_av, log):
     cmd_cpu.extend(
         [
             "-c:a",
-            "copy",
+            "aac",
+            "-b:a",
+            "256k",
             "-analyzeduration",
             "2147483647",
             "-probesize",
