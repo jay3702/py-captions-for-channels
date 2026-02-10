@@ -30,7 +30,59 @@ Add shutdown buttons to the Settings interface for graceful and immediate shutdo
 
 ## Medium Priority
 
-(Add future feature requests here)
+### AI-Assisted Whitelist Generation
+Simplify whitelist creation by letting users select desired/undesired recordings, then using AI to generate optimal regex patterns.
+
+**User Workflow:**
+1. Browse recordings in manual processing interface
+2. Mark recordings as "Want" (✓) or "Don't Want" (✗)
+3. Click "Generate Whitelist" button
+4. AI analyzes titles and creates concise regex patterns
+5. Preview generated whitelist with explanations
+6. Accept/edit/refine the generated rules
+
+**AI Analysis:**
+- **Input**: List of desired titles vs undesired titles
+  ```
+  Desired: ["CNN News Central", "NBC Bay Area News at 11", "The Daily Show", ...]
+  Undesired: ["Infomercial", "Paid Programming", "Shopping", ...]
+  ```
+
+- **AI Task**: Generate minimal regex patterns that:
+  - Match all desired titles
+  - Exclude all undesired titles
+  - Group similar shows efficiently (e.g., "News" catches many)
+  - Use appropriate specificity (broad vs narrow patterns)
+
+- **Output**: Whitelist rules with confidence scores
+  ```
+  News                    # Matches 15 desired, 0 undesired (confidence: 1.0)
+  ^CNN                    # Matches 8 desired, 0 undesired (confidence: 1.0)
+  The Daily Show          # Exact match (confidence: 1.0)
+  60 Minutes              # Exact match (confidence: 1.0)
+  ```
+
+**Implementation Details:**
+- Add selection checkboxes to manual processing UI
+- Store user preferences (desired/undesired flags)
+- AI prompt: "Given these desired/undesired titles, generate minimal whitelist rules"
+- Validate generated patterns against both lists
+- Show coverage stats (X of Y titles matched)
+- Allow iterative refinement (add more examples, regenerate)
+
+**Benefits:**
+- No regex knowledge required from users
+- Optimal pattern efficiency (minimal rules, maximum coverage)
+- Catches common patterns users might miss
+- Safe validation before applying
+
+**Advanced Features (future):**
+- Learn from historical processing (auto-suggest based on completed jobs)
+- Time-based patterns (e.g., "News;Friday;21:00")
+- Channel-specific rules
+- Negative patterns (explicit exclusions)
+
+(Add other future feature requests here)
 
 ## Low Priority
 
