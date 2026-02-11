@@ -14,6 +14,7 @@ from .config import (
     CHANNELS_API_URL,
     LOG_FILE,
     STATE_FILE,
+    LOCAL_TEST_DIR,
     USE_MOCK,
 )
 
@@ -173,13 +174,14 @@ async def run_health_checks(api: ChannelsAPI) -> bool:
         LOG.warning("Some checks failed - service may not work correctly")
 
     # Critical checks: Channels DVR API must be reachable (unless using mock)
-    if not USE_MOCK:
+    # or local test directory mode.
+    if not USE_MOCK and not LOCAL_TEST_DIR:
         critical_checks = [result for name, result in checks if "Channels DVR" in name]
         if critical_checks and not critical_checks[0]:
             LOG.error("Critical: Channels DVR API is unreachable. Aborting startup.")
             return False
     else:
-        LOG.info("Using mock source - skipping Channels DVR API check")
+        LOG.info("Using local/mock source - skipping Channels DVR API check")
 
     LOG.info("=" * 60)
     return True
