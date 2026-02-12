@@ -201,6 +201,16 @@ function compareActiveExecutions(a, b) {
 }
 
 function compareBacklogExecutions(a, b) {
+  const backlogRank = {
+    discovered: 0,
+  };
+
+  const rankA = backlogRank[a.status] ?? 99;
+  const rankB = backlogRank[b.status] ?? 99;
+  if (rankA !== rankB) {
+    return rankA - rankB;
+  }
+
   const jobNumberA = Number.isFinite(a.job_number) ? a.job_number : -1;
   const jobNumberB = Number.isFinite(b.job_number) ? b.job_number : -1;
   if (jobNumberA !== jobNumberB) {
