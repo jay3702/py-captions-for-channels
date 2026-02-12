@@ -492,6 +492,7 @@ class Pipeline:
                 options = [
                     f"--input {shell_quote(event.path)}",
                     f"--srt {shell_quote(srt_path)}",
+                    f"--job-id {shell_quote(job_id)}",
                     f"--model {shell_quote(whisper_model)}" if whisper_model else "",
                     (
                         f"--verbosity {shell_quote(log_verbosity)}"

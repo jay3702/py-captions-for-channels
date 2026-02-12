@@ -14,6 +14,9 @@ import subprocess
 
 from pathlib import Path
 from py_captions_for_channels.logging.structured_logger import get_logger
+from py_captions_for_channels.database import get_db
+from py_captions_for_channels.progress_tracker import get_progress_tracker
+from py_captions_for_channels.services.execution_service import ExecutionService
 
 
 def detect_variable_frame_rate(video_path, log):
@@ -63,6 +66,66 @@ def detect_variable_frame_rate(video_path, log):
     except subprocess.CalledProcessError as e:
         log.warning(f"Failed to probe frame rate, assuming CFR: {e}")
         return False
+
+
+class StepTracker:
+    """Record step timing to the database if available."""
+
+    def __init__(self, execution_id, log):
+        self.execution_id = execution_id
+        self.log = log
+
+    def _with_service(self, fn):
+        db_gen = get_db()
+        try:
+            db = next(db_gen)
+            service = ExecutionService(db)
+            return fn(service)
+        except Exception as exc:
+            self.log.debug("Step tracking skipped: %s", exc)
+            return None
+        finally:
+            try:
+                next(db_gen)
+            except Exception:
+                pass
+
+    def start(self, step_name, input_path=None, output_path=None):
+        def _run(service):
+            updated = service.update_step_status(
+                self.execution_id, step_name, "running"
+            )
+            if not updated:
+                service.add_step(
+                    self.execution_id,
+                    step_name,
+                    status="running",
+                    input_path=input_path,
+                    output_path=output_path,
+                )
+
+        self._with_service(_run)
+
+    def finish(self, step_name, status="completed"):
+        def _run(service):
+            updated = service.update_step_status(self.execution_id, step_name, status)
+            if not updated:
+                service.add_step(
+                    self.execution_id,
+                    step_name,
+                    status=status,
+                )
+
+        self._with_service(_run)
+
+
+def update_misc_progress(job_id, percent, message):
+    """Update file/misc progress indicator in the UI."""
+    try:
+        progress_tracker = get_progress_tracker()
+        progress_tracker.update_progress(job_id, "misc", percent, message)
+    except Exception:
+        pass
 
 
 def probe_muxed_durations(muxed_path, log):
@@ -525,23 +588,53 @@ def main():
         default=os.getenv("LOG_VERBOSITY", "NORMAL"),
         help="Log verbosity (MINIMAL, NORMAL, VERBOSE)",
     )
+    parser.add_argument(
+        "--job-id",
+        default=None,
+        help="Execution job id for step tracking",
+    )
     # Add more options as needed
     args = parser.parse_args()
 
     mpg_path = args.input
     srt_path = args.srt
-    job_id = extract_job_id_from_path(mpg_path)
+    job_id = args.job_id or extract_job_id_from_path(mpg_path)
     log = get_logger("embed_captions", job_id=job_id)
+    step_tracker = StepTracker(job_id, log)
+
+    def run_step(step_name, func, input_path=None, output_path=None, misc_label=None):
+        step_tracker.start(step_name, input_path=input_path, output_path=output_path)
+        if misc_label:
+            update_misc_progress(job_id, 0.0, misc_label)
+        try:
+            result = func()
+            step_tracker.finish(step_name, status="completed")
+            return result
+        except SystemExit:
+            step_tracker.finish(step_name, status="failed")
+            raise
+        except Exception:
+            step_tracker.finish(step_name, status="failed")
+            raise
+        finally:
+            if misc_label:
+                update_misc_progress(job_id, 100.0, misc_label)
 
     # Set verbosity if needed (optional)
     # from py_captions_for_channels.logging_config import set_verbosity
     # set_verbosity(args.verbosity)
 
-    wait_for_file_stability(mpg_path, log)
+    run_step(
+        "wait_stable",
+        lambda: wait_for_file_stability(mpg_path, log),
+        input_path=mpg_path,
+        misc_label="Waiting for file stability",
+    )
 
     # Generate captions with Whisper if needed (BEFORE preserving original)
     if args.skip_caption_generation:
         log.info("Skipping caption generation step (using existing SRT)")
+        step_tracker.finish("whisper", status="skipped")
     else:
         log.info(f"Generating captions with Whisper model: {args.model}")
         whisper_cmd = [
@@ -557,15 +650,30 @@ def main():
             "en",
         ]
         log.info(f"Running Whisper: {' '.join(whisper_cmd)}")
-        try:
-            subprocess.check_call(whisper_cmd)
-            log.info(f"Whisper completed successfully, generated: {srt_path}")
-        except subprocess.CalledProcessError as e:
-            log.error(f"Whisper failed: {e}")
-            sys.exit(1)
+
+        def _run_whisper():
+            try:
+                subprocess.check_call(whisper_cmd)
+                log.info(f"Whisper completed successfully, generated: {srt_path}")
+            except subprocess.CalledProcessError as e:
+                log.error(f"Whisper failed: {e}")
+                sys.exit(1)
+
+        run_step(
+            "whisper",
+            _run_whisper,
+            input_path=mpg_path,
+            output_path=srt_path,
+        )
 
     # Now preserve the original AFTER caption generation
-    preserve_original(mpg_path, log)
+    run_step(
+        "file_copy",
+        lambda: preserve_original(mpg_path, log),
+        input_path=mpg_path,
+        output_path=mpg_path + ".orig",
+        misc_label="Preserving original",
+    )
 
     if not srt_exists_and_valid(srt_path):
         log.error("Missing or invalid SRT file.")
@@ -574,24 +682,54 @@ def main():
     temp_av = mpg_path + ".av.mp4"
     temp_muxed = mpg_path + ".muxed.mp4"
     # Step 1: Encode A/V only
-    encode_av_only(orig_path, temp_av, log)
+    run_step(
+        "ffmpeg_encode",
+        lambda: encode_av_only(orig_path, temp_av, log),
+        input_path=orig_path,
+        output_path=temp_av,
+    )
     # Step 2: Probe encoded A/V duration
-    end_time = probe_av_end(temp_av, log)
+    end_time = run_step(
+        "probe_av",
+        lambda: probe_av_end(temp_av, log),
+        input_path=temp_av,
+        misc_label="Probing media",
+    )
     # Step 3: Clamp SRT
-    clamp_srt_to_end(srt_path, end_time, log)
+    run_step(
+        "clamp_srt",
+        lambda: clamp_srt_to_end(srt_path, end_time, log),
+        input_path=srt_path,
+    )
     # Step 4: Mux subtitles
-    mux_subs(temp_av, srt_path, temp_muxed, log)
+    run_step(
+        "ffmpeg_mux",
+        lambda: mux_subs(temp_av, srt_path, temp_muxed, log),
+        input_path=temp_av,
+        output_path=temp_muxed,
+    )
     # Final verification for Android compatibility
-    v_dur, a_dur, s_dur = probe_muxed_durations(temp_muxed, log)
+    v_dur, a_dur, s_dur = run_step(
+        "verify_mux",
+        lambda: probe_muxed_durations(temp_muxed, log),
+        input_path=temp_muxed,
+        misc_label="Verifying output",
+    )
     max_av = max(v_dur, a_dur)
     if s_dur <= max_av + 0.050:
-        atomic_replace(temp_muxed, mpg_path, log)
+        run_step(
+            "replace_output",
+            lambda: atomic_replace(temp_muxed, mpg_path, log),
+            input_path=temp_muxed,
+            output_path=mpg_path,
+            misc_label="Replacing output",
+        )
         # Clean up temp files
-        for f in [temp_av]:
-            try:
-                os.remove(f)
-            except Exception:
-                pass
+        run_step(
+            "cleanup",
+            lambda: [os.remove(f) for f in [temp_av] if os.path.exists(f)],
+            misc_label="Cleaning up",
+        )
         log.info("Caption embedding complete.")
     else:
         log.error(

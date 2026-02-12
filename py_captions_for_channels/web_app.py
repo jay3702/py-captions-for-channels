@@ -396,6 +396,10 @@ async def status() -> dict:
         except Exception as e:
             LOG.debug("Error reading progress: %s", e)
 
+        misc_active = any(
+            prog.get("process_type") == "misc" for prog in progress_data.values()
+        )
+
         # Build services dict, only include ChannelWatch if configured
         services = {
             "channels_dvr": {
@@ -428,6 +432,13 @@ async def status() -> dict:
             "url": None,
             "healthy": ffmpeg_running,
             "status": "Running" if ffmpeg_running else "Idle",
+        }
+
+        services["misc"] = {
+            "name": "File Ops",
+            "url": None,
+            "healthy": misc_active,
+            "status": "Active" if misc_active else "Idle",
         }
 
         return {
