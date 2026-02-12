@@ -151,7 +151,8 @@ async function fetchStatus() {
       execCount.textContent = `(${data.count} items)`;
     
       if (data.executions && data.executions.length > 0) {
-        execList.innerHTML = data.executions.map(exec => 
+        const sortedExecutions = [...data.executions].sort(compareExecutions);
+        execList.innerHTML = sortedExecutions.map(exec => 
           renderExecution(exec)
       ).join('');
     } else {
@@ -161,6 +162,30 @@ async function fetchStatus() {
       document.getElementById('exec-list').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
       console.error('Executions fetch error:', err);
   }
+}
+
+function compareExecutions(a, b) {
+  const statusRank = {
+    discovered: 0,
+    pending: 1,
+    running: 2,
+  };
+
+  const rankA = statusRank[a.status] ?? 99;
+  const rankB = statusRank[b.status] ?? 99;
+  if (rankA !== rankB) {
+    return rankA - rankB;
+  }
+
+  const jobNumberA = Number.isFinite(a.job_number) ? a.job_number : -1;
+  const jobNumberB = Number.isFinite(b.job_number) ? b.job_number : -1;
+  if (jobNumberA !== jobNumberB) {
+    return jobNumberB - jobNumberA;
+  }
+
+  const startedA = a.started_at ? Date.parse(a.started_at) : 0;
+  const startedB = b.started_at ? Date.parse(b.started_at) : 0;
+  return startedB - startedA;
 }
 
   function renderExecution(exec) {
