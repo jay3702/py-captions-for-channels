@@ -128,9 +128,18 @@
             <button class="btn-small" onclick="clearPollingCache()" title="Clear polling cache to allow reprocessing recordings">Reset Cache</button>
           </div>
         </div>
-        <ul class="exec-list" id="exec-list">
-          <li class="muted">Loading executions...</li>
-        </ul>
+        <div class="exec-section">
+          <div class="exec-section-title">Active</div>
+          <ul class="exec-list exec-list-compact" id="exec-list-active">
+            <li class="muted">Loading executions...</li>
+          </ul>
+        </div>
+        <div class="exec-section">
+          <div class="exec-section-title">Queue</div>
+          <ul class="exec-list" id="exec-list-backlog">
+            <li class="muted">Loading executions...</li>
+          </ul>
+        </div>
       </div>
       
       <div id="logs-tab" class="tab-content">
