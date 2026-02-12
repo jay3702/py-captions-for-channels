@@ -30,7 +30,7 @@
       <div class="card-head">
         <div class="card-title">
           <h2>Status</h2>
-          <button id="status-toggle" class="status-toggle" onclick="toggleStatusPanel()" title="Toggle status panel">
+          <button id="status-toggle" class="status-toggle" onclick="openSettingsModal()" title="Open settings">
             ⚙
           </button>
         </div>
@@ -112,89 +112,40 @@
 
     <section class="card">
       <div class="card-head">
-        <h2>Pipeline Settings</h2>
-           <span id="webui-version" class="pill pill-muted" style="margin-left:10px;">webui v0.9.0+build1</span>
+        <h2>Pipeline Activity</h2>
+        <div class="tabs">
+          <button class="tab-btn active" onclick="switchTab('executions')">Executions</button>
+          <button class="tab-btn" onclick="switchTab('logs')">Full Logs</button>
+        </div>
       </div>
-      <form id="settings-form" onsubmit="saveSettings(event)">
-        <div class="settings-group">
-          <label for="discovery-mode-select">Discovery Mode</label>
-          <select id="discovery-mode-select" name="discovery_mode">
-            <option value="polling">Channels API Polling</option>
-            <option value="webhook">ChannelWatch Webhook</option>
-            <option value="mock">Mock Source</option>
-          </select>
+      
+      <div id="executions-tab" class="tab-content active">
+        <div class="tab-header">
+          <small class="muted" id="exec-count">(loading)</small>
+          <div style="margin-left:auto; display:flex; gap:8px;">
+            <button class="btn-small" onclick="clearList()">Clear List</button>
+            <button class="btn-small" onclick="clearPendingExecutions()">Clear Pending</button>
+            <button class="btn-small" onclick="clearPollingCache()" title="Clear polling cache to allow reprocessing recordings">Reset Cache</button>
+          </div>
         </div>
-        <div class="settings-group">
-          <label for="dry-run-toggle">Dry Run</label>
-          <input type="checkbox" id="dry-run-toggle" name="dry_run">
+        <ul class="exec-list" id="exec-list">
+          <li class="muted">Loading executions...</li>
+        </ul>
+      </div>
+      
+      <div id="logs-tab" class="tab-content">
+        <div class="tab-header">
+          <small class="muted" id="log-count">(loading)</small>
         </div>
-        <div class="settings-group">
-          <label for="keep-original-toggle">Keep Original</label>
-          <input type="checkbox" id="keep-original-toggle" name="keep_original">
-        </div>
-        <div class="settings-group">
-          <label for="log-verbosity-select">Log Verbosity</label>
-          <select id="log-verbosity-select" name="log_verbosity">
-            <option value="MINIMAL">Minimal</option>
-            <option value="NORMAL">Normal</option>
-            <option value="VERBOSE">Verbose</option>
-          </select>
-        </div>
-        <div class="settings-group">
-          <label for="whisper-model-select">Whisper Model</label>
-          <select id="whisper-model-select" name="whisper_model">
-            <option value="tiny">tiny</option>
-            <option value="base">base</option>
-            <option value="small">small</option>
-            <option value="medium">medium</option>
-            <option value="large">large</option>
-          </select>
-        </div>
-        <div class="settings-group">
-          <label for="whitelist-editor">Whitelist</label>
-          <textarea id="whitelist-editor" name="whitelist" rows="8" style="width:100%"></textarea>
-        </div>
-        <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-          <button type="submit" class="btn-primary">Save Settings</button>
-        </div>
-      </form>
+        <ul class="log-list" id="log-list">
+          <li class="muted">Loading logs...</li>
+        </ul>
+      </div>
     </section>
+
   </main>
 
-  <section class="card logs-panel">
-    <div class="card-head">
-      <h2>Pipeline Activity</h2>
-      <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('executions')">Executions</button>
-        <button class="tab-btn" onclick="switchTab('logs')">Full Logs</button>
-      </div>
-    </div>
-    
-    <div id="executions-tab" class="tab-content active">
-      <div class="tab-header">
-        <small class="muted" id="exec-count">(loading)</small>
-        <div style="margin-left:auto; display:flex; gap:8px;">
-          <button class="btn-small" onclick="clearList()">Clear List</button>
-          <button class="btn-small" onclick="clearPendingExecutions()">Clear Pending</button>
-          <button class="btn-small" onclick="clearPollingCache()" title="Clear polling cache to allow reprocessing recordings">Reset Cache</button>
-        </div>
-      </div>
-      <ul class="exec-list" id="exec-list">
-        <li class="muted">Loading executions...</li>
-      </ul>
-    </div>
-    
-    <div id="logs-tab" class="tab-content">
-      <div class="tab-header">
-        <small class="muted" id="log-count">(loading)</small>
-      </div>
-      <ul class="log-list" id="log-list">
-        <li class="muted">Loading logs...</li>
-      </ul>
-    </div>
-  </section>
-
-    <!-- Modal for execution details -->
+  <!-- Modal for execution details -->
     <div id="exec-modal" class="modal">
       <div class="modal-content">
         <div class="modal-header">
@@ -240,6 +191,65 @@
             <button onclick="closeManualProcessModal()" class="btn-secondary">Cancel</button>
             <button onclick="submitManualProcessing()" class="btn-primary">Add Selected to Queue</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for settings -->
+    <div id="settings-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <h2>Pipeline Settings</h2>
+            <span id="webui-version" class="pill pill-muted">webui v0.9.0+build1</span>
+          </div>
+          <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="settings-form" onsubmit="saveSettings(event)">
+            <div class="settings-group">
+              <label for="discovery-mode-select">Discovery Mode</label>
+              <select id="discovery-mode-select" name="discovery_mode">
+                <option value="polling">Channels API Polling</option>
+                <option value="webhook">ChannelWatch Webhook</option>
+                <option value="mock">Mock Source</option>
+              </select>
+            </div>
+            <div class="settings-group">
+              <label for="dry-run-toggle">Dry Run</label>
+              <input type="checkbox" id="dry-run-toggle" name="dry_run">
+            </div>
+            <div class="settings-group">
+              <label for="keep-original-toggle">Keep Original</label>
+              <input type="checkbox" id="keep-original-toggle" name="keep_original">
+            </div>
+            <div class="settings-group">
+              <label for="log-verbosity-select">Log Verbosity</label>
+              <select id="log-verbosity-select" name="log_verbosity">
+                <option value="MINIMAL">Minimal</option>
+                <option value="NORMAL">Normal</option>
+                <option value="VERBOSE">Verbose</option>
+              </select>
+            </div>
+            <div class="settings-group">
+              <label for="whisper-model-select">Whisper Model</label>
+              <select id="whisper-model-select" name="whisper_model">
+                <option value="tiny">tiny</option>
+                <option value="base">base</option>
+                <option value="small">small</option>
+                <option value="medium">medium</option>
+                <option value="large">large</option>
+              </select>
+            </div>
+            <div class="settings-group">
+              <label for="whitelist-editor">Whitelist</label>
+              <textarea id="whitelist-editor" name="whitelist" rows="8" style="width:100%"></textarea>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
+              <button type="button" class="btn-secondary" onclick="closeSettingsModal()">Cancel</button>
+              <button type="submit" class="btn-primary">Save Settings</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
