@@ -538,6 +538,31 @@ async def get_executions(limit: int = 50) -> dict:
             if exec.get("completed_at"):
                 exec["completed_local"] = format_local(exec["completed_at"])
 
+        status_rank = {
+            "discovered": 0,
+            "pending": 1,
+            "running": 2,
+        }
+
+        def sort_key(item: dict) -> tuple:
+            rank = status_rank.get(item.get("status"), 99)
+            job_number = item.get("job_number")
+            job_number = job_number if isinstance(job_number, int) else -1
+            started_at = item.get("started_at")
+            started_key = 0.0
+            if isinstance(started_at, str):
+                try:
+                    started_key = -datetime.fromisoformat(started_at).timestamp()
+                except ValueError:
+                    started_key = 0.0
+            return (
+                rank,
+                -job_number,
+                started_key,
+            )
+
+        executions = sorted(executions, key=sort_key)
+
         return {
             "executions": executions,
             "count": len(executions),
