@@ -740,19 +740,27 @@ applyStatusPanelVisibility();
 setInterval(fetchStatus, 5000);
 setInterval(fetchExecutions, 5000);
 
-function applyStatusPanelVisibility() {
-  const statusCard = document.getElementById('status-card');
-  if (!statusCard) return;
-  const hidden = localStorage.getItem('statusPanelHidden') === 'true';
-  statusCard.classList.toggle('status-hidden', hidden);
+function openSettingsModal() {
+  const modal = document.getElementById('settings-modal');
+  if (modal) {
+    modal.style.display = 'flex';
+  }
 }
 
-function toggleStatusPanel() {
-  const statusCard = document.getElementById('status-card');
-  if (!statusCard) return;
-  const willHide = !statusCard.classList.contains('status-hidden');
-  statusCard.classList.toggle('status-hidden', willHide);
-  localStorage.setItem('statusPanelHidden', String(willHide));
+function closeSettingsModal() {
+  const modal = document.getElementById('settings-modal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
 }
+
+// Close settings modal on background click
+window.addEventListener('click', function(event) {
+  const settingsModal = document.getElementById('settings-modal');
+  if (event.target === settingsModal) {
+    closeSettingsModal();
+  }
+});
+
 
 

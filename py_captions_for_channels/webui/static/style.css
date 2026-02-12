@@ -55,7 +55,8 @@ h1 {
 .grid {
   display: grid;
   gap: 20px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: 300px 1fr;
+  min-height: 600px;
 }
 
 .card {
@@ -103,11 +104,6 @@ h1 {
   color: var(--text);
   border-color: rgba(92, 225, 230, 0.5);
   transform: rotate(10deg);
-}
-
-.status-hidden table,
-.status-hidden .services-container {
-  display: none;
 }
 
 .pill {
@@ -776,6 +772,10 @@ h1 {
   body { padding: 32px 20px 48px; }
   .hero { flex-direction: column; align-items: flex-start; }
   h1 { font-size: 28px; }
+  .grid {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
 }
 
 .status-table {
