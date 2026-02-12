@@ -145,30 +145,42 @@ async function fetchStatus() {
       if (!res.ok) throw new Error('Failed to fetch executions');
     const data = await res.json();
     
-      const execList = document.getElementById('exec-list');
+      const execListActive = document.getElementById('exec-list-active');
+      const execListBacklog = document.getElementById('exec-list-backlog');
       const execCount = document.getElementById('exec-count');
     
       execCount.textContent = `(${data.count} items)`;
     
       if (data.executions && data.executions.length > 0) {
-        const sortedExecutions = [...data.executions].sort(compareExecutions);
-        execList.innerHTML = sortedExecutions.map(exec => 
-          renderExecution(exec)
-      ).join('');
+        const activeStatuses = new Set(['running', 'pending']);
+        const activeExecutions = data.executions.filter(exec => activeStatuses.has(exec.status));
+        const backlogExecutions = data.executions.filter(exec => !activeStatuses.has(exec.status));
+
+        const sortedActive = [...activeExecutions].sort(compareActiveExecutions);
+        const sortedBacklog = [...backlogExecutions].sort(compareBacklogExecutions);
+
+        execListActive.innerHTML = sortedActive.length
+          ? sortedActive.map(exec => renderExecution(exec)).join('')
+          : '<li class="muted">No active executions</li>';
+
+        execListBacklog.innerHTML = sortedBacklog.length
+          ? sortedBacklog.map(exec => renderExecution(exec)).join('')
+          : '<li class="muted">No queued executions</li>';
     } else {
-        execList.innerHTML = '<li class="muted">No executions yet</li>';
+        execListActive.innerHTML = '<li class="muted">No active executions</li>';
+        execListBacklog.innerHTML = '<li class="muted">No queued executions</li>';
     }
   } catch (err) {
-      document.getElementById('exec-list').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
+      document.getElementById('exec-list-active').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
+      document.getElementById('exec-list-backlog').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
       console.error('Executions fetch error:', err);
   }
 }
 
-function compareExecutions(a, b) {
+function compareActiveExecutions(a, b) {
   const statusRank = {
     running: 0,
     pending: 1,
-    discovered: 2,
   };
 
   const rankA = statusRank[a.status] ?? 99;
@@ -177,6 +189,18 @@ function compareExecutions(a, b) {
     return rankA - rankB;
   }
 
+  const jobNumberA = Number.isFinite(a.job_number) ? a.job_number : -1;
+  const jobNumberB = Number.isFinite(b.job_number) ? b.job_number : -1;
+  if (jobNumberA !== jobNumberB) {
+    return jobNumberB - jobNumberA;
+  }
+
+  const startedA = a.started_at ? Date.parse(a.started_at) : 0;
+  const startedB = b.started_at ? Date.parse(b.started_at) : 0;
+  return startedB - startedA;
+}
+
+function compareBacklogExecutions(a, b) {
   const jobNumberA = Number.isFinite(a.job_number) ? a.job_number : -1;
   const jobNumberB = Number.isFinite(b.job_number) ? b.job_number : -1;
   if (jobNumberA !== jobNumberB) {
