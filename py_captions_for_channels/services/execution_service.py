@@ -1,11 +1,11 @@
 """Execution service for database-backed execution tracking."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
-from sqlalchemy import desc
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
-from ..models import Execution, ExecutionStep
+from ..models import Execution, ExecutionStep, JobSequence
 
 LOG = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ class ExecutionService:
         kind: str = "normal",
         started_at: datetime = None,
         job_number: int = None,
+        job_sequence: int = None,
     ) -> Execution:
         """Create a new execution record.
 
@@ -40,6 +41,7 @@ class ExecutionService:
             kind: Execution type (normal, manual_process, polling, webhook)
             started_at: Start timestamp (defaults to now)
             job_number: Sequential job number (optional)
+            job_sequence: Autoincrement sequence number (optional)
 
         Returns:
             Created Execution object
@@ -49,6 +51,9 @@ class ExecutionService:
         elif started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
 
+        if job_sequence is None:
+            job_sequence = self._allocate_job_sequence_id()
+
         execution = Execution(
             id=job_id,
             title=title,
@@ -56,6 +61,7 @@ class ExecutionService:
             status=status,
             kind=kind,
             job_number=job_number,
+            job_sequence=job_sequence,
             started_at=started_at,
             cancel_requested=False,
         )
@@ -74,6 +80,13 @@ class ExecutionService:
                 raise
         self.db.refresh(execution)
         return execution
+
+    def _allocate_job_sequence_id(self) -> int:
+        """Allocate a new autoincrement job sequence ID."""
+        seq = JobSequence()
+        self.db.add(seq)
+        self.db.flush()
+        return seq.id
 
     def get_execution(self, job_id: str) -> Optional[Execution]:
         """Get an execution by ID.
@@ -100,6 +113,36 @@ class ExecutionService:
         if status:
             query = query.filter(Execution.status == status)
         return query.order_by(desc(Execution.started_at)).limit(limit).all()
+
+    def get_daily_job_number(self, execution: Execution) -> Optional[int]:
+        """Get the execution's number within its local day (1-indexed)."""
+        if not execution.started_at:
+            return None
+
+        local_dt = execution.started_at.astimezone()
+        day_start_local = local_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end_local = day_start_local + timedelta(days=1)
+
+        day_start_utc = day_start_local.astimezone(timezone.utc)
+        day_end_utc = day_end_local.astimezone(timezone.utc)
+
+        day_execs = (
+            self.db.query(Execution)
+            .filter(Execution.started_at >= day_start_utc)
+            .filter(Execution.started_at < day_end_utc)
+            .order_by(
+                asc(Execution.started_at),
+                asc(Execution.job_sequence),
+                asc(Execution.id),
+            )
+            .all()
+        )
+
+        for index, exec_item in enumerate(day_execs, start=1):
+            if exec_item.id == execution.id:
+                return index
+
+        return None
 
     def update_status(self, job_id: str, status: str) -> bool:
         """Update execution status.
@@ -549,13 +592,15 @@ class ExecutionService:
         Returns:
             Dictionary representation
         """
+        job_number = self.get_daily_job_number(execution) if execution else None
         return {
             "id": execution.id,
             "title": execution.title,
             "path": execution.path,
             "status": execution.status,
             "kind": execution.kind,
-            "job_number": execution.job_number,
+            "job_number": job_number,
+            "job_sequence": execution.job_sequence,
             "cancel_requested": execution.cancel_requested,
             "started_at": (
                 execution.started_at.isoformat() if execution.started_at else None

@@ -52,6 +52,7 @@ class Execution(Base):
         Index("idx_executions_status", "status"),
         Index("idx_executions_path", "path"),
         Index("idx_executions_started_at", "started_at"),
+        Index("idx_executions_job_sequence", "job_sequence"),
     )
 
     id = Column(String(200), primary_key=True)  # job_id
@@ -62,6 +63,7 @@ class Execution(Base):
     )  # discovered, pending, running, completed, failed, cancelled
     kind = Column(String(50), nullable=True)  # manual_process, polling, webhook
     job_number = Column(Integer, nullable=True)  # Sequential job number (resets daily)
+    job_sequence = Column(Integer, nullable=True)  # Global autoincrement sequence
     started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime, nullable=True)
     success = Column(Boolean, nullable=True)
@@ -84,6 +86,20 @@ class Execution(Base):
         return (
             f"<Execution(id='{self.id}', status='{self.status}', path='{self.path}')>"
         )
+
+
+class JobSequence(Base):
+    """Global autoincrement sequence for executions."""
+
+    __tablename__ = "job_sequence"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    def __repr__(self):
+        return f"<JobSequence(id={self.id})>"
 
 
 class ExecutionStep(Base):
