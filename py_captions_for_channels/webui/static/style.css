@@ -79,6 +79,37 @@ h1 {
   margin-bottom: 10px;
 }
 
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-toggle {
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.status-toggle:hover {
+  color: var(--text);
+  border-color: rgba(92, 225, 230, 0.5);
+  transform: rotate(10deg);
+}
+
+.status-hidden table,
+.status-hidden .services-container {
+  display: none;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -146,6 +177,34 @@ h1 {
   gap: 8px;
   font-size: 14px;
   padding: 6px 0;
+}
+
+.process-row {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.process-right {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+}
+
+.process-job {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.process-title {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 
 .service-healthy {

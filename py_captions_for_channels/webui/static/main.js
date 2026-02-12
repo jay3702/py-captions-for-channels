@@ -29,36 +29,85 @@ async function fetchStatus() {
       : 'never';
     document.getElementById('manual-process-queue').textContent = `${data.manual_process_queue_size} items`;
 
-    // Update service health indicators with inline progress bars
+    // Update service health indicators (external services only)
     if (data.services) {
       const servicesContainer = document.getElementById('services');
       if (servicesContainer) {
         let servicesHtml = '';
         for (const [key, svc] of Object.entries(data.services)) {
+          if (key === 'whisper' || key === 'ffmpeg') {
+            continue;
+          }
           const healthClass = svc.healthy ? 'service-healthy' : 'service-unhealthy';
           const statusText = svc.status || (svc.healthy ? 'Healthy' : 'Unhealthy');
-          
-          // Check if this service has progress data
-          let progressHtml = '';
-          if (data.progress && (key === 'whisper' || key === 'ffmpeg')) {
-            const progress = Object.values(data.progress).find(p => p.process_type === key);
-            if (progress) {
-              const percent = Math.round(progress.percent);
-              const jobSuffix = progress.job_number ? ` Job ${progress.job_number}` : '';
-              progressHtml = `
-                <div class="service-progress">
-                  <div class="progress-bar-compact">
-                    <div class="progress-fill" style="width: ${progress.percent}%"></div>
-                  </div>
-                  <span class="progress-text">${percent}%${jobSuffix}</span>
-                </div>
-              `;
-            }
-          }
-          
-          servicesHtml += `<div class="service-status" title="${statusText}"><span class="${healthClass}">●</span> ${svc.name}${progressHtml}</div>`;
+          servicesHtml += `<div class="service-status" title="${statusText}"><span class="${healthClass}">●</span> ${svc.name}</div>`;
         }
         servicesContainer.innerHTML = servicesHtml;
+      }
+    }
+
+    // Update process indicators for Whisper/ffmpeg
+    if (data.services) {
+      const processesContainer = document.getElementById('processes');
+      if (processesContainer) {
+        const processKeys = ['whisper', 'ffmpeg'];
+        let processesHtml = '';
+        for (const key of processKeys) {
+          const svc = data.services[key];
+          if (!svc) {
+            continue;
+          }
+          const healthClass = svc.healthy ? 'service-healthy' : 'service-unhealthy';
+          const statusText = svc.status || (svc.healthy ? 'Running' : 'Idle');
+
+          let progress = null;
+          let progressJobId = null;
+          if (data.progress) {
+            for (const [jobId, prog] of Object.entries(data.progress)) {
+              if (prog.process_type === key) {
+                progress = prog;
+                progressJobId = jobId;
+                break;
+              }
+            }
+          }
+
+          let progressHtml = '';
+          if (progress) {
+            const percent = Math.round(progress.percent);
+            progressHtml = `
+              <div class="service-progress">
+                <div class="progress-bar-compact">
+                  <div class="progress-fill" style="width: ${progress.percent}%"></div>
+                </div>
+                <span class="progress-text">${percent}%</span>
+              </div>
+            `;
+          }
+
+          let jobMetaHtml = '';
+          if (progress && (progress.job_number || progressJobId)) {
+            const jobNumberText = progress.job_number ? `Job ${progress.job_number}` : '';
+            const titleText = progressJobId ? formatJobTitle(progressJobId) : '';
+            jobMetaHtml = `
+              <div class="process-right">
+                ${jobNumberText ? `<span class="process-job">${jobNumberText}</span>` : ''}
+                ${titleText ? `<span class="process-title" title="${escapeAttr(titleText)}">${escapeHtml(titleText)}</span>` : ''}
+              </div>
+            `;
+          }
+
+          processesHtml += `
+            <div class="service-status process-row" title="${statusText}">
+              <span class="${healthClass}">●</span>
+              ${svc.name}
+              ${progressHtml}
+              ${jobMetaHtml}
+            </div>
+          `;
+        }
+
+        processesContainer.innerHTML = processesHtml || '<div class="service-status"><span class="service-unhealthy">●</span> No process data</div>';
       }
     }
 
@@ -253,6 +302,18 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+function formatJobTitle(jobId) {
+  if (!jobId) return '';
+  let title = jobId;
+  if (jobId.includes(' @ ')) {
+    title = jobId.split(' @ ')[0];
+  }
+  if (title.startsWith('manual_process::')) {
+    title = title.replace('manual_process::', '');
+  }
+  return title;
 }
 
 async function clearList() {
@@ -632,6 +693,7 @@ async function loadSettings() {
     const res = await fetch('/api/settings');
     if (!res.ok) throw new Error('Failed to load settings');
     const data = await res.json();
+    document.getElementById('discovery-mode-select').value = data.discovery_mode || 'polling';
     document.getElementById('dry-run-toggle').checked = !!data.dry_run;
     document.getElementById('keep-original-toggle').checked = !!data.keep_original;
     document.getElementById('log-verbosity-select').value = (data.log_verbosity || 'NORMAL').toUpperCase();
@@ -645,6 +707,7 @@ async function loadSettings() {
 async function saveSettings(event) {
   event.preventDefault();
   const payload = {
+    discovery_mode: document.getElementById('discovery-mode-select').value,
     dry_run: document.getElementById('dry-run-toggle').checked,
     keep_original: document.getElementById('keep-original-toggle').checked,
     log_verbosity: document.getElementById('log-verbosity-select').value,
@@ -670,10 +733,26 @@ async function saveSettings(event) {
 fetchStatus();
 fetchExecutions();
 loadSettings();
+applyStatusPanelVisibility();
 // Note: Don't start log polling on init - only when logs tab is clicked
 
 // Poll status and executions every 5 seconds
 setInterval(fetchStatus, 5000);
 setInterval(fetchExecutions, 5000);
+
+function applyStatusPanelVisibility() {
+  const statusCard = document.getElementById('status-card');
+  if (!statusCard) return;
+  const hidden = localStorage.getItem('statusPanelHidden') === 'true';
+  statusCard.classList.toggle('status-hidden', hidden);
+}
+
+function toggleStatusPanel() {
+  const statusCard = document.getElementById('status-card');
+  if (!statusCard) return;
+  const willHide = !statusCard.classList.contains('status-hidden');
+  statusCard.classList.toggle('status-hidden', willHide);
+  localStorage.setItem('statusPanelHidden', String(willHide));
+}
 
 

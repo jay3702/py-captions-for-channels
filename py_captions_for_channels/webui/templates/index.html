@@ -26,9 +26,14 @@
   </header>
 
   <main class="grid">
-    <section class="card">
+    <section class="card" id="status-card">
       <div class="card-head">
-        <h2>Status</h2>
+        <div class="card-title">
+          <h2>Status</h2>
+          <button id="status-toggle" class="status-toggle" onclick="toggleStatusPanel()" title="Toggle status panel">
+            ⚙
+          </button>
+        </div>
         <span id="status-pill" class="pill pill-muted">loading</span>
       </div>
       <table class="status-table">
@@ -80,6 +85,14 @@
           </td>
         </tr>
         <tr>
+          <td class="status-label">Processes:</td>
+          <td class="status-value">
+            <div id="processes" class="services-container processes-container">
+              <div class="service-status"><span class="service-unhealthy">●</span> Checking...</div>
+            </div>
+          </td>
+        </tr>
+        <tr>
           <td class="status-label">Heartbeat:</td>
           <td class="status-value">
             <div style="display: flex; gap: 12px; align-items: center;">
@@ -103,6 +116,14 @@
            <span id="webui-version" class="pill pill-muted" style="margin-left:10px;">webui v0.9.0+build1</span>
       </div>
       <form id="settings-form" onsubmit="saveSettings(event)">
+        <div class="settings-group">
+          <label for="discovery-mode-select">Discovery Mode</label>
+          <select id="discovery-mode-select" name="discovery_mode">
+            <option value="polling">Channels API Polling</option>
+            <option value="webhook">ChannelWatch Webhook</option>
+            <option value="mock">Mock Source</option>
+          </select>
+        </div>
         <div class="settings-group">
           <label for="dry-run-toggle">Dry Run</label>
           <input type="checkbox" id="dry-run-toggle" name="dry_run">

@@ -20,6 +20,7 @@ from .health_check import run_health_checks
 from .execution_tracker import get_tracker, build_manual_process_job_id
 from .database import get_db, init_db
 from .services.heartbeat_service import HeartbeatService
+from .services.settings_service import SettingsService
 from .shutdown_control import get_shutdown_controller
 from .config import (
     CHANNELWATCH_URL,
@@ -741,12 +742,49 @@ async def main():
 
     LOG.info("=" * 80)
 
+    def _resolve_discovery_mode():
+        """Resolve discovery mode from settings or env defaults."""
+        mode = None
+        db_gen = get_db()
+        try:
+            db = next(db_gen)
+            settings_service = SettingsService(db)
+            mode = settings_service.get("discovery_mode")
+        except Exception as e:
+            LOG.warning("Failed to read discovery_mode setting: %s", e)
+        finally:
+            try:
+                next(db_gen)
+            except Exception:
+                pass
+
+        if isinstance(mode, str):
+            mode = mode.strip().lower()
+
+        if mode == "mock":
+            return "mock"
+        if mode == "polling":
+            return "polling"
+        if mode == "webhook":
+            return "webhook"
+
+        if USE_MOCK:
+            return "mock"
+        if USE_POLLING:
+            return "polling"
+        if USE_WEBHOOK:
+            return "webhook"
+        return "websocket"
+
+    discovery_mode = _resolve_discovery_mode()
+    LOG.info("Discovery mode: %s", discovery_mode)
+
     # Now select and initialize event source (may start background services)
-    if USE_MOCK:
+    if discovery_mode == "mock":
         from .mock_source import MockSource
 
         source = MockSource(interval_seconds=5)
-    elif USE_POLLING:
+    elif discovery_mode == "polling":
         from .channels_polling_source import ChannelsPollingSource
 
         source = ChannelsPollingSource(
@@ -756,7 +794,7 @@ async def main():
             max_age_hours=POLL_MAX_AGE_HOURS,
             max_queue_size=POLL_MAX_QUEUE_SIZE,
         )
-    elif USE_WEBHOOK:
+    elif discovery_mode == "webhook":
         from .channelwatch_webhook_source import ChannelWatchWebhookSource
 
         source = ChannelWatchWebhookSource(host=WEBHOOK_HOST, port=WEBHOOK_PORT)
