@@ -92,6 +92,27 @@ def _apply_migrations():
                     conn.commit()
                 LOG.info("Migration complete: job_number column added")
 
+            if "job_sequence" not in columns:
+                LOG.info("Adding job_sequence column to executions table")
+                with engine.connect() as conn:
+                    conn.execute(
+                        text("ALTER TABLE executions ADD COLUMN job_sequence INTEGER")
+                    )
+                    conn.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS idx_executions_job_sequence "
+                            "ON executions(job_sequence)"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "UPDATE executions SET job_sequence = rowid "
+                            "WHERE job_sequence IS NULL"
+                        )
+                    )
+                    conn.commit()
+                LOG.info("Migration complete: job_sequence column added and backfilled")
+
     except Exception as e:
         LOG.warning(f"Error applying migrations: {e}")
         # Don't fail startup if migration fails - column might already exist

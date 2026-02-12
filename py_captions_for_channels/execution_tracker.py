@@ -15,7 +15,6 @@ from typing import List, Optional
 
 from .database import get_db
 from .services.execution_service import ExecutionService
-from .job_number_manager import get_job_number_manager
 
 LOG = logging.getLogger(__name__)
 
@@ -184,10 +183,6 @@ class ExecutionTracker:
                 # Increment execution counter for unique tracking
                 self.execution_counter += 1
 
-                # Get next job number (resets daily at midnight)
-                job_number_manager = get_job_number_manager()
-                job_number = job_number_manager.get_next()
-
                 # Parse started_at timestamp
                 if timestamp:
                     dt = datetime.fromisoformat(timestamp)
@@ -198,20 +193,19 @@ class ExecutionTracker:
                     started_at = datetime.now(timezone.utc)
 
                 # Create execution in database
-                service.create_execution(
+                execution = service.create_execution(
                     job_id=exec_id,
                     title=title,
                     path=path,
                     status=status,
                     kind=kind,
                     started_at=started_at,
-                    job_number=job_number,
                 )
 
                 LOG.info(
-                    "Started tracking execution #%d (job #%d): %s [%s]",
+                    "Started tracking execution #%d (seq #%s): %s [%s]",
                     self.execution_counter,
-                    job_number,
+                    execution.job_sequence,
                     exec_id,
                     status,
                 )
