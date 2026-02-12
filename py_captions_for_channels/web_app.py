@@ -539,9 +539,9 @@ async def get_executions(limit: int = 50) -> dict:
                 exec["completed_local"] = format_local(exec["completed_at"])
 
         status_rank = {
-            "discovered": 0,
+            "running": 0,
             "pending": 1,
-            "running": 2,
+            "discovered": 2,
         }
 
         def sort_key(item: dict) -> tuple:

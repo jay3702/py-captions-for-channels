@@ -166,9 +166,9 @@ async function fetchStatus() {
 
 function compareExecutions(a, b) {
   const statusRank = {
-    discovered: 0,
+    running: 0,
     pending: 1,
-    running: 2,
+    discovered: 2,
   };
 
   const rankA = statusRank[a.status] ?? 99;
