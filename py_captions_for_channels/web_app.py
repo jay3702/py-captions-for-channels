@@ -27,6 +27,8 @@ from .config import (
     CHANNELWATCH_URL,
     LOG_VERBOSITY,
     LOG_VERBOSITY_FILE,
+    USE_MOCK,
+    USE_POLLING,
     USE_WEBHOOK,
 )
 from .state import StateBackend
@@ -167,6 +169,9 @@ def load_settings(db: Session = None) -> dict:
                     )
 
                 defaults = {
+                    "discovery_mode": (
+                        "mock" if USE_MOCK else "polling" if USE_POLLING else "webhook"
+                    ),
                     "dry_run": env_bool("DRY_RUN", DRY_RUN),
                     "keep_original": env_bool("KEEP_ORIGINAL", True),
                     "log_verbosity": env_vars.get("LOG_VERBOSITY", LOG_VERBOSITY),
@@ -239,6 +244,7 @@ async def set_settings(data: dict = Body(...), db: Session = Depends(get_db)) ->
     """Update pipeline settings and whitelist in database."""
     try:
         allowed = {
+            "discovery_mode",
             "dry_run",
             "keep_original",
             "log_verbosity",
