@@ -50,7 +50,7 @@ async function fetchStatus() {
     if (data.services) {
       const processesContainer = document.getElementById('processes');
       if (processesContainer) {
-        const processKeys = ['whisper', 'ffmpeg'];
+        const processKeys = ['whisper', 'ffmpeg', 'misc'];
         let processesHtml = '';
         for (const key of processKeys) {
           const svc = data.services[key];
