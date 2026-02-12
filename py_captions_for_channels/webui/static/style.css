@@ -55,7 +55,7 @@ h1 {
 .grid {
   display: grid;
   gap: 20px;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 480px 1fr;
   min-height: 600px;
 }
 
