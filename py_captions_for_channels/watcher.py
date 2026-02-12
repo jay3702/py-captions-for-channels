@@ -742,8 +742,15 @@ async def main():
 
     LOG.info("=" * 80)
 
-    def _resolve_discovery_mode():
-        """Resolve discovery mode from settings or env defaults."""
+    def _normalize_discovery_mode(value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        mode_value = value.strip().lower()
+        if mode_value in ("mock", "polling", "webhook"):
+            return mode_value
+        return None
+
+    def _read_discovery_mode_setting() -> Optional[str]:
         mode = None
         db_gen = get_db()
         try:
@@ -757,16 +764,14 @@ async def main():
                 next(db_gen)
             except Exception:
                 pass
+        return _normalize_discovery_mode(mode)
 
-        if isinstance(mode, str):
-            mode = mode.strip().lower()
+    def _resolve_discovery_mode() -> str:
+        """Resolve discovery mode from settings or env defaults."""
+        mode = _read_discovery_mode_setting()
 
-        if mode == "mock":
-            return "mock"
-        if mode == "polling":
-            return "polling"
-        if mode == "webhook":
-            return "webhook"
+        if mode:
+            return mode
 
         if USE_MOCK:
             return "mock"
@@ -778,6 +783,26 @@ async def main():
 
     discovery_mode = _resolve_discovery_mode()
     LOG.info("Discovery mode: %s", discovery_mode)
+
+    async def _watch_discovery_mode():
+        shutdown_controller = get_shutdown_controller()
+        while True:
+            if shutdown_controller.is_shutdown_requested():
+                break
+            await asyncio.sleep(5)
+            new_mode = _read_discovery_mode_setting()
+            if new_mode and new_mode != discovery_mode:
+                LOG.warning(
+                    "Discovery mode changed (%s -> %s); restarting watcher",
+                    discovery_mode,
+                    new_mode,
+                )
+                shutdown_controller.request_graceful_shutdown(
+                    initiated_by="discovery_mode_change"
+                )
+                break
+
+    _ = asyncio.ensure_future(_watch_discovery_mode())
 
     # Now select and initialize event source (may start background services)
     if discovery_mode == "mock":
