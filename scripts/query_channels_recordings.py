@@ -38,6 +38,63 @@ def fetch_recordings(api_url):
         sys.exit(1)
 
 
+# Map common lowercase names to actual API field names
+FIELD_MAPPINGS = {
+    "path": "Path",
+    "created_at": "CreatedAt",
+    "updated_at": "UpdatedAt",
+    "duration": "Duration",
+    "id": "ID",
+    "job_id": "JobID",
+    "rule_id": "RuleID",
+    "group_id": "GroupID",
+    "channel_number": "ChannelNumber",
+    "device_id": "DeviceID",
+    "version": "Version",
+    "job_time": "JobTime",
+    "job_duration": "JobDuration",
+    "title": "Airing.Title",
+    "summary": "Airing.Summary",
+    "aired_at": "Airing.Time",
+    "original_date": "Airing.OriginalDate",
+    "channel": "Airing.Channel",
+    "series_id": "Airing.SeriesID",
+    "program_id": "Airing.ProgramID",
+    "episode_number": "Airing.EpisodeNumber",
+    "release_year": "Airing.ReleaseYear",
+    "image": "Airing.Image",
+    "categories": "Airing.Categories",
+    "genres": "Airing.Genres",
+}
+
+
+def get_nested_value(obj, path):
+    """Get a nested value from a dict using dot notation."""
+    keys = path.split(".")
+    value = obj
+    for key in keys:
+        if isinstance(value, dict):
+            value = value.get(key)
+            if value is None:
+                return None
+        else:
+            return None
+    return value
+
+
+def get_recording_value(recording, column):
+    """Get a value from recording, handling field name mapping."""
+    # Map common lowercase names to actual API fields
+    field_name = FIELD_MAPPINGS.get(column.lower(), column)
+
+    # Handle nested fields (e.g., "Airing.Title")
+    if "." in field_name:
+        return get_nested_value(recording, field_name)
+
+    # Direct field access
+    return recording.get(field_name)
+
+
 def format_value(value):
     """Format a value for display."""
     if value is None:
@@ -46,6 +103,8 @@ def format_value(value):
         return "Yes" if value else "No"
     if isinstance(value, (int, float)):
         return str(value)
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value)
     return str(value)
 
 
@@ -76,10 +135,10 @@ def display_text_output(recordings, columns):
     for recording in recordings:
         values = []
         for col in columns:
-            value = recording.get(col, "")
+            value = get_recording_value(recording, col)
 
             # Format datetime fields
-            if col in ["created_at", "updated_at", "aired_at"]:
+            if col.lower() in ["created_at", "updated_at", "aired_at"]:
                 value = format_datetime(value)
             else:
                 value = format_value(value)
@@ -124,10 +183,10 @@ def export_to_excel(recordings, columns, filename):
     # Write data rows
     for row_idx, recording in enumerate(recordings, start=2):
         for col_idx, col_name in enumerate(columns, start=1):
-            value = recording.get(col_name, "")
+            value = get_recording_value(recording, col_name)
 
             # Format datetime fields
-            if col_name in ["created_at", "updated_at", "aired_at"]:
+            if col_name.lower() in ["created_at", "updated_at", "aired_at"]:
                 value = format_datetime(value)
             else:
                 value = format_value(value)
@@ -170,7 +229,7 @@ Examples:
         type=str,
         help=(
             "Comma-delimited list of column names "
-            "(default: created_at,updated_at,completed,processed,path)"
+            "(default: title,created_at,duration,path)"
         ),
     )
 
@@ -193,7 +252,7 @@ Examples:
         parser.error("-excel requires -file argument")
 
     # Determine columns to display
-    default_columns = ["created_at", "updated_at", "completed", "processed", "path"]
+    default_columns = ["title", "created_at", "duration", "path"]
 
     if args.columns:
         columns = [col.strip() for col in args.columns.split(",")]
