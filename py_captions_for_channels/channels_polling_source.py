@@ -170,9 +170,50 @@ class ChannelsPollingSource:
                     all_executions = tracker.get_executions(limit=1000)
 
                     # Count pending jobs (not running, just waiting)
-                    pending_count = sum(
-                        1 for e in all_executions if e.get("status") == "pending"
+                    pending_execs = [
+                        e for e in all_executions if e.get("status") == "pending"
+                    ]
+                    pending_count = len(pending_execs)
+
+                    running_count = sum(
+                        1 for e in all_executions if e.get("status") == "running"
                     )
+
+                    # If we have a pending job and nothing running, enqueue it
+                    if pending_execs and running_count == 0:
+                        pending_execs.sort(key=lambda x: x.get("started_at", ""))
+                        exec = pending_execs[0]
+                        job_id = exec.get("id", "")
+                        if " @ " in job_id:
+                            try:
+                                _, timestamp_str = job_id.rsplit(" @ ", 1)
+                                start_time = datetime.strptime(
+                                    timestamp_str, "%Y-%m-%d %H:%M:%S"
+                                ).replace(tzinfo=timezone.utc)
+                                yield PartialProcessingEvent(
+                                    timestamp=start_time,
+                                    title=exec.get("title", "Unknown"),
+                                    start_time=start_time,
+                                    path=exec.get("path"),
+                                )
+                                LOG.info(
+                                    "Resuming pending execution: %s",
+                                    exec.get("title", "Unknown"),
+                                )
+                            except (ValueError, AttributeError) as e:
+                                LOG.warning(
+                                    "Failed to parse start_time from "
+                                    "job_id '%s': %s",
+                                    job_id,
+                                    e,
+                                )
+                        else:
+                            LOG.warning(
+                                "Pending execution missing timestamp: %s",
+                                exec.get("title", "Unknown"),
+                            )
+                        # Only resume one pending job per cycle
+                        continue
 
                     # Only promote if we have NO pending jobs (bootstrap case)
                     # Normal flow: job starts → promotes next discovered → pending
