@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Query Channels DVR API for recordings and display/export to Excel.
+Query Channels DVR API for recordings and display/export to CSV.
 
 Usage:
     python query_channels_recordings.py
-    python query_channels_recordings.py -columns title,created_at,path
-    python query_channels_recordings.py -excel -file recordings.xlsx
-    python query_channels_recordings.py -excel \\
-        -file output.xlsx -columns title,path,completed
+    python query_channels_recordings.py -c title,created_at,path
+    python query_channels_recordings.py -x -f recordings.csv
+    python query_channels_recordings.py -x -f output.csv -c title,path
 """
 
 import argparse
 import sys
+import csv
 from pathlib import Path
 from datetime import datetime
 
@@ -148,67 +148,39 @@ def display_text_output(recordings, columns):
         print("\t".join(values))
 
 
-def export_to_excel(recordings, columns, filename):
-    """Export recordings to Excel file."""
-    try:
-        import openpyxl
-        from openpyxl.utils import get_column_letter
-        from openpyxl.styles import Font, PatternFill
-    except ImportError:
-        print("Error: openpyxl is required for Excel export.", file=sys.stderr)
-        print("Install with: pip install openpyxl", file=sys.stderr)
-        sys.exit(1)
-
+def export_to_csv(recordings, columns, filename):
+    """Export recordings to CSV file."""
     if not recordings:
         print("No recordings to export.")
         return
 
-    # Create workbook and worksheet
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Recordings"
+    try:
+        with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.writer(csvfile)
 
-    # Write header row with formatting
-    header_fill = PatternFill(
-        start_color="366092", end_color="366092", fill_type="solid"
-    )
-    header_font = Font(bold=True, color="FFFFFF")
+            # Write header row
+            writer.writerow(columns)
 
-    for col_idx, col_name in enumerate(columns, start=1):
-        cell = ws.cell(row=1, column=col_idx)
-        cell.value = col_name
-        cell.fill = header_fill
-        cell.font = header_font
+            # Write data rows
+            for recording in recordings:
+                row = []
+                for col_name in columns:
+                    value = get_recording_value(recording, col_name)
 
-    # Write data rows
-    for row_idx, recording in enumerate(recordings, start=2):
-        for col_idx, col_name in enumerate(columns, start=1):
-            value = get_recording_value(recording, col_name)
+                    # Format datetime fields
+                    if col_name.lower() in ["created_at", "updated_at", "aired_at"]:
+                        value = format_datetime(value)
+                    else:
+                        value = format_value(value)
 
-            # Format datetime fields
-            if col_name.lower() in ["created_at", "updated_at", "aired_at"]:
-                value = format_datetime(value)
-            else:
-                value = format_value(value)
+                    row.append(value)
 
-            ws.cell(row=row_idx, column=col_idx, value=value)
+                writer.writerow(row)
 
-    # Auto-adjust column widths
-    for col_idx, col_name in enumerate(columns, start=1):
-        max_length = len(col_name)
-        for row in ws.iter_rows(
-            min_row=2, max_row=ws.max_row, min_col=col_idx, max_col=col_idx
-        ):
-            for cell in row:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
-
-        adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
-        ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
-
-    # Save workbook
-    wb.save(filename)
-    print(f"Exported {len(recordings)} recordings to {filename}")
+        print(f"Exported {len(recordings)} recordings to {filename}")
+    except IOError as e:
+        print(f"Error writing to file: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main():
@@ -218,14 +190,15 @@ def main():
         epilog="""
 Examples:
   %(prog)s
-  %(prog)s -columns title,created_at,path
-  %(prog)s -excel -file recordings.xlsx
-  %(prog)s -excel -file output.xlsx -columns title,path,completed
+  %(prog)s -c title,created_at,path
+  %(prog)s -x -f recordings.csv
+  %(prog)s -x -f output.csv -c title,path
         """,
     )
 
     parser.add_argument(
-        "-columns",
+        "-c",
+        "--columns",
         type=str,
         help=(
             "Comma-delimited list of column names "
@@ -234,22 +207,24 @@ Examples:
     )
 
     parser.add_argument(
-        "-excel",
+        "-x",
+        "--excel",
         action="store_true",
-        help="Export to Excel format (requires -file argument)",
+        help="Export to CSV format for Excel (requires -f argument)",
     )
 
     parser.add_argument(
-        "-file",
+        "-f",
+        "--file",
         type=str,
-        help="Output filename for Excel export (required when using -excel)",
+        help="Output filename for CSV export (required when using -x)",
     )
 
     args = parser.parse_args()
 
     # Validate arguments
     if args.excel and not args.file:
-        parser.error("-excel requires -file argument")
+        parser.error("-x/--excel requires -f/--file argument")
 
     # Determine columns to display
     default_columns = ["title", "created_at", "duration", "path"]
@@ -267,7 +242,7 @@ Examples:
 
     # Output results
     if args.excel:
-        export_to_excel(recordings, columns, args.file)
+        export_to_csv(recordings, columns, args.file)
     else:
         display_text_output(recordings, columns)
 
