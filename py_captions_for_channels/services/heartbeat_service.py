@@ -81,11 +81,16 @@ class HeartbeatService:
         if not heartbeat:
             return None
 
-        age_seconds = (datetime.now(timezone.utc) - heartbeat.last_beat).total_seconds()
+        # Convert naive datetime to UTC-aware if needed
+        last_beat = heartbeat.last_beat
+        if last_beat.tzinfo is None:
+            last_beat = last_beat.replace(tzinfo=timezone.utc)
+
+        age_seconds = (datetime.now(timezone.utc) - last_beat).total_seconds()
 
         return {
             "service_name": heartbeat.service_name,
-            "last_beat": heartbeat.last_beat.isoformat(),
+            "last_beat": last_beat.isoformat(),
             "status": heartbeat.status,
             "age_seconds": age_seconds,
             "alive": age_seconds < 30,  # Alive if < 30 seconds old
@@ -102,10 +107,15 @@ class HeartbeatService:
 
         result = {}
         for hb in heartbeats:
-            age_seconds = (now - hb.last_beat).total_seconds()
+            # Convert naive datetime to UTC-aware if needed
+            last_beat = hb.last_beat
+            if last_beat.tzinfo is None:
+                last_beat = last_beat.replace(tzinfo=timezone.utc)
+
+            age_seconds = (now - last_beat).total_seconds()
             result[hb.service_name] = {
                 "service_name": hb.service_name,
-                "last_beat": hb.last_beat.isoformat(),
+                "last_beat": last_beat.isoformat(),
                 "status": hb.status,
                 "age_seconds": age_seconds,
                 "alive": age_seconds < 30,
@@ -130,7 +140,12 @@ class HeartbeatService:
         if not heartbeat:
             return True
 
-        age_seconds = (datetime.now(timezone.utc) - heartbeat.last_beat).total_seconds()
+        # Convert naive datetime to UTC-aware if needed
+        last_beat = heartbeat.last_beat
+        if last_beat.tzinfo is None:
+            last_beat = last_beat.replace(tzinfo=timezone.utc)
+
+        age_seconds = (datetime.now(timezone.utc) - last_beat).total_seconds()
         return age_seconds > timeout_seconds
 
     def clear_heartbeat(self, service_name: str) -> bool:
