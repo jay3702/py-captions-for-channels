@@ -224,12 +224,7 @@ function compareBacklogExecutions(a, b) {
     return rankA - rankB;
   }
 
-  const jobNumberA = Number.isFinite(a.job_number) ? a.job_number : -1;
-  const jobNumberB = Number.isFinite(b.job_number) ? b.job_number : -1;
-  if (jobNumberA !== jobNumberB) {
-    return jobNumberB - jobNumberA;
-  }
-
+  // Sort by start time descending (most recent first)
   const startedA = a.started_at ? Date.parse(a.started_at) : 0;
   const startedB = b.started_at ? Date.parse(b.started_at) : 0;
   return startedB - startedA;
@@ -278,21 +273,23 @@ function compareBacklogExecutions(a, b) {
       : '—';
   
     // Use server-provided local time if available, otherwise parse ISO timestamp
-    const startTime = exec.started_local ? exec.started_local.split(' ')[1] : new Date(exec.started_at).toLocaleTimeString();
+    const startTime = exec.started_local ? exec.started_local.split(' ')[1] : (exec.started_at ? new Date(exec.started_at).toLocaleTimeString() : '—');
     const tagHtml = exec.kind === 'manual_process' ? '<span class="exec-tag">Manual</span>' : '';
     const cancelHtml = (exec.status === 'running' && !exec.cancel_requested)
       ? `<button class="exec-cancel" data-exec-id="${encodeURIComponent(exec.id)}" onclick="cancelExecutionFromEl(this, event)">Cancel</button>`
       : '';
-    const jobNumberHtml = exec.job_number ? `<span class="exec-job-number">#${exec.job_number}</span>` : '';
+    const jobNumberHtml = exec.job_number ? `<span class="exec-job-number">#${exec.job_number}</span>` : '<span class="exec-job-number">—</span>';
   
     return `
       <li class="exec-item ${statusClass}" data-exec-id="${encodeURIComponent(exec.id)}" onclick="showExecutionDetailFromEl(this)">
-        <span class="exec-status">${statusIcon}</span>
+        <span class="exec-time">${startTime}</span>
         ${jobNumberHtml}
         <span class="exec-title">${escapeHtml(exec.title)}</span>
         ${tagHtml}
-        <span class="exec-time">${startTime}</span>
-        <span class="exec-status-text">${statusText}</span>
+        <span class="exec-status-combined">
+          <span class="exec-status-icon">${statusIcon}</span>
+          <span class="exec-status-text">${statusText}</span>
+        </span>
         <span class="exec-elapsed">${elapsed}</span>
         ${cancelHtml}
         ${exec.status === 'running' ? '<div class="exec-progress"><div class="progress-bar"></div></div>' : ''}
