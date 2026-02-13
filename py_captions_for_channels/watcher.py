@@ -792,8 +792,9 @@ async def main():
                 # Update heartbeat in database
                 try:
                     heartbeat_service.beat("manual", "alive")
-                except Exception:
-                    pass  # Don't fail on heartbeat
+                    LOG.debug("Updated manual heartbeat")
+                except Exception as e:
+                    LOG.warning("Failed to update manual heartbeat: %s", e)
                 try:
                     await process_manual_process_queue(state, pipeline, api, parser)
                 except Exception as e:

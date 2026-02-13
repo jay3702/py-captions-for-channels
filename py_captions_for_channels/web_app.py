@@ -360,8 +360,9 @@ async def status() -> dict:
         try:
             heartbeat_service = HeartbeatService(next(get_db()))
             heartbeat_data = heartbeat_service.get_all_heartbeats()
+            LOG.debug("Retrieved %d heartbeat(s): %s", len(heartbeat_data), list(heartbeat_data.keys()))
         except Exception as e:
-            LOG.debug("Error reading heartbeat: %s", e)
+            LOG.warning("Error reading heartbeat: %s", e)
 
         # Get progress data for active processes
         progress_data = {}
