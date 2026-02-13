@@ -792,7 +792,7 @@ async def main():
                 # Update heartbeat in database
                 try:
                     heartbeat_service.beat("manual", "alive")
-                    LOG.info("Updated manual heartbeat")
+                    LOG.debug("Updated manual heartbeat")
                 except Exception as e:
                     LOG.warning("Failed to update manual heartbeat: %s", e)
                 try:
