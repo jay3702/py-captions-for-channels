@@ -1,6 +1,6 @@
 # Query Channels Recordings Tool
 
-A command-line tool to query the Channels DVR API and display or export recordings data.
+A command-line tool to query the Channels DVR API and display or export recordings data to CSV.
 
 ## Usage
 
@@ -17,18 +17,27 @@ python scripts/query_channels_recordings.py
 Specify which columns to display:
 
 ```bash
-python scripts/query_channels_recordings.py -columns title,created_at,path
-python scripts/query_channels_recordings.py -columns title,aired_at,completed,processed
+python scripts/query_channels_recordings.py -c title,created_at,path
+python scripts/query_channels_recordings.py --columns title,aired_at,duration
 ```
 
-### Excel Export
+### CSV Export (for Excel)
 
-Export to an Excel file:
+Export to a CSV file that Excel can open:
 
 ```bash
-python scripts/query_channels_recordings.py -excel -file recordings.xlsx
-python scripts/query_channels_recordings.py -excel -file output.xlsx -columns title,path,completed
+python scripts/query_channels_recordings.py -x -f recordings.csv
+python scripts/query_channels_recordings.py -x -f output.csv -c title,path,created_at
+python scripts/query_channels_recordings.py --excel --file data.csv --columns title,duration
 ```
+
+## Arguments
+
+Short and long forms are available for all arguments:
+
+- `-c`, `--columns` - Comma-delimited list of column names
+- `-x`, `--excel` - Export to CSV format (requires -f)
+- `-f`, `--file` - Output filename for CSV export
 
 ## Configuration
 
@@ -50,17 +59,7 @@ CHANNELS_API_URL="http://192.168.3.150:8089" python scripts/query_channels_recor
 
 ## Dependencies
 
-For Excel export functionality, install openpyxl:
-
-```bash
-pip install openpyxl
-```
-
-Or install all development dependencies:
-
-```bash
-pip install -r requirements-dev.txt
-```
+No external dependencies required! The script uses Python's built-in `csv` module for exports.
 
 ## Common Columns
 
