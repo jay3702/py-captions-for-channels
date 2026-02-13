@@ -87,29 +87,46 @@ def promote_next_discovered_to_pending():
     )
 
     # Create PartialProcessingEvent from execution data
-    # Extract start_time from job_id format: "Title @ YYYY-MM-DD HH:MM:SS"
+    # Prefer stored started_at, fallback to job_id parsing
     from .channels_polling_source import PartialProcessingEvent
 
-    job_id = next_exec.get("id", "")
+    exec_id = next_exec.get("id", "")
     start_time = None
 
-    if " @ " in job_id:
-        try:
-            _, timestamp_str = job_id.rsplit(" @ ", 1)
-            start_time = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=timezone.utc
-            )
-        except (ValueError, AttributeError) as e:
-            LOG.warning("Failed to parse start_time from job_id '%s': %s", job_id, e)
+    started_at = next_exec.get("started_at")
+    if started_at:
+        if isinstance(started_at, str):
+            try:
+                started_at = datetime.fromisoformat(started_at)
+            except ValueError:
+                started_at = None
+        if started_at:
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            start_time = started_at
+
+    if start_time is None:
+        job_id = exec_id or ""
+        if " @ " in job_id:
+            try:
+                _, timestamp_str = job_id.rsplit(" @ ", 1)
+                start_time = datetime.strptime(
+                    timestamp_str, "%Y-%m-%d %H:%M:%S"
+                ).replace(tzinfo=timezone.utc)
+            except (ValueError, AttributeError) as e:
+                LOG.warning(
+                    "Failed to parse start_time from job_id '%s': %s", job_id, e
+                )
+                start_time = datetime.now(timezone.utc)
+        else:
             start_time = datetime.now(timezone.utc)
-    else:
-        start_time = datetime.now(timezone.utc)
 
     return PartialProcessingEvent(
         timestamp=start_time,
         title=next_exec.get("title", "Unknown"),
         start_time=start_time,
         path=next_exec.get("path"),
+        exec_id=exec_id or None,
     )
 
 
