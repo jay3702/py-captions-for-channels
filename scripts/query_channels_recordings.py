@@ -224,6 +224,13 @@ Examples:
     )
 
     parser.add_argument(
+        "-n",
+        "--limit",
+        type=int,
+        help="Limit response to N items",
+    )
+
+    parser.add_argument(
         "-c",
         "--columns",
         type=str,
@@ -269,7 +276,13 @@ Examples:
     # Fetch recordings
     print("Fetching recordings...", file=sys.stderr)
     recordings = fetch_recordings(api_url)
-    print(f"Found {len(recordings)} recordings.", file=sys.stderr)
+    
+    # Limit results if requested
+    if args.limit and args.limit > 0:
+        recordings = recordings[:args.limit]
+        print(f"Limiting to {len(recordings)} recordings.", file=sys.stderr)
+    else:
+        print(f"Found {len(recordings)} recordings.", file=sys.stderr)
 
     # Output results
     if args.excel:
