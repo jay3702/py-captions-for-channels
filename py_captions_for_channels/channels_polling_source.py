@@ -30,6 +30,7 @@ class PartialProcessingEvent:
     start_time: datetime
     source: str = "channels_polling"
     path: Optional[str] = None  # File path if known (polling source provides this)
+    exec_id: Optional[str] = None  # Existing execution ID, if resuming
 
 
 class ChannelsPollingSource:
@@ -163,6 +164,31 @@ class ChannelsPollingSource:
                 # (cleared at start of each iteration)
                 seen_this_cycle = set()
 
+                def _resolve_start_time(exec_data: dict) -> datetime:
+                    started_at = exec_data.get("started_at")
+                    if started_at:
+                        if isinstance(started_at, str):
+                            try:
+                                started_at = datetime.fromisoformat(started_at)
+                            except ValueError:
+                                started_at = None
+                        if started_at:
+                            if started_at.tzinfo is None:
+                                started_at = started_at.replace(tzinfo=timezone.utc)
+                            return started_at
+
+                    job_id = exec_data.get("id", "")
+                    if " @ " in job_id:
+                        try:
+                            _, timestamp_str = job_id.rsplit(" @ ", 1)
+                            return datetime.strptime(
+                                timestamp_str, "%Y-%m-%d %H:%M:%S"
+                            ).replace(tzinfo=timezone.utc)
+                        except (ValueError, AttributeError):
+                            pass
+
+                    return datetime.now(timezone.utc)
+
                 # Promote discovered executions to pending to maintain queue depth
                 # Strategy: Keep exactly 1 pending job so next job can start immediately
                 try:
@@ -183,33 +209,23 @@ class ChannelsPollingSource:
                     if pending_execs and running_count == 0:
                         pending_execs.sort(key=lambda x: x.get("started_at", ""))
                         exec = pending_execs[0]
-                        job_id = exec.get("id", "")
-                        if " @ " in job_id:
-                            try:
-                                _, timestamp_str = job_id.rsplit(" @ ", 1)
-                                start_time = datetime.strptime(
-                                    timestamp_str, "%Y-%m-%d %H:%M:%S"
-                                ).replace(tzinfo=timezone.utc)
-                                yield PartialProcessingEvent(
-                                    timestamp=start_time,
-                                    title=exec.get("title", "Unknown"),
-                                    start_time=start_time,
-                                    path=exec.get("path"),
-                                )
-                                LOG.info(
-                                    "Resuming pending execution: %s",
-                                    exec.get("title", "Unknown"),
-                                )
-                            except (ValueError, AttributeError) as e:
-                                LOG.warning(
-                                    "Failed to parse start_time from "
-                                    "job_id '%s': %s",
-                                    job_id,
-                                    e,
-                                )
-                        else:
+                        exec_id = exec.get("id")
+                        if not exec_id:
                             LOG.warning(
-                                "Pending execution missing timestamp: %s",
+                                "Pending execution missing id: %s",
+                                exec.get("title", "Unknown"),
+                            )
+                        else:
+                            start_time = _resolve_start_time(exec)
+                            yield PartialProcessingEvent(
+                                timestamp=start_time,
+                                title=exec.get("title", "Unknown"),
+                                start_time=start_time,
+                                path=exec.get("path"),
+                                exec_id=exec_id,
+                            )
+                            LOG.info(
+                                "Resuming pending execution: %s",
                                 exec.get("title", "Unknown"),
                             )
                         # Only resume one pending job per cycle
@@ -234,28 +250,21 @@ class ChannelsPollingSource:
                             )
 
                             # Yield the promoted execution for processing
-                            # Extract start_time from job_id
-                            # format: "Title @ YYYY-MM-DD HH:MM:SS"
-                            job_id = exec.get("id", "")
-                            if " @ " in job_id:
-                                try:
-                                    _, timestamp_str = job_id.rsplit(" @ ", 1)
-                                    start_time = datetime.strptime(
-                                        timestamp_str, "%Y-%m-%d %H:%M:%S"
-                                    ).replace(tzinfo=timezone.utc)
-                                    yield PartialProcessingEvent(
-                                        timestamp=start_time,
-                                        title=exec.get("title", "Unknown"),
-                                        start_time=start_time,
-                                        path=exec.get("path"),
-                                    )
-                                except (ValueError, AttributeError) as e:
-                                    LOG.warning(
-                                        "Failed to parse start_time from "
-                                        "job_id '%s': %s",
-                                        job_id,
-                                        e,
-                                    )
+                            exec_id = exec.get("id")
+                            if not exec_id:
+                                LOG.warning(
+                                    "Promoted execution missing id: %s",
+                                    exec.get("title", "Unknown"),
+                                )
+                            else:
+                                start_time = _resolve_start_time(exec)
+                                yield PartialProcessingEvent(
+                                    timestamp=start_time,
+                                    title=exec.get("title", "Unknown"),
+                                    start_time=start_time,
+                                    path=exec.get("path"),
+                                    exec_id=exec_id,
+                                )
                 except Exception as e:
                     LOG.warning("Error promoting discovered executions: %s", e)
 

@@ -86,7 +86,11 @@ LOG = logging.getLogger(__name__)
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     """Serve the main dashboard UI (index.html) at the root URL."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    response = templates.TemplateResponse("index.html", {"request": request})
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 # --- Pipeline Settings API ---
@@ -364,35 +368,39 @@ async def status() -> dict:
         try:
             progress_tracker = get_progress_tracker()
             all_progress = progress_tracker.get_all_progress()
+            tracker = get_tracker()
 
             # Filter to active processes (updated in last 30 seconds)
             now = datetime.now(timezone.utc)
             for job_id, prog in all_progress.items():
                 updated_at_str = prog.get("updated_at")
-                if updated_at_str:
-                    updated_dt = datetime.fromisoformat(updated_at_str)
-                    if updated_dt.tzinfo is None:
-                        updated_dt = updated_dt.replace(tzinfo=timezone.utc)
-                    age_seconds = (now - updated_dt).total_seconds()
+                if not updated_at_str:
+                    continue
 
-                    # Only include recent progress (< 30 seconds old)
-                    if age_seconds < 30:
-                        # Look up job number from execution
-                        job_number = None
-                        try:
-                            exec_data = tracker.get_execution(job_id)
-                            if exec_data:
-                                job_number = exec_data.get("job_number")
-                        except Exception:
-                            pass  # If lookup fails, just omit job_number
+                updated_dt = datetime.fromisoformat(updated_at_str)
+                if updated_dt.tzinfo is None:
+                    updated_dt = updated_dt.replace(tzinfo=timezone.utc)
+                age_seconds = (now - updated_dt).total_seconds()
 
-                        progress_data[job_id] = {
-                            "process_type": prog.get("process_type", "unknown"),
-                            "percent": prog.get("percent", 0),
-                            "message": prog.get("message", ""),
-                            "age_seconds": age_seconds,
-                            "job_number": job_number,
-                        }
+                # Only include recent progress (< 30 seconds old)
+                if age_seconds >= 30:
+                    continue
+
+                # Only include progress for running jobs
+                exec_data = tracker.get_execution(job_id)
+                if not exec_data or exec_data.get("status") not in (
+                    "running",
+                    "canceling",
+                ):
+                    continue
+
+                progress_data[job_id] = {
+                    "process_type": prog.get("process_type", "unknown"),
+                    "percent": prog.get("percent", 0),
+                    "message": prog.get("message", ""),
+                    "age_seconds": age_seconds,
+                    "job_number": exec_data.get("job_number"),
+                }
         except Exception as e:
             LOG.debug("Error reading progress: %s", e)
 

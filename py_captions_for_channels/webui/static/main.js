@@ -1,8 +1,11 @@
+let lastUiUpdate = 0;
+
 async function fetchStatus() {
   try {
-    const res = await fetch('/api/status');
+    const res = await fetch(`/api/status?ts=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch status');
     const data = await res.json();
+    lastUiUpdate = Date.now();
     
     // Update status pill color based on status/error
     const statusPill = document.getElementById('status-pill');
@@ -27,6 +30,11 @@ async function fetchStatus() {
     document.getElementById('last-processed').textContent = data.last_processed 
       ? new Date(data.last_processed).toLocaleString() 
       : 'never';
+    const lastUpdate = document.getElementById('last-update');
+    if (lastUpdate) {
+      const ts = data.timestamp ? new Date(data.timestamp) : new Date();
+      lastUpdate.textContent = ts.toLocaleString();
+    }
     document.getElementById('manual-process-queue').textContent = `${data.manual_process_queue_size} items`;
 
     // Update service health indicators (external services only)
@@ -35,7 +43,12 @@ async function fetchStatus() {
       if (servicesContainer) {
         let servicesHtml = '';
         for (const [key, svc] of Object.entries(data.services)) {
-          if (key === 'whisper' || key === 'ffmpeg') {
+          if (
+            key === 'whisper' ||
+            key === 'ffmpeg' ||
+            key === 'misc' ||
+            svc.name === 'File Ops'
+          ) {
             continue;
           }
           const healthClass = svc.healthy ? 'service-healthy' : 'service-unhealthy';
@@ -63,12 +76,12 @@ async function fetchStatus() {
           let progress = null;
           let progressJobId = null;
           if (data.progress) {
-            for (const [jobId, prog] of Object.entries(data.progress)) {
-              if (prog.process_type === key) {
-                progress = prog;
-                progressJobId = jobId;
-                break;
-              }
+            const matches = Object.entries(data.progress)
+              .filter(([, prog]) => prog.process_type === key)
+              .sort((a, b) => (a[1].age_seconds ?? 999) - (b[1].age_seconds ?? 999));
+            if (matches.length) {
+              progressJobId = matches[0][0];
+              progress = matches[0][1];
             }
           }
 
@@ -141,7 +154,7 @@ async function fetchStatus() {
 
   async function fetchExecutions() {
   try {
-      const res = await fetch('/api/executions?limit=50');
+      const res = await fetch(`/api/executions?limit=50&ts=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch executions');
     const data = await res.json();
     
@@ -796,8 +809,37 @@ applyStatusPanelVisibility();
 // Note: Don't start log polling on init - only when logs tab is clicked
 
 // Poll status and executions every 5 seconds
-setInterval(fetchStatus, 5000);
-setInterval(fetchExecutions, 5000);
+let refreshTimer = null;
+const refreshNow = () => {
+  fetchStatus();
+  fetchExecutions();
+};
+
+const startAutoRefresh = () => {
+  if (refreshTimer) return;
+  refreshTimer = setInterval(() => {
+    const now = Date.now();
+    if (now - lastUiUpdate > 15000) {
+      refreshNow();
+      return;
+    }
+    refreshNow();
+  }, 5000);
+};
+
+startAutoRefresh();
+window.addEventListener('focus', refreshNow);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    refreshNow();
+  }
+});
+
+function applyStatusPanelVisibility() {
+  const statusCard = document.getElementById('status-card');
+  if (!statusCard) return;
+  statusCard.style.display = '';
+}
 
 function openSettingsModal() {
   const modal = document.getElementById('settings-modal');
