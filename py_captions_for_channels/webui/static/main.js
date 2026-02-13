@@ -129,12 +129,14 @@ async function fetchStatus() {
       for (const [name, hb] of Object.entries(data.heartbeat)) {
         const indicator = document.getElementById(`heartbeat-${name}`);
         if (indicator) {
-          if (hb.alive && hb.age_seconds < 3) {
-            // Recent heartbeat - pulse it
+          if (hb.alive && hb.age_seconds < 15) {
+            // Recent heartbeat - pulse it with 1-second green flash
+            indicator.classList.remove('pulse'); // Remove first to restart animation
+            void indicator.offsetWidth; // Force reflow
             indicator.classList.add('pulse');
-            setTimeout(() => indicator.classList.remove('pulse'), 500);
+            setTimeout(() => indicator.classList.remove('pulse'), 1000);
           } else if (hb.alive) {
-            // Alive but not fresh - keep cyan but no pulse
+            // Alive but not super fresh - keep cyan but no pulse
             indicator.style.color = '#5ce1e6';
           } else {
             // Stale - grey
