@@ -7,24 +7,39 @@ Usage:
     python query_channels_recordings.py -c title,created_at,path
     python query_channels_recordings.py -x -f recordings.csv
     python query_channels_recordings.py -x -f output.csv -c title,path
+    python query_channels_recordings.py -w http://192.168.3.150:8000
 """
 
 import argparse
 import sys
 import csv
-from pathlib import Path
 from datetime import datetime
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import requests  # noqa: E402
-from py_captions_for_channels.config import CHANNELS_API_URL  # noqa: E402
+import requests
 
 
-def get_channels_api_url():
-    """Get Channels API URL from config."""
-    return CHANNELS_API_URL.rstrip("/")
+def get_channels_api_url_from_webapp(webapp_url):
+    """Get Channels API URL from the web app's status endpoint."""
+    try:
+        response = requests.get(f"{webapp_url}/api/status", timeout=10)
+        response.raise_for_status()
+        status_data = response.json()
+
+        # Extract Channels DVR URL from services
+        if "services" in status_data and "channels_dvr" in status_data["services"]:
+            channels_url = status_data["services"]["channels_dvr"].get("url")
+            if channels_url:
+                return channels_url.rstrip("/")
+
+        print(
+            "Error: Could not find Channels DVR URL in web app status",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except requests.exceptions.RequestException as e:
+        print(f"Error connecting to web app at {webapp_url}: {e}", file=sys.stderr)
+        print("Make sure the web app is running and accessible.", file=sys.stderr)
+        sys.exit(1)
 
 
 def fetch_recordings(api_url):
@@ -193,7 +208,19 @@ Examples:
   %(prog)s -c title,created_at,path
   %(prog)s -x -f recordings.csv
   %(prog)s -x -f output.csv -c title,path
+  %(prog)s -w http://192.168.3.150:8000 -c title,path
         """,
+    )
+
+    parser.add_argument(
+        "-w",
+        "--webapp",
+        type=str,
+        default="http://localhost:8000",
+        help=(
+            "Web app URL to get Channels DVR API endpoint "
+            "(default: http://localhost:8000)"
+        ),
     )
 
     parser.add_argument(
@@ -234,9 +261,13 @@ Examples:
     else:
         columns = default_columns
 
+    # Get Channels API URL from web app
+    print(f"Connecting to web app at {args.webapp}...", file=sys.stderr)
+    api_url = get_channels_api_url_from_webapp(args.webapp)
+    print(f"Using Channels DVR API at {api_url}", file=sys.stderr)
+
     # Fetch recordings
-    api_url = get_channels_api_url()
-    print(f"Fetching recordings from {api_url}...", file=sys.stderr)
+    print("Fetching recordings...", file=sys.stderr)
     recordings = fetch_recordings(api_url)
     print(f"Found {len(recordings)} recordings.", file=sys.stderr)
 
