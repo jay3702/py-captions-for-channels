@@ -6,7 +6,7 @@ A command-line tool to query the Channels DVR API and display or export recordin
 
 ### Basic Text Output
 
-Display recordings with default columns (created_at, updated_at, completed, processed, path):
+Display recordings with default columns (title, created_at, duration, path):
 
 ```bash
 python scripts/query_channels_recordings.py
@@ -66,14 +66,31 @@ pip install -r requirements-dev.txt
 
 Available columns from the Channels DVR API include:
 
-- `title` - Recording title
+**Direct Fields:**
 - `path` - File path
 - `created_at` - Creation timestamp
 - `updated_at` - Last update timestamp
-- `aired_at` - Original air date timestamp
-- `completed` - Whether processing is complete (boolean)
-- `processed` - Whether recording has been processed (boolean)
-- `duration` - Recording duration
-- `size` - File size in bytes
+- `duration` - Recording duration (seconds)
+- `id` - Recording ID
+- `job_id` - Job ID
+- `channel_number` - Channel number
+- `device_id` - Device ID
 
-Datetime columns (created_at, updated_at, aired_at) are automatically formatted to human-readable format.
+**Nested Fields (from Airing):**
+- `title` - Recording title
+- `summary` - Brief description
+- `aired_at` - Original air date timestamp
+- `original_date` - Original air date
+- `channel` - Channel ID
+- `series_id` - Series ID
+- `program_id` - Program ID
+- `episode_number` - Episode number
+- `release_year` - Release year
+- `image` - Thumbnail image URL
+- `categories` - List of categories
+- `genres` - List of genres
+
+**Notes:**
+- Datetime columns (created_at, updated_at, aired_at) are automatically formatted to human-readable format.
+- You can use either lowercase (title, created_at) or PascalCase (Title, CreatedAt) - the script handles both.
+- Nested fields like `title` are automatically mapped from `Airing.Title`.
