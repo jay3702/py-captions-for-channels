@@ -360,7 +360,7 @@ async def status() -> dict:
         try:
             heartbeat_service = HeartbeatService(next(get_db()))
             heartbeat_data = heartbeat_service.get_all_heartbeats()
-            LOG.debug(
+            LOG.info(
                 "Retrieved %d heartbeat(s): %s",
                 len(heartbeat_data),
                 list(heartbeat_data.keys()),

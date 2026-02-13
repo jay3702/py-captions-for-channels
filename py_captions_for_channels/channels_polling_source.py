@@ -271,7 +271,7 @@ class ChannelsPollingSource:
                 # Update heartbeat in database
                 try:
                     heartbeat_service.beat("polling", "alive")
-                    LOG.debug("Updated polling heartbeat")
+                    LOG.info("Updated polling heartbeat")
                 except Exception as e:
                     LOG.warning("Failed to update polling heartbeat: %s", e)
 
