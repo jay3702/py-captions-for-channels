@@ -276,10 +276,10 @@ Examples:
     # Fetch recordings
     print("Fetching recordings...", file=sys.stderr)
     recordings = fetch_recordings(api_url)
-    
+
     # Limit results if requested
     if args.limit and args.limit > 0:
-        recordings = recordings[:args.limit]
+        recordings = recordings[: args.limit]
         print(f"Limiting to {len(recordings)} recordings.", file=sys.stderr)
     else:
         print(f"Found {len(recordings)} recordings.", file=sys.stderr)
