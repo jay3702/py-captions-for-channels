@@ -271,8 +271,9 @@ class ChannelsPollingSource:
                 # Update heartbeat in database
                 try:
                     heartbeat_service.beat("polling", "alive")
-                except Exception:
-                    pass  # Don't fail on heartbeat
+                    LOG.debug("Updated polling heartbeat")
+                except Exception as e:
+                    LOG.warning("Failed to update polling heartbeat: %s", e)
 
                 # Use local mock scanner if LOCAL_TEST_DIR is set
                 if self._use_local_mock:
