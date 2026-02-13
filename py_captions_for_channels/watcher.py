@@ -995,18 +995,27 @@ async def main():
             last_manual_check = now
 
         _maybe_update_log_verbosity()
-        if not state.should_process(event_partial.timestamp):
+
+        job_id = (
+            f"{event_partial.title} @ "
+            f"{event_partial.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+
+        tracker = get_tracker()
+        existing_by_id = tracker.get_execution(job_id)
+        bypass_state_check = False
+        if existing_by_id and existing_by_id.get("status") in (
+            "pending",
+            "discovered",
+        ):
+            bypass_state_check = True
+
+        if not bypass_state_check and not state.should_process(event_partial.timestamp):
             continue
 
         # Check whitelist
         if not whitelist.is_allowed(event_partial.title, event_partial.start_time):
             continue
-
-        # Create pending execution immediately so it shows in UI
-        job_id = (
-            f"{event_partial.title} @ "
-            f"{event_partial.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
-        )
 
         # Use path from event if provided (polling source), otherwise lookup
         if hasattr(event_partial, "path") and event_partial.path:
@@ -1015,8 +1024,6 @@ async def main():
             path = api.lookup_recording_path(
                 event_partial.title, event_partial.start_time
             )
-
-        tracker = get_tracker()
 
         # Check if this exact recording (by path) has been processed
         # Handles job_id format changes and multiple recordings, same title
