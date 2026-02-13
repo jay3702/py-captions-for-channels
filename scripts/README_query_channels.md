@@ -2,6 +2,8 @@
 
 A command-line tool to query the Channels DVR API and display or export recordings data to CSV.
 
+The tool automatically discovers the Channels DVR API endpoint from the py-captions web app, making it easy to use from any machine without configuration.
+
 ## Usage
 
 ### Basic Text Output
@@ -10,6 +12,7 @@ Display recordings with default columns (title, created_at, duration, path):
 
 ```bash
 python scripts/query_channels_recordings.py
+python scripts/query_channels_recordings.py -w http://192.168.3.150:8000
 ```
 
 ### Custom Columns
@@ -18,7 +21,7 @@ Specify which columns to display:
 
 ```bash
 python scripts/query_channels_recordings.py -c title,created_at,path
-python scripts/query_channels_recordings.py --columns title,aired_at,duration
+python scripts/query_channels_recordings.py -w http://192.168.3.150:8000 -c title,aired_at,duration
 ```
 
 ### CSV Export (for Excel)
@@ -27,39 +30,43 @@ Export to a CSV file that Excel can open:
 
 ```bash
 python scripts/query_channels_recordings.py -x -f recordings.csv
-python scripts/query_channels_recordings.py -x -f output.csv -c title,path,created_at
-python scripts/query_channels_recordings.py --excel --file data.csv --columns title,duration
+python scripts/query_channels_recordings.py -w http://192.168.3.150:8000 -x -f output.csv -c title,path,created_at
 ```
 
 ## Arguments
 
 Short and long forms are available for all arguments:
 
+- `-w`, `--webapp` - Web app URL (default: http://localhost:8000)
 - `-c`, `--columns` - Comma-delimited list of column names
 - `-x`, `--excel` - Export to CSV format (requires -f)
 - `-f`, `--file` - Output filename for CSV export
 
-## Configuration
+## How It Works
 
-The script reads the Channels DVR API URL from your `.env` file:
+The script connects to the py-captions web app and retrieves the Channels DVR API URL from the `/api/status` endpoint. This means:
+
+1. **No local configuration needed** - Works from any machine
+2. **Always uses the correct server** - Gets the URL from your deployed instance
+3. **Simple to use** - Just point it at your web app
+
+## Examples
 
 ```bash
-CHANNELS_API_URL=http://192.168.3.150:8089
-```
+# Query from Windows dev machine to deployed server
+python scripts/query_channels_recordings.py -w http://192.168.3.150:8000
 
-Alternatively, you can override it for a single run:
+# Export all recordings to CSV
+python scripts/query_channels_recordings.py -w http://192.168.3.150:8000 -x -f recordings.csv
 
-```bash
-# Windows PowerShell
-$env:CHANNELS_API_URL="http://192.168.3.150:8089"; python scripts/query_channels_recordings.py
-
-# Linux/Mac
-CHANNELS_API_URL="http://192.168.3.150:8089" python scripts/query_channels_recordings.py
+# Get specific columns
+python scripts/query_channels_recordings.py -w http://192.168.3.150:8000 -c title,duration,channel_number
 ```
 
 ## Dependencies
 
-No external dependencies required! The script uses Python's built-in `csv` module for exports.
+No external dependencies beyond Python's standard library! The script uses only built-in modules:
+- `requests` (already in requirements.txt)
 
 ## Common Columns
 
