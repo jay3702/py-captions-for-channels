@@ -577,10 +577,13 @@ async function showManualProcessModal() {
           whitelistIcon = '<span style="color: #4caf50; font-size: 18px;" title="Passes whitelist">✓</span>';
         }
         
+        // Disable checkbox if recording is not yet completed
+        const checkboxDisabled = !recording.completed ? 'disabled title="Recording in progress"' : '';
+        
         tableHtml += `
           <tr style="border-bottom: 1px solid var(--border);">
             <td style="padding: 8px 4px;">
-              <input type="checkbox" name="manual-process-path" value="${escapeAttr(recording.path)}" data-idx="${idx}">
+              <input type="checkbox" name="manual-process-path" value="${escapeAttr(recording.path)}" data-idx="${idx}" ${checkboxDisabled}>
             </td>
             <td style="padding: 8px;">
               <div style="font-weight: 500;">${escapeHtml(title)}</div>

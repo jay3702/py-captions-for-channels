@@ -1037,6 +1037,9 @@ async def get_recordings() -> dict:
                     ),  # Unix timestamp in milliseconds
                     "original_air_date": rec.get("original_air_date", ""),
                     "duration": rec.get("duration", 0),
+                    "completed": rec.get(
+                        "completed", False
+                    ),  # True if recording is finished
                     "passes_whitelist": passes_whitelist,
                     "processed": processed_status,  # None, 'success', or 'failed'
                 }
