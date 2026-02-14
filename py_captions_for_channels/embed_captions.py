@@ -642,6 +642,8 @@ def main():
             mpg_path,
             "--model",
             args.model,
+            "--device",
+            "cuda",  # Use GPU acceleration
             "--output_format",
             "srt",
             "--output_dir",
@@ -649,15 +651,39 @@ def main():
             "--language",
             "en",
         ]
-        log.info(f"Running Whisper: {' '.join(whisper_cmd)}")
+        log.info(f"Running Whisper with GPU: {' '.join(whisper_cmd)}")
 
         def _run_whisper():
             try:
                 subprocess.check_call(whisper_cmd)
                 log.info(f"Whisper completed successfully, generated: {srt_path}")
             except subprocess.CalledProcessError as e:
-                log.error(f"Whisper failed: {e}")
-                sys.exit(1)
+                # Check if CUDA is the issue, try CPU fallback
+                if "--device" in whisper_cmd and "cuda" in whisper_cmd:
+                    log.warning(f"Whisper with CUDA failed: {e}, falling back to CPU")
+                    # Remove --device cuda flags
+                    cpu_cmd = [
+                        arg
+                        for i, arg in enumerate(whisper_cmd)
+                        if not (
+                            arg == "--device"
+                            or (i > 0 and whisper_cmd[i - 1] == "--device")
+                        )
+                    ]
+                    log.info(f"Retrying Whisper with CPU: {' '.join(cpu_cmd)}")
+                    try:
+                        subprocess.check_call(cpu_cmd)
+                        log.info(
+                            f"Whisper CPU fallback completed successfully, "
+                            f"generated: {srt_path}"
+                        )
+                        return
+                    except subprocess.CalledProcessError as cpu_e:
+                        log.error(f"Whisper CPU fallback also failed: {cpu_e}")
+                        sys.exit(1)
+                else:
+                    log.error(f"Whisper failed: {e}")
+                    sys.exit(1)
 
         run_step(
             "whisper",
