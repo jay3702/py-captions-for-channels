@@ -319,8 +319,14 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                 # Update existing pending execution to running, or create new one
                 if existing and existing.get("status") == "pending":
                     exec_id = job_id
+                    # Handle timestamp as both datetime and string
+                    timestamp_str = (
+                        event.timestamp
+                        if isinstance(event.timestamp, str)
+                        else event.timestamp.isoformat()
+                    )
                     tracker.update_execution(
-                        job_id, status="running", started_at=event.timestamp.isoformat()
+                        job_id, status="running", started_at=timestamp_str
                     )
                     LOG.debug("Updated pending execution to running: %s", path)
 
@@ -329,11 +335,17 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     if promoted_event:
                         await _polling_queue.put(promoted_event)
                 else:
+                    # Handle timestamp as both datetime and string
+                    timestamp_str = (
+                        event.timestamp
+                        if isinstance(event.timestamp, str)
+                        else event.timestamp.isoformat()
+                    )
                     exec_id = tracker.start_execution(
                         job_id,
                         title,
                         path,
-                        event.timestamp.isoformat(),
+                        timestamp_str,
                         status="running",
                         kind="manual_process",
                     )
@@ -1157,11 +1169,17 @@ async def main():
             reason = "New recording"
 
         if should_create:
+            # Handle timestamp as both datetime and string
+            timestamp_str = (
+                event_partial.timestamp
+                if isinstance(event_partial.timestamp, str)
+                else event_partial.timestamp.isoformat()
+            )
             _ = tracker.start_execution(
                 job_id,
                 event_partial.title,
                 path,
-                event_partial.timestamp.isoformat(),
+                timestamp_str,
                 status="discovered",
             )
             LOG.info("Added to processing queue: %s (%s)", event_partial.title, reason)
