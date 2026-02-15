@@ -636,54 +636,94 @@ def main():
         log.info("Skipping caption generation step (using existing SRT)")
         step_tracker.finish("whisper", status="skipped")
     else:
-        log.info(f"Generating captions with Whisper model: {args.model}")
-        whisper_cmd = [
-            "whisper",
-            mpg_path,
-            "--model",
-            args.model,
-            "--device",
-            "cuda",  # Use GPU acceleration
-            "--output_format",
-            "srt",
-            "--output_dir",
-            str(Path(srt_path).parent),
-            "--language",
-            "en",
-        ]
-        log.info(f"Running Whisper with GPU: {' '.join(whisper_cmd)}")
+        log.info(f"Generating captions with Faster-Whisper model: {args.model}")
 
         def _run_whisper():
+            def format_srt_timestamp(seconds):
+                """Convert seconds to SRT timestamp format (HH:MM:SS,mmm)."""
+                hours = int(seconds // 3600)
+                minutes = int((seconds % 3600) // 60)
+                secs = int(seconds % 60)
+                millis = int((seconds - int(seconds)) * 1000)
+                return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
             try:
-                subprocess.check_call(whisper_cmd)
-                log.info(f"Whisper completed successfully, generated: {srt_path}")
-            except subprocess.CalledProcessError as e:
-                # Check if CUDA is the issue, try CPU fallback
-                if "--device" in whisper_cmd and "cuda" in whisper_cmd:
-                    log.warning(f"Whisper with CUDA failed: {e}, falling back to CPU")
-                    # Remove --device cuda flags
-                    cpu_cmd = [
-                        arg
-                        for i, arg in enumerate(whisper_cmd)
-                        if not (
-                            arg == "--device"
-                            or (i > 0 and whisper_cmd[i - 1] == "--device")
-                        )
-                    ]
-                    log.info(f"Retrying Whisper with CPU: {' '.join(cpu_cmd)}")
-                    try:
-                        subprocess.check_call(cpu_cmd)
-                        log.info(
-                            f"Whisper CPU fallback completed successfully, "
-                            f"generated: {srt_path}"
-                        )
-                        return
-                    except subprocess.CalledProcessError as cpu_e:
-                        log.error(f"Whisper CPU fallback also failed: {cpu_e}")
-                        sys.exit(1)
-                else:
-                    log.error(f"Whisper failed: {e}")
-                    sys.exit(1)
+                from faster_whisper import WhisperModel
+
+                # Initialize model with GPU if available
+                device = "cuda"
+                compute_type = "float16"  # Use float16 for better GPU performance
+
+                log.info(
+                    f"Loading Faster-Whisper model: {args.model} "
+                    f"(device={device}, compute_type={compute_type})"
+                )
+
+                try:
+                    model = WhisperModel(
+                        args.model, device=device, compute_type=compute_type
+                    )
+                    log.info("Faster-Whisper model loaded successfully with GPU")
+                except Exception as e:
+                    log.warning(
+                        f"Failed to load model with GPU: {e}, falling back to CPU"
+                    )
+                    device = "cpu"
+                    compute_type = "int8"  # Use int8 for CPU efficiency
+                    model = WhisperModel(
+                        args.model, device=device, compute_type=compute_type
+                    )
+                    log.info("Faster-Whisper model loaded with CPU fallback")
+
+                # Transcribe with progress tracking
+                log.info(f"Transcribing audio from: {mpg_path}")
+                segments, info = model.transcribe(
+                    mpg_path,
+                    language="en",
+                    beam_size=5,
+                    vad_filter=True,  # Voice activity detection for better accuracy
+                    vad_parameters=dict(
+                        min_silence_duration_ms=500
+                    ),  # Reduce hallucinations
+                )
+
+                log.info(
+                    f"Detected language: {info.language} "
+                    f"(probability: {info.language_probability:.2f})"
+                )
+
+                # Write SRT file
+                srt_lines = []
+                for i, segment in enumerate(segments, start=1):
+                    # Format timestamps for SRT
+                    start_time = format_srt_timestamp(segment.start)
+                    end_time = format_srt_timestamp(segment.end)
+
+                    # Add segment to SRT
+                    srt_lines.append(f"{i}\n")
+                    srt_lines.append(f"{start_time} --> {end_time}\n")
+                    srt_lines.append(f"{segment.text.strip()}\n")
+                    srt_lines.append("\n")
+
+                # Write SRT file atomically
+                srt_tmp = srt_path + ".tmp"
+                with open(srt_tmp, "w", encoding="utf-8") as f:
+                    f.writelines(srt_lines)
+                os.replace(srt_tmp, srt_path)
+
+                log.info(
+                    f"Faster-Whisper completed successfully, generated: {srt_path}"
+                )
+
+            except ImportError as e:
+                log.error(
+                    f"faster-whisper not installed: {e}. "
+                    f"Install with: pip install faster-whisper"
+                )
+                sys.exit(1)
+            except Exception as e:
+                log.error(f"Faster-Whisper transcription failed: {e}")
+                sys.exit(1)
 
         run_step(
             "whisper",
