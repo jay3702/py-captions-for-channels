@@ -442,7 +442,12 @@ class Pipeline:
         """
         # Set job ID for log formatting
         timestamp = getattr(event, "timestamp", None)
-        timestamp_str = timestamp.strftime("%H:%M:%S") if timestamp else "UNKNOWN"
+        if isinstance(timestamp, str):
+            timestamp_str = timestamp
+        elif timestamp:
+            timestamp_str = timestamp.strftime("%H:%M:%S")
+        else:
+            timestamp_str = "UNKNOWN"
         job_id = job_id_override or f"{event.title} @ {timestamp_str}"
         log = get_logger("pipeline", job_id=job_id)
 
