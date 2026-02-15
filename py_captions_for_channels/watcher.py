@@ -269,7 +269,7 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     if promoted_event:
                         await _polling_queue.put(promoted_event)
                 else:
-                    _ = tracker.start_execution(
+                    exec_id = tracker.start_execution(
                         job_id,
                         title,
                         path,
@@ -280,7 +280,7 @@ async def process_manual_process_queue(state, pipeline, api, parser):
 
                 # Update job_id to the actual execution ID
                 # (may have timestamp for reprocessing)
-                set_job_id(job_id)
+                set_job_id(exec_id)
 
                 # Run pipeline in executor to not block event loop
                 loop = asyncio.get_event_loop()

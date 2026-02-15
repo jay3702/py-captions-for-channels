@@ -164,8 +164,24 @@ class ExecutionTracker:
                 if existing:
                     # If completed/failed, create new unique ID for reprocessing
                     if existing.status in ("completed", "failed"):
-                        now_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+                        now_ts = datetime.now(timezone.utc).strftime(
+                            "%Y%m%d-%H%M%S-%f"
+                        )[
+                            :20
+                        ]  # Include microseconds for uniqueness
                         exec_id = f"{job_id}::{now_ts}"
+
+                        # Verify the new ID doesn't exist (shouldn't happen but be safe)
+                        retry_check = service.get_execution(exec_id)
+                        if retry_check:
+                            LOG.warning(
+                                f"Retry ID {exec_id} already exists, appending counter"
+                            )
+                            counter = 1
+                            while service.get_execution(f"{exec_id}-{counter}"):
+                                counter += 1
+                            exec_id = f"{exec_id}-{counter}"
+
                         LOG.info(
                             "Reprocessing existing execution - new ID: %s -> %s",
                             job_id,
