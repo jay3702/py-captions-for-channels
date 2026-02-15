@@ -247,11 +247,18 @@
             <div class="settings-group">
               <label for="whisper-model-select">Whisper Model</label>
               <select id="whisper-model-select" name="whisper_model">
-                <option value="tiny">tiny</option>
-                <option value="base">base</option>
-                <option value="small">small</option>
-                <option value="medium">medium</option>
-                <option value="large">large</option>
+                <option value="tiny">tiny (fastest, least accurate)</option>
+                <option value="tiny.en">tiny.en (English-only, faster)</option>
+                <option value="base">base (good speed/accuracy)</option>
+                <option value="base.en">base.en (English-only, recommended)</option>
+                <option value="small">small (balanced)</option>
+                <option value="small.en">small.en (English-only)</option>
+                <option value="medium">medium (slower, more accurate)</option>
+                <option value="medium.en">medium.en (English-only)</option>
+                <option value="large-v1">large-v1 (original large)</option>
+                <option value="large-v2">large-v2 (improved)</option>
+                <option value="large-v3">large-v3 (latest, best accuracy)</option>
+                <option value="large">large (alias for large-v3)</option>
               </select>
             </div>
             <div class="settings-group">
