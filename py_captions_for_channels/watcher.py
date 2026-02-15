@@ -840,10 +840,11 @@ async def main():
 
                     # Set job ID for this processing task
                     # Include date to avoid daily collisions
-                    job_id = (
-                        f"{event_partial.title} @ "
-                        f"{event_partial.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
-                    )
+                    # start_time might be datetime or string depending on source
+                    start_time_str = event_partial.start_time
+                    if isinstance(start_time_str, datetime):
+                        start_time_str = start_time_str.strftime("%Y-%m-%d %H:%M:%S")
+                    job_id = f"{event_partial.title} @ {start_time_str}"
                     set_job_id(job_id)
 
                     tracker = get_tracker()
@@ -1014,10 +1015,11 @@ async def main():
 
         _maybe_update_log_verbosity()
 
-        job_id = (
-            f"{event_partial.title} @ "
-            f"{event_partial.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
-        )
+        # start_time might be datetime or string depending on source
+        start_time_str = event_partial.start_time
+        if isinstance(start_time_str, datetime):
+            start_time_str = start_time_str.strftime("%Y-%m-%d %H:%M:%S")
+        job_id = f"{event_partial.title} @ {start_time_str}"
 
         tracker = get_tracker()
         existing_by_id = tracker.get_execution(job_id)
