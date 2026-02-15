@@ -1015,43 +1015,6 @@ async def get_recordings() -> dict:
             # Check whitelist (requires both title and start time)
             passes_whitelist = whitelist.is_allowed(title, start_time)
 
-            # Check if file is truly ready by examining modification time
-            # Even if API says completed=true, file might still be growing
-            # NOTE: Web container may not have file access
-            api_completed = rec.get("completed", False)
-            file_ready = api_completed
-
-            if api_completed and path:
-                try:
-                    from pathlib import Path as FilePath
-
-                    file_path = FilePath(path)
-                    if file_path.exists():
-                        mtime = datetime.fromtimestamp(
-                            file_path.stat().st_mtime, tz=timezone.utc
-                        )
-                        age_minutes = (
-                            datetime.now(timezone.utc) - mtime
-                        ).total_seconds() / 60
-                        # If modified within last 3 minutes, consider not ready
-                        # (allows for post-processing, commercial detection, etc.)
-                        if age_minutes < 3:
-                            file_ready = False
-                            LOG.debug(
-                                f"Recording {title} marked not ready: "
-                                f"file modified {age_minutes:.1f} min ago"
-                            )
-                    else:
-                        # File doesn't exist in web container, trust API
-                        LOG.debug(
-                            f"File {path} not accessible in web container, "
-                            f"trusting API completed={api_completed}"
-                        )
-                except Exception as e:
-                    LOG.warning(f"Error checking file mtime for {path}: {e}")
-                    # If we can't check file, trust API completed status
-                    pass
-
             # Check if processed (look for execution with this path)
             processed_exec = next(
                 (e for e in all_executions if e.get("path") == path), None
@@ -1074,8 +1037,7 @@ async def get_recordings() -> dict:
                     ),  # Unix timestamp in milliseconds
                     "original_air_date": rec.get("original_air_date", ""),
                     "duration": rec.get("duration", 0),
-                    # True only if API says complete AND file stable
-                    "completed": file_ready,
+                    "completed": rec.get("completed", False),
                     "passes_whitelist": passes_whitelist,
                     "processed": processed_status,  # None, 'success', or 'failed'
                 }
