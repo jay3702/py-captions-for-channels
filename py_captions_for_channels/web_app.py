@@ -1017,14 +1017,15 @@ async def get_recordings() -> dict:
 
             # Check if file is truly ready by examining modification time
             # Even if API says completed=true, file might still be growing
+            # NOTE: Web container may not have file access
             api_completed = rec.get("completed", False)
             file_ready = api_completed
 
             if api_completed and path:
                 try:
-                    from pathlib import Path
+                    from pathlib import Path as FilePath
 
-                    file_path = Path(path)
+                    file_path = FilePath(path)
                     if file_path.exists():
                         mtime = datetime.fromtimestamp(
                             file_path.stat().st_mtime, tz=timezone.utc
@@ -1040,8 +1041,14 @@ async def get_recordings() -> dict:
                                 f"Recording {title} marked not ready: "
                                 f"file modified {age_minutes:.1f} min ago"
                             )
+                    else:
+                        # File doesn't exist in web container, trust API
+                        LOG.debug(
+                            f"File {path} not accessible in web container, "
+                            f"trusting API completed={api_completed}"
+                        )
                 except Exception as e:
-                    LOG.debug(f"Could not check file mtime for {path}: {e}")
+                    LOG.warning(f"Error checking file mtime for {path}: {e}")
                     # If we can't check file, trust API completed status
                     pass
 
