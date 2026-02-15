@@ -176,8 +176,12 @@ class StateBackend:
 
         tmp = self.path + ".tmp"
         with open(tmp, "w") as f:
+            # Handle ts as both datetime and string
+            timestamp_str = None
+            if ts:
+                timestamp_str = ts if isinstance(ts, str) else ts.isoformat()
             data = {
-                "last_timestamp": ts.isoformat() if ts else None,
+                "last_timestamp": timestamp_str,
                 # manual_process_paths removed - now in database
             }
             json.dump(data, f)
