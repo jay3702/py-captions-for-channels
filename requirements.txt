@@ -3,8 +3,9 @@ websockets
 aiohttp
 # NumPy pinned to 1.x for Whisper compatibility (NumPy 2.x breaks compiled modules)
 numpy<2
-# Whisper for automatic speech recognition (NOTE: PyTorch installed separately in Dockerfile with CUDA)
-openai-whisper
+# Faster-Whisper for automatic speech recognition (4-5x faster than openai-whisper)
+# NOTE: PyTorch installed separately in Dockerfile with CUDA support
+faster-whisper
 fastapi
 uvicorn[standard]
 jinja2
