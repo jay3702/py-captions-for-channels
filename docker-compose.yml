@@ -40,6 +40,7 @@ services:
       - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
+      - "61208:61208"  # Glances web UI
     
     logging:
       driver: "json-file"
