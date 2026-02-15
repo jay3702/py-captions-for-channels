@@ -152,6 +152,21 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                 for e in all_execs
             )
 
+            # Debug logging
+            if path_has_active_exec:
+                active_execs = [
+                    e.get("id")
+                    for e in all_execs
+                    if e.get("path") == path
+                    and e.get("status")
+                    in ("pending", "running", "discovered", "canceling")
+                ]
+                LOG.debug(
+                    "Skipping creation - active executions exist for %s: %s",
+                    path,
+                    active_execs,
+                )
+
             # Create pending execution only if:
             # 1. No execution exists for the base job_id, OR
             # 2. Previous execution is terminal AND no active retries exist
