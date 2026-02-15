@@ -146,6 +146,26 @@ async def process_manual_process_queue(state, pipeline, api, parser):
             # Check if there's already an active execution for this path
             # (including retries with timestamped IDs)
             all_execs = tracker.get_executions(limit=1000)
+
+            # Debug: Log what we're looking for
+            LOG.debug(
+                "Queue check: looking for path=%r in %d executions",
+                path,
+                len(all_execs),
+            )
+
+            # Debug: Log all executions with this path
+            matching_execs = [e for e in all_execs if e.get("path") == path]
+            if matching_execs:
+                LOG.debug("Found %d executions matching path:", len(matching_execs))
+                for e in matching_execs:
+                    LOG.debug(
+                        "  - id=%s status=%s path=%r",
+                        e.get("id"),
+                        e.get("status"),
+                        e.get("path"),
+                    )
+
             path_has_active_exec = any(
                 e.get("path") == path
                 and e.get("status") in ("pending", "running", "discovered", "canceling")
@@ -166,6 +186,12 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     path,
                     active_execs,
                 )
+            else:
+                LOG.debug(
+                    "No active execution found for path=%r, "
+                    "will proceed with creation check",
+                    path,
+                )
 
             # Create pending execution only if:
             # 1. No execution exists for the base job_id, OR
@@ -185,6 +211,7 @@ async def process_manual_process_queue(state, pipeline, api, parser):
             if should_create:
                 filename = path.split("/")[-1]
                 title = f"Manual: {filename}"
+                LOG.debug("Creating pending execution: job_id=%s path=%r", job_id, path)
                 tracker.start_execution(
                     job_id,
                     title,
