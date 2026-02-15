@@ -130,6 +130,41 @@ def promote_next_discovered_to_pending():
     )
 
 
+def apply_settings_to_event(event, item_overrides=None):
+    """Apply settings to event using unified pattern:
+    1. Load general settings from database (baseline for all jobs)
+    2. Apply to event (used for discovered recordings)
+    3. Override with per-item settings (for manual processing UI selections)
+
+    Args:
+        event: ProcessingEvent to apply settings to
+        item_overrides: Optional dict of per-item overrides (from manual processing UI)
+    """
+    from .web_app import load_settings
+
+    # Load baseline settings from database/web UI
+    global_settings = load_settings()
+
+    # Apply global settings as baseline
+    event.whisper_model = global_settings.get("whisper_model", "medium")
+    event.log_verbosity = global_settings.get("log_verbosity", "NORMAL")
+    event.skip_caption_generation = global_settings.get(
+        "skip_caption_generation", False
+    )
+    event.srt_path = None  # Let pipeline compute default
+
+    # Override with per-item settings if provided (manual processing)
+    if item_overrides:
+        if "whisper_model" in item_overrides:
+            event.whisper_model = item_overrides["whisper_model"]
+        if "log_verbosity" in item_overrides:
+            event.log_verbosity = item_overrides["log_verbosity"]
+        if "skip_caption_generation" in item_overrides:
+            event.skip_caption_generation = item_overrides["skip_caption_generation"]
+        if "srt_path" in item_overrides:
+            event.srt_path = item_overrides["srt_path"]
+
+
 async def process_manual_process_queue(state, pipeline, api, parser):
     """Check and process any manual process requests in the queue."""
     state._load()
@@ -296,19 +331,8 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     path,
                 )
 
-                # Load global settings for model,
-                # but use per-item settings for skip/verbosity
-                from .web_app import load_settings
-
-                global_settings = load_settings()
-
-                # Add settings to event for pipeline
-                event.whisper_model = global_settings.get("whisper_model", "medium")
-                event.log_verbosity = item_settings.get("log_verbosity", "NORMAL")
-                event.skip_caption_generation = item_settings.get(
-                    "skip_caption_generation", False
-                )
-                event.srt_path = None  # Let pipeline compute default
+                # Apply unified settings: global baseline + per-item overrides
+                apply_settings_to_event(event, item_overrides=item_settings)
 
                 # Start tracking execution
                 existing = tracker.get_execution(job_id)
@@ -933,6 +957,10 @@ async def main():
                                 event_partial.title, event_partial.start_time
                             )
                         event = parser.from_channelwatch(event_partial, path)
+
+                        # Apply unified settings: global baseline
+                        # (no per-item overrides for discovered recordings)
+                        apply_settings_to_event(event)
 
                         # Use exec_id from event if provided (from startup recovery),
                         # otherwise use the job_id (created when added to queue)
