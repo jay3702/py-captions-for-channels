@@ -142,14 +142,32 @@ async def process_manual_process_queue(state, pipeline, api, parser):
         for path in queue:
             job_id = build_manual_process_job_id(path)
             existing = tracker.get_execution(job_id)
-            # Create pending execution if none exists,
-            # or if previous one is in a terminal state
-            if not existing or existing.get("status") in (
+
+            # Check if there's already an active execution for this path
+            # (including retries with timestamped IDs)
+            all_execs = tracker.get_executions(limit=1000)
+            path_has_active_exec = any(
+                e.get("path") == path
+                and e.get("status") in ("pending", "running", "discovered", "canceling")
+                for e in all_execs
+            )
+
+            # Create pending execution only if:
+            # 1. No execution exists for the base job_id, OR
+            # 2. Previous execution is terminal AND no active retries exist
+            should_create = False
+            if not existing:
+                should_create = True
+            elif existing.get("status") in (
                 "completed",
                 "failed",
                 "cancelled",
                 "dry_run",
             ):
+                if not path_has_active_exec:
+                    should_create = True
+
+            if should_create:
                 filename = path.split("/")[-1]
                 title = f"Manual: {filename}"
                 tracker.start_execution(
