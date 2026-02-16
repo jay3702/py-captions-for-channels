@@ -50,6 +50,7 @@ STATIC_DIR = WEB_ROOT / "static"
 
 app = FastAPI(title="Py Captions Web GUI", version=VERSION)
 state_backend = StateBackend(STATE_FILE)
+logger = logging.getLogger(__name__)
 
 
 @app.on_event("startup")
