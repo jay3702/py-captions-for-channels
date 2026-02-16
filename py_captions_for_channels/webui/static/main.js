@@ -901,9 +901,13 @@ function initSystemMonitor() {
   
   console.log('Initializing system monitor charts...');
   
+  // Get chart width - use parent container width if element width is 0 (hidden tab)
+  const chartWidth = cpuEl.clientWidth > 0 ? cpuEl.clientWidth : cpuEl.parentElement.clientWidth || 600;
+  console.log('Chart width:', chartWidth);
+  
   // Common options for all charts
   const commonOpts = {
-    width: cpuEl.clientWidth,
+    width: chartWidth,
     height: 200,
     class: 'monitor-chart',
     scales: {
@@ -917,47 +921,54 @@ function initSystemMonitor() {
     series: []
   };
   
-  // CPU Chart
-  monitorCharts = {
-    cpu: new uPlot({
-      ...commonOpts,
-      series: [
-        {},
-        { label: 'CPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' }
-      ]
-    }, [[0], [0]], cpuEl),
+  try {
+    // CPU Chart
+    monitorCharts = {
+      cpu: new uPlot({
+        ...commonOpts,
+        series: [
+          {},
+          { label: 'CPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' }
+        ]
+      }, [[], []], cpuEl),
+      
+      // Disk Chart
+      disk: new uPlot({
+        ...commonOpts,
+        series: [
+          {},
+          { label: 'Read MB/s', stroke: '#5ce1e6', width: 2 },
+          { label: 'Write MB/s', stroke: '#ffb347', width: 2 }
+        ]
+      }, [[], [], []], diskEl),
+      
+      // Network Chart
+      network: new uPlot({
+        ...commonOpts,
+        series: [
+          {},
+          { label: 'RX Mbps', stroke: '#5ce1e6', width: 2 },
+          { label: 'TX Mbps', stroke: '#ffb347', width: 2 }
+        ]
+      }, [[], [], []], networkEl)
+    };
     
-    // Disk Chart
-    disk: new uPlot({
-      ...commonOpts,
-      series: [
-        {},
-        { label: 'Read MB/s', stroke: '#5ce1e6', width: 2 },
-        { label: 'Write MB/s', stroke: '#ffb347', width: 2 }
-      ]
-    }, [[0], [0], [0]], diskEl),
+    // GPU Chart (conditionally created)
+    if (gpuEl) {
+      monitorCharts.gpu = new uPlot({
+        ...commonOpts,
+        series: [
+          {},
+          { label: 'GPU %', stroke: '#5ce1e6', width: 2 },
+          { label: 'VRAM %', stroke: '#ffb347', width: 2 }
+        ]
+      }, [[], [], []], gpuEl);
+    }
     
-    // Network Chart
-    network: new uPlot({
-      ...commonOpts,
-      series: [
-        {},
-        { label: 'RX Mbps', stroke: '#5ce1e6', width: 2 },
-        { label: 'TX Mbps', stroke: '#ffb347', width: 2 }
-      ]
-    }, [[0], [0], [0]], networkEl)
-  };
-  
-  // GPU Chart (conditionally created)
-  if (gpuEl) {
-    monitorCharts.gpu = new uPlot({
-      ...commonOpts,
-      series: [
-        {},
-        { label: 'GPU %', stroke: '#5ce1e6', width: 2 },
-        { label: 'VRAM %', stroke: '#ffb347', width: 2 }
-      ]
-    }, [[0], [0], [0]], gpuEl);
+    console.log('Charts initialized successfully');
+  } catch (error) {
+    console.error('Failed to create charts:', error);
+    monitorCharts = null;
   }
 }
 
@@ -1023,7 +1034,8 @@ function updateSystemMonitor() {
         if (gpuContainer) gpuContainer.style.display = 'none';
         if (gpuUnavailable) {
           gpuUnavailable.style.display = 'block';
-          gpuUnavailable.innerHTML = `<div style="color: #888;">GPU monitoring not available (Provider: ${gpuProvider.name})</div>`;
+          const reason = gpuProvider.available ? 'No GPU metrics' : gpuProvider.name;
+          gpuUnavailable.innerHTML = `<div style="color: #888;">GPU monitoring not available<br><small style="font-size: 0.9em;">${reason}</small></div>`;
         }
       }
       

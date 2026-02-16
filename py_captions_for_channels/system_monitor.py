@@ -78,9 +78,9 @@ class NvidiaNvmlProvider(GPUProvider):
             self.handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             self.available = True
             self.pynvml = pynvml
-            logger.info("NVIDIA NVML GPU provider initialized")
+            logger.info("NVIDIA NVML GPU provider initialized successfully")
         except Exception as e:
-            logger.debug(f"NVIDIA NVML not available: {e}")
+            logger.info(f"NVIDIA NVML not available: {e}")
 
     def is_available(self) -> bool:
         return self.available
@@ -229,9 +229,10 @@ class SystemMonitor:
 
         for provider in providers:
             if provider.is_available():
+                logger.info(f"Using GPU provider: {provider.get_name()}")
                 return provider
 
-        logger.info("No GPU provider available")
+        logger.info("No GPU provider available - GPU monitoring disabled")
         return GPUProvider()
 
     def get_gpu_provider_info(self) -> Dict[str, Any]:
