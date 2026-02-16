@@ -235,34 +235,21 @@ def probe_duration(path, log):
 
 
 def preserve_original(mpg_path, log):
+    """
+    Preserve the original file once and NEVER overwrite it.
+
+    The .orig file represents the pristine, unprocessed original.
+    Once created, it must never be modified, even if the .mpg changes.
+    """
     orig_path = mpg_path + ".orig"
     tmp_path = orig_path + ".tmp"
-    needs_refresh = False
+
     if not os.path.exists(orig_path):
-        log.info(f"Preserving original: {mpg_path} -> {orig_path}")
-        shutil.copy2(mpg_path, tmp_path)
-        os.replace(tmp_path, orig_path)
-        return
-    # Check for staleness
-    orig_size = os.path.getsize(orig_path)
-    mpg_size = os.path.getsize(mpg_path)
-    if orig_size < 0.95 * mpg_size:
-        log.warning(f".orig is stale (size {orig_size} < 95% of {mpg_size})")
-        needs_refresh = True
-    else:
-        orig_dur = probe_duration(orig_path, log)
-        mpg_dur = probe_duration(mpg_path, log)
-        if orig_dur < 0.95 * mpg_dur:
-            log.warning(
-                f".orig is stale (duration {orig_dur:.2f}s < 95% of {mpg_dur:.2f}s)"
-            )
-            needs_refresh = True
-    if needs_refresh:
-        log.info(f"Refreshing .orig atomically: {mpg_path} -> {orig_path}")
+        log.info(f"Preserving original (first time): {mpg_path} -> {orig_path}")
         shutil.copy2(mpg_path, tmp_path)
         os.replace(tmp_path, orig_path)
     else:
-        log.info(".orig already exists and is up to date.")
+        log.info(f".orig already exists and will not be modified: {orig_path}")
 
 
 def srt_exists_and_valid(srt_path):
