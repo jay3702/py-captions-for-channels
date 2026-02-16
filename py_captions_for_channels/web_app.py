@@ -41,6 +41,7 @@ from .database import get_db, init_db
 from .services.settings_service import SettingsService
 from .services.heartbeat_service import HeartbeatService
 from .shutdown_control import get_shutdown_controller
+from .system_monitor import get_system_monitor, get_pipeline_timeline
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
@@ -53,8 +54,18 @@ state_backend = StateBackend(STATE_FILE)
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database on application startup."""
+    """Initialize database and system monitor on application startup."""
     init_db()
+    # Start system monitor
+    monitor = get_system_monitor()
+    monitor.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop system monitor on application shutdown."""
+    monitor = get_system_monitor()
+    monitor.stop()
 
 
 app.add_middleware(
@@ -1219,6 +1230,37 @@ async def set_logging_verbosity(request: Request) -> dict:
         return {"verbosity": verbosity}
     except Exception as e:
         return {"error": str(e)}
+
+
+# --- System Monitor ---
+
+
+@app.get("/api/monitor/latest")
+async def get_monitor_latest() -> dict:
+    """Get the most recent system metrics sample."""
+    monitor = get_system_monitor()
+    latest = monitor.get_latest()
+    pipeline = get_pipeline_timeline()
+    pipeline_status = pipeline.get_status()
+
+    return {
+        "metrics": latest,
+        "pipeline": pipeline_status,
+        "gpu_provider": monitor.get_gpu_provider_info(),
+    }
+
+
+@app.get("/api/monitor/window")
+async def get_monitor_window(seconds: int = 300) -> dict:
+    """Get system metrics for the last N seconds.
+
+    Args:
+        seconds: Number of seconds to retrieve (default 300 = 5 minutes)
+    """
+    monitor = get_system_monitor()
+    window = monitor.get_window(seconds)
+
+    return {"metrics": window, "gpu_provider": monitor.get_gpu_provider_info()}
 
 
 # --- Shutdown Control ---

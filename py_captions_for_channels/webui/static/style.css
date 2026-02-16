@@ -987,3 +987,114 @@ body {
   margin: 0;
   padding: 0;
 }
+
+/* System Monitor Styles */
+.monitor-panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.monitor-panel h3 {
+  margin: 0 0 15px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.pipeline-info {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.pipeline-idle {
+  color: var(--muted);
+  padding: 10px;
+  text-align: center;
+}
+
+.pipeline-active {
+  display: grid;
+  gap: 12px;
+}
+
+.pipeline-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.pipeline-row:last-child {
+  border-bottom: none;
+}
+
+.pipeline-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pipeline-value {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pipeline-stage {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.gpu-engaged-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  background: rgba(92, 225, 230, 0.15);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--accent);
+  margin-left: 8px;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.chart-container {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.chart-container h3 {
+  margin: 0 0 15px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.chart {
+  width: 100%;
+  height: 200px;
+}
+
+/* uPlot customizations for dark theme */
+.uplot {
+  color: var(--text);
+}
+
+.u-legend {
+  color: var(--text);
+}
+
+.u-legend .u-series > * {
+  color: var(--text);
+}
+

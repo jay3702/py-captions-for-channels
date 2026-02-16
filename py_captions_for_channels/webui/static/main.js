@@ -855,5 +855,258 @@ window.addEventListener('click', function(event) {
   }
 });
 
+// =========================
+// System Monitor
+// =========================
+
+let monitorCharts = null;
+let monitorInterval = null;
+const MONITOR_WINDOW_SEC = 300; // 5 minutes
+const MONITOR_MAX_POINTS = 300; // 5 minutes at 1Hz
+
+function initSystemMonitor() {
+  if (monitorCharts) return; // Already initialized
+  
+  const cpuEl = document.getElementById('chart-cpu');
+  const diskEl = document.getElementById('chart-disk');
+  const networkEl = document.getElementById('chart-network');
+  const gpuEl = document.getElementById('chart-gpu');
+  
+  if (!cpuEl || !diskEl || !networkEl) return;
+  
+  // Common options for all charts
+  const commonOpts = {
+    width: cpuEl.clientWidth,
+    height: 200,
+    class: 'monitor-chart',
+    scales: {
+      x: { time: true },
+      y: { auto: true }
+    },
+    axes: [
+      { scale: 'x', space: 40, incrs: [1, 5, 10, 30, 60], values: (u, vals) => vals.map(v => new Date(v * 1000).toLocaleTimeString()) },
+      { scale: 'y', space: 30 }
+    ],
+    series: []
+  };
+  
+  // CPU Chart
+  monitorCharts = {
+    cpu: new uPlot({
+      ...commonOpts,
+      series: [
+        {},
+        { label: 'CPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' }
+      ]
+    }, [[0], [0]], cpuEl),
+    
+    // Disk Chart
+    disk: new uPlot({
+      ...commonOpts,
+      series: [
+        {},
+        { label: 'Read MB/s', stroke: '#5ce1e6', width: 2 },
+        { label: 'Write MB/s', stroke: '#ffb347', width: 2 }
+      ]
+    }, [[0], [0], [0]], diskEl),
+    
+    // Network Chart
+    network: new uPlot({
+      ...commonOpts,
+      series: [
+        {},
+        { label: 'RX Mbps', stroke: '#5ce1e6', width: 2 },
+        { label: 'TX Mbps', stroke: '#ffb347', width: 2 }
+      ]
+    }, [[0], [0], [0]], networkEl)
+  };
+  
+  // GPU Chart (conditionally created)
+  if (gpuEl) {
+    monitorCharts.gpu = new uPlot({
+      ...commonOpts,
+      series: [
+        {},
+        { label: 'GPU %', stroke: '#5ce1e6', width: 2 },
+        { label: 'VRAM %', stroke: '#ffb347', width: 2 }
+      ]
+    }, [[0], [0], [0]], gpuEl);
+  }
+}
+
+function updateSystemMonitor() {
+  fetch('/api/monitor/latest')
+    .then(res => res.json())
+    .then(data => {
+      if (!monitorCharts) return;
+      
+      const metrics = data.metrics;
+      const pipeline = data.pipeline;
+      const gpuProvider = data.gpu_provider;
+      
+      if (!metrics) return;
+      
+      const timestamp = metrics.timestamp;
+      
+      // Update CPU chart
+      appendChartData(monitorCharts.cpu, timestamp, [metrics.cpu_percent]);
+      
+      // Update Disk chart
+      appendChartData(monitorCharts.disk, timestamp, [
+        metrics.disk_read_mbps,
+        metrics.disk_write_mbps
+      ]);
+      
+      // Update Network chart
+      appendChartData(monitorCharts.network, timestamp, [
+        metrics.net_recv_mbps,
+        metrics.net_sent_mbps
+      ]);
+      
+      // Update GPU chart if available
+      const gpuContainer = document.getElementById('gpu-chart-container');
+      const gpuUnavailable = document.getElementById('gpu-unavailable');
+      
+      if (gpuProvider.available && metrics.gpu_util_percent !== null) {
+        if (gpuContainer) gpuContainer.style.display = 'block';
+        if (gpuUnavailable) gpuUnavailable.style.display = 'none';
+        
+        if (monitorCharts.gpu) {
+          const vramPct = metrics.gpu_mem_total_mb > 0 
+            ? (metrics.gpu_mem_used_mb / metrics.gpu_mem_total_mb) * 100 
+            : 0;
+          appendChartData(monitorCharts.gpu, timestamp, [
+            metrics.gpu_util_percent,
+            vramPct
+          ]);
+        }
+      } else {
+        if (gpuContainer) gpuContainer.style.display = 'none';
+        if (gpuUnavailable) {
+          gpuUnavailable.style.display = 'block';
+          gpuUnavailable.innerHTML = `<div style="color: #888;">GPU monitoring not available (Provider: ${gpuProvider.name})</div>`;
+        }
+      }
+      
+      // Update pipeline status
+      updatePipelineStatus(pipeline);
+    })
+    .catch(err => console.error('Failed to fetch monitor data:', err));
+}
+
+function appendChartData(chart, timestamp, values) {
+  const data = chart.data;
+  const maxPoints = MONITOR_MAX_POINTS;
+  
+  // Append new data
+  data[0].push(timestamp);
+  for (let i = 0; i < values.length; i++) {
+    data[i + 1].push(values[i]);
+  }
+  
+  // Trim old data if exceeds max points
+  if (data[0].length > maxPoints) {
+    data.forEach(series => series.shift());
+  }
+  
+  chart.setData(data);
+}
+
+function updatePipelineStatus(pipeline) {
+  const pipelineInfo = document.getElementById('pipeline-info');
+  if (!pipelineInfo) return;
+  
+  if (!pipeline.active) {
+    pipelineInfo.innerHTML = '<div class="pipeline-idle">No active pipeline</div>';
+    return;
+  }
+  
+  const stage = pipeline.current_stage;
+  const stages = pipeline.stages || [];
+  
+  let html = '<div class="pipeline-active">';
+  
+  if (stage) {
+    html += `
+      <div class="pipeline-row">
+        <div class="pipeline-label">Current Stage</div>
+        <div class="pipeline-value pipeline-stage">
+          ${stage.stage}
+          ${stage.gpu_engaged ? '<span class="gpu-engaged-badge">GPU Active</span>' : ''}
+        </div>
+      </div>
+      <div class="pipeline-row">
+        <div class="pipeline-label">File</div>
+        <div class="pipeline-value">${stage.filename}</div>
+      </div>
+      <div class="pipeline-row">
+        <div class="pipeline-label">Elapsed</div>
+        <div class="pipeline-value">${stage.elapsed.toFixed(1)}s</div>
+      </div>
+    `;
+  }
+  
+  if (stages.length > 0) {
+    html += `
+      <div class="pipeline-row">
+        <div class="pipeline-label">Completed Stages</div>
+        <div class="pipeline-value">${stages.length}</div>
+      </div>
+    `;
+    
+    stages.forEach(s => {
+      html += `
+        <div class="pipeline-row">
+          <div class="pipeline-label">${s.stage}</div>
+          <div class="pipeline-value">
+            ${s.duration ? s.duration.toFixed(1) + 's' : 'pending'}
+            ${s.gpu_engaged ? '<span class="gpu-engaged-badge">GPU</span>' : ''}
+          </div>
+        </div>
+      `;
+    });
+  }
+  
+  html += '</div>';
+  pipelineInfo.innerHTML = html;
+}
+
+function startSystemMonitor() {
+  if (monitorInterval) return; // Already running
+  
+  initSystemMonitor();
+  updateSystemMonitor();
+  monitorInterval = setInterval(updateSystemMonitor, 1000); // 1Hz
+}
+
+function stopSystemMonitor() {
+  if (monitorInterval) {
+    clearInterval(monitorInterval);
+    monitorInterval = null;
+  }
+}
+
+// Update switchTab to handle system monitor
+const originalSwitchTab = switchTab;
+function switchTab(tabName) {
+  originalSwitchTab.call(this, tabName);
+  
+  // Start/stop system monitor based on active tab
+  if (tabName === 'glances') {
+    startSystemMonitor();
+  } else {
+    stopSystemMonitor();
+  }
+}
+
+// Auto-start if System Monitor tab is default
+window.addEventListener('DOMContentLoaded', () => {
+  const activeTab = document.querySelector('.tab-content.active');
+  if (activeTab && activeTab.id === 'glances-tab') {
+    startSystemMonitor();
+  }
+});
+
+
 
 
