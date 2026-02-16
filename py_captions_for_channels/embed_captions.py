@@ -18,6 +18,9 @@ from py_captions_for_channels.database import get_db
 from py_captions_for_channels.progress_tracker import get_progress_tracker
 from py_captions_for_channels.services.execution_service import ExecutionService
 
+# Unique identifier for our subtitle tracks
+SUBTITLE_TRACK_NAME = "py-captions-for-channels"
+
 
 def detect_variable_frame_rate(video_path, log):
     """
@@ -277,6 +280,55 @@ def probe_media_end_time(mpg_path, log):
     except Exception as e:
         log.error(f"ffprobe failed: {e}")
         return 0.0
+
+
+def detect_subtitle_streams(video_path, log):
+    """
+    Detect subtitle streams in video file.
+    Returns list of dicts with codec_name and title metadata.
+    """
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "s",
+        "-show_entries",
+        "stream=index,codec_name:stream_tags=title,handler_name",
+        "-of",
+        "json",
+        video_path,
+    ]
+    try:
+        import json
+
+        result = subprocess.check_output(cmd, text=True)
+        data = json.loads(result)
+        streams = data.get("streams", [])
+        log.info(f"Found {len(streams)} subtitle stream(s) in {video_path}")
+        for i, s in enumerate(streams):
+            tags = s.get("tags", {})
+            title = tags.get("title", tags.get("handler_name", "Unknown"))
+            log.info(f"  Stream {i}: {s.get('codec_name')} - {title}")
+        return streams
+    except Exception as e:
+        log.warning(f"Failed to detect subtitle streams: {e}")
+        return []
+
+
+def has_our_subtitles(video_path, log):
+    """
+    Check if video already has our subtitle track.
+    Returns True if our unique subtitle track name is found.
+    """
+    streams = detect_subtitle_streams(video_path, log)
+    for stream in streams:
+        tags = stream.get("tags", {})
+        title = tags.get("title", tags.get("handler_name", ""))
+        if SUBTITLE_TRACK_NAME in title:
+            log.info(f"Found our subtitle track: {title}")
+            return True
+    return False
 
 
 def probe_srt_end_time(srt_path):
@@ -585,6 +637,11 @@ def mux_subs(av_path, srt_path, output_path, log, job_id=None):
         "0:a?",
         "-map",
         "1",
+        # Add unique metadata to subtitle track for detection
+        "-metadata:s:s:0",
+        f"title={SUBTITLE_TRACK_NAME}",
+        "-metadata:s:s:0",
+        f"handler_name={SUBTITLE_TRACK_NAME}",
         "-movflags",
         "+faststart",
         output_path,
@@ -686,6 +743,16 @@ def main():
         input_path=mpg_path,
         misc_label="Waiting for file stability",
     )
+
+    # Check if file already has our subtitle track
+    if has_our_subtitles(mpg_path, log):
+        log.warning(
+            f"File already has '{SUBTITLE_TRACK_NAME}' subtitle track! "
+            "This indicates the file was already processed. "
+            "Processing will continue but may result in duplicate captions."
+        )
+    else:
+        log.info("No existing subtitle track detected - proceeding with processing")
 
     # Generate captions with Whisper if needed (BEFORE preserving original)
     if args.skip_caption_generation:
