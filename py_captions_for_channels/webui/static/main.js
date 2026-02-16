@@ -930,6 +930,10 @@ function initSystemMonitor() {
     width: chartWidth,
     height: 130,
     class: 'monitor-chart',
+    legend: {
+      show: true,
+      live: false
+    },
     scales: {
       x: { time: true },
       y: { 
@@ -944,6 +948,7 @@ function initSystemMonitor() {
     },
     axes: [
       { 
+        show: true,
         scale: 'x', 
         space: 80, 
         incrs: [10, 30, 60, 120, 300], 
@@ -952,6 +957,7 @@ function initSystemMonitor() {
         grid: { stroke: '#333', width: 1 }
       },
       { 
+        show: true,
         scale: 'y', 
         space: 40,
         stroke: '#ffffff',
@@ -1124,6 +1130,10 @@ function updateSystemMonitor() {
               width: chartWidth,
               height: 130,
               class: 'monitor-chart',
+              legend: {
+                show: true,
+                live: false
+              },
               scales: {
                 x: { time: true },
                 y: { 
@@ -1136,6 +1146,7 @@ function updateSystemMonitor() {
               },
               axes: [
                 { 
+                  show: true,
                   scale: 'x', 
                   space: 80, 
                   incrs: [10, 30, 60, 120, 300], 
@@ -1144,6 +1155,7 @@ function updateSystemMonitor() {
                   grid: { stroke: '#333', width: 1 }
                 },
                 { 
+                  show: true,
                   scale: 'y', 
                   space: 40,
                   stroke: '#ffffff',
