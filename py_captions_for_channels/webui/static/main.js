@@ -883,12 +883,23 @@ const MONITOR_MAX_POINTS = 300; // 5 minutes at 1Hz
 function initSystemMonitor() {
   if (monitorCharts) return; // Already initialized
   
+  // Check if uPlot is available
+  if (typeof uPlot === 'undefined') {
+    console.error('uPlot library not loaded');
+    return;
+  }
+  
   const cpuEl = document.getElementById('chart-cpu');
   const diskEl = document.getElementById('chart-disk');
   const networkEl = document.getElementById('chart-network');
   const gpuEl = document.getElementById('chart-gpu');
   
-  if (!cpuEl || !diskEl || !networkEl) return;
+  if (!cpuEl || !diskEl || !networkEl) {
+    console.error('Chart elements not found');
+    return;
+  }
+  
+  console.log('Initializing system monitor charts...');
   
   // Common options for all charts
   const commonOpts = {
@@ -952,15 +963,27 @@ function initSystemMonitor() {
 
 function updateSystemMonitor() {
   fetch('/api/monitor/latest')
-    .then(res => res.json())
+    .then(res => {
+      if (!res.ok) {
+        console.error('Monitor API returned status:', res.status);
+        throw new Error('API request failed');
+      }
+      return res.json();
+    })
     .then(data => {
-      if (!monitorCharts) return;
+      if (!monitorCharts) {
+        console.error('Monitor charts not initialized');
+        return;
+      }
       
       const metrics = data.metrics;
       const pipeline = data.pipeline;
       const gpuProvider = data.gpu_provider;
       
-      if (!metrics) return;
+      if (!metrics) {
+        console.error('No metrics data received');
+        return;
+      }
       
       const timestamp = metrics.timestamp;
       
@@ -1090,9 +1113,15 @@ function updatePipelineStatus(pipeline) {
 function startSystemMonitor() {
   if (monitorInterval) return; // Already running
   
+  console.log('Starting system monitor...');
   initSystemMonitor();
+  if (!monitorCharts) {
+    console.error('Failed to initialize monitor charts');
+    return;
+  }
   updateSystemMonitor();
   monitorInterval = setInterval(updateSystemMonitor, 1000); // 1Hz
+  console.log('System monitor started');
 }
 
 function stopSystemMonitor() {
