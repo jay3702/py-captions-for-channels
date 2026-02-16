@@ -915,8 +915,20 @@ function initSystemMonitor() {
       y: { auto: true }
     },
     axes: [
-      { scale: 'x', space: 40, incrs: [1, 5, 10, 30, 60], values: (u, vals) => vals.map(v => new Date(v * 1000).toLocaleTimeString()) },
-      { scale: 'y', space: 30 }
+      { 
+        scale: 'x', 
+        space: 80, 
+        incrs: [10, 30, 60, 120, 300], 
+        values: (u, vals) => vals.map(v => new Date(v * 1000).toLocaleTimeString()),
+        stroke: '#ffffff',
+        grid: { stroke: '#333', width: 1 }
+      },
+      { 
+        scale: 'y', 
+        space: 40,
+        stroke: '#ffffff',
+        grid: { stroke: '#333', width: 1 }
+      }
     ],
     series: []
   };
@@ -937,8 +949,8 @@ function initSystemMonitor() {
         ...commonOpts,
         series: [
           {},
-          { label: 'Read MB/s', stroke: '#5ce1e6', width: 2 },
-          { label: 'Write MB/s', stroke: '#ffb347', width: 2 }
+          { label: 'Read MB/s', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
+          { label: 'Write MB/s', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
         ]
       }, [[], [], []], diskEl),
       
@@ -947,8 +959,8 @@ function initSystemMonitor() {
         ...commonOpts,
         series: [
           {},
-          { label: 'RX Mbps', stroke: '#5ce1e6', width: 2 },
-          { label: 'TX Mbps', stroke: '#ffb347', width: 2 }
+          { label: 'RX Mbps', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
+          { label: 'TX Mbps', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
         ]
       }, [[], [], []], networkEl)
     };
@@ -959,8 +971,8 @@ function initSystemMonitor() {
         ...commonOpts,
         series: [
           {},
-          { label: 'GPU %', stroke: '#5ce1e6', width: 2 },
-          { label: 'VRAM %', stroke: '#ffb347', width: 2 }
+          { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
+          { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
         ]
       }, [[], [], []], gpuEl);
     }
