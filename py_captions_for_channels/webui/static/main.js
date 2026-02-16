@@ -1068,10 +1068,19 @@ function updateSystemMonitor() {
       const gpuUnavailable = document.getElementById('gpu-unavailable');
       
       if (gpuProvider.available && metrics.gpu_util_percent !== null) {
+        const wasHidden = gpuContainer && gpuContainer.style.display === 'none';
         if (gpuContainer) gpuContainer.style.display = 'block';
         if (gpuUnavailable) gpuUnavailable.style.display = 'none';
         
         if (monitorCharts.gpu) {
+          // If GPU chart was just revealed, resize it to match other charts
+          if (wasHidden) {
+            const cpuEl = document.getElementById('chart-cpu');
+            const wrapper = cpuEl ? cpuEl.parentElement : null;
+            const width = wrapper ? wrapper.clientWidth - 20 : 600;
+            monitorCharts.gpu.setSize({ width: width, height: 130 });
+          }
+          
           const vramPct = metrics.gpu_mem_total_mb > 0 
             ? (metrics.gpu_mem_used_mb / metrics.gpu_mem_total_mb) * 100 
             : 0;
