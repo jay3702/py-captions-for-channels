@@ -107,7 +107,25 @@ RUN apt-get update && apt-get install -y \
     libxcb-shape0 \
     libxcb-xfixes0 \
     libssl3 \
+    git \
+    cmake \
+    build-essential \
+    libncurses5-dev \
+    libdrm-dev \
+    libudev-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Build and install NVTOP
+RUN git clone https://github.com/Syllo/nvtop.git /tmp/nvtop && \
+    cd /tmp/nvtop && \
+    git checkout 3.3.2 && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/nvtop
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
@@ -123,6 +141,9 @@ RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://
 # Install remaining requirements (will skip torch since already installed)
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Glances with GPU plugin support and orjson for API responses
+RUN pip install --no-cache-dir 'glances[gpu]==4.0.5' orjson
+
 # Copy FFmpeg from build stage
 COPY --from=ffmpeg-build /ffmpeg_build/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-build /ffmpeg_build/bin/ffprobe /usr/local/bin/ffprobe
@@ -136,10 +157,30 @@ COPY whitelist.txt ./whitelist.txt
 
 RUN chmod +x ./scripts/*.sh
 RUN mkdir -p /app/data /app/logs
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Start Glances web server in background\n\
+echo "Starting Glances web server on port 61208..."\n\
+glances -w --disable-plugin quicklook,ports,irq,folders,raid &\n\
+GLANCES_PID=$!\n\
+echo "Glances started with PID $GLANCES_PID"\n\
+\n\
+# Wait a moment for Glances to start\n\
+sleep 2\n\
+\n\
+# Start the main application\n\
+echo "Starting py-captions-for-channels..."\n\
+exec python -u -m py_captions_for_channels' > /app/start.sh && \
+    chmod +x /app/start.sh
+
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 9000
 EXPOSE 8000
+EXPOSE 61208
 
 # Default command
-CMD ["python", "-u", "-m", "py_captions_for_channels"]
+CMD ["/app/start.sh"]

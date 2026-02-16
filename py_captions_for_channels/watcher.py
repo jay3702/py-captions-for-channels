@@ -65,14 +65,24 @@ def promote_next_discovered_to_pending():
     all_executions = tracker.get_executions(limit=1000)
 
     # Count pending jobs (not running, just waiting)
-    pending_count = sum(1 for e in all_executions if e.get("status") == "pending")
+    # Exclude manual_process jobs (handled by separate loop)
+    pending_count = sum(
+        1
+        for e in all_executions
+        if e.get("status") == "pending" and e.get("kind") != "manual_process"
+    )
 
     # Only promote if we have NO pending jobs (keep exactly 1 pending queued)
     if pending_count > 0:
         return None
 
     # Get oldest discovered execution (by started_at)
-    discovered = [e for e in all_executions if e.get("status") == "discovered"]
+    # Exclude manual_process jobs (handled by separate loop)
+    discovered = [
+        e
+        for e in all_executions
+        if e.get("status") == "discovered" and e.get("kind") != "manual_process"
+    ]
     if not discovered:
         return None
 
@@ -169,9 +179,33 @@ async def process_manual_process_queue(state, pipeline, api, parser):
     """Check and process any manual process requests in the queue."""
     state._load()
     queue = state.get_manual_process_queue()
+    tracker = get_tracker()
+
+    # Also check for orphaned pending manual executions not in queue
+    # (can happen if queue was cleared but execution wasn't removed)
+    all_execs = tracker.get_executions(limit=1000)
+    pending_manual_execs = [
+        e
+        for e in all_execs
+        if e.get("status") == "pending" and e.get("kind") == "manual_process"
+    ]
+
+    # For orphaned pending executions, just update them directly instead of
+    # adding to queue to avoid duplicate processing
+    orphaned_processed = []
+    for exec_data in pending_manual_execs:
+        path = exec_data.get("path")
+        if path and path not in queue:
+            # This execution is pending but not in the state file queue
+            # Add it to the queue for processing
+            LOG.info(
+                "Found orphaned pending manual execution, adding to queue: %s", path
+            )
+            queue.append(path)
+            orphaned_processed.append(path)
+
     if queue:
         LOG.info("Processing manual process queue: %d items", len(queue))
-        tracker = get_tracker()
 
         # Create pending executions for all queued items that don't have one
         for path in queue:
@@ -233,7 +267,11 @@ async def process_manual_process_queue(state, pipeline, api, parser):
             # 2. Previous execution is terminal AND no active retries exist
             should_create = False
             if not existing:
-                should_create = True
+                # Double-check: even if no execution with base job_id exists,
+                # don't create if there's already a pending one for this path
+                # (handles orphaned executions with different ID formats)
+                if not path_has_active_exec:
+                    should_create = True
             elif existing.get("status") in (
                 "completed",
                 "failed",
@@ -336,6 +374,42 @@ async def process_manual_process_queue(state, pipeline, api, parser):
 
                 # Start tracking execution
                 existing = tracker.get_execution(job_id)
+
+                # DEBUG: Log what we found
+                if existing:
+                    LOG.info(
+                        "Found existing execution for manual job: status=%s, id=%s",
+                        existing.get("status"),
+                        existing.get("id", "")[:80],
+                    )
+                else:
+                    LOG.info(
+                        "No existing execution found for base job_id: %s", job_id[:80]
+                    )
+
+                # If not found or completed/failed, also check for ANY
+                # pending execution with this path (handles orphaned
+                # executions that have timestamped IDs)
+                if not existing or existing.get("status") in ("completed", "failed"):
+                    all_execs = tracker.get_executions(limit=1000)
+                    pending_for_path = [
+                        e
+                        for e in all_execs
+                        if e.get("path") == path
+                        and e.get("status") == "pending"
+                        and e.get("kind") == "manual_process"
+                    ]
+                    if pending_for_path:
+                        # Use the first pending execution found for this path
+                        existing = pending_for_path[0]
+                        job_id = existing.get("id")  # Use its ID (may have timestamp)
+                        LOG.info(
+                            "Found orphaned pending execution by path: "
+                            "status=%s, id=%s",
+                            existing.get("status"),
+                            existing.get("id", "")[:80],
+                        )
+
                 if existing and existing.get("status") in ("running", "canceling"):
                     LOG.info("Manual process already running: %s", path)
                     continue
@@ -352,12 +426,7 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     tracker.update_execution(
                         job_id, status="running", started_at=timestamp_str
                     )
-                    LOG.debug("Updated pending execution to running: %s", path)
-
-                    # When job starts, promote next discovered → pending
-                    promoted_event = promote_next_discovered_to_pending()
-                    if promoted_event:
-                        await _polling_queue.put(promoted_event)
+                    LOG.info("Updated pending execution to running: %s", path)
                 else:
                     # Handle timestamp as both datetime and string
                     timestamp_str = (
@@ -552,9 +621,18 @@ async def main():
 
     # On container startup, reset any running/pending/interrupted jobs
     # back to discovered so promotion logic can control the single pending slot.
+    # Exclude manual_process jobs (handled by separate cleanup logic below)
     all_execs = tracker.get_executions(limit=1000)
-    running_execs = [e for e in all_execs if e.get("status") == "running"]
-    pending_execs = [e for e in all_execs if e.get("status") == "pending"]
+    running_execs = [
+        e
+        for e in all_execs
+        if e.get("status") == "running" and e.get("kind") != "manual_process"
+    ]
+    pending_execs = [
+        e
+        for e in all_execs
+        if e.get("status") == "pending" and e.get("kind") != "manual_process"
+    ]
     interrupted_execs = [
         e
         for e in all_execs
@@ -602,9 +680,13 @@ async def main():
 
     # Re-queue orphaned discovered/pending executions from previous run
     # These were interrupted and need to be processed
+    # Exclude manual_process jobs (handled by separate loop)
     all_executions = tracker.get_executions(limit=1000)
     orphaned_executions = [
-        e for e in all_executions if e.get("status") in ("pending", "discovered")
+        e
+        for e in all_executions
+        if e.get("status") in ("pending", "discovered")
+        and e.get("kind") != "manual_process"
     ]
 
     # Sort orphaned executions by started_at (oldest first) to maintain FIFO queue order
