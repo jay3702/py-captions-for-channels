@@ -7,35 +7,31 @@ async function fetchStatus() {
     const data = await res.json();
     lastUiUpdate = Date.now();
     
-    // Update status pill color based on status/error
-    const statusPill = document.getElementById('status-pill');
-    if (data.status === 'error') {
-      statusPill.className = 'pill pill-error';
-    } else if (data.status === 'running') {
-      statusPill.className = 'pill pill-success';
-    } else {
-      statusPill.className = 'pill pill-muted';
+    // Update status info in settings modal
+    const appName = document.getElementById('app-name');
+    if (appName) appName.textContent = data.app || '—';
+    
+    const appVersion = document.getElementById('app-version');
+    if (appVersion) {
+      const versionText = data.build_number ? `${data.version}+${data.build_number}` : data.version || '—';
+      appVersion.textContent = versionText;
     }
     
-    statusPill.textContent = data.status || 'unknown';
-    document.getElementById('app-name').textContent = data.app || '—';
-    const versionText = data.build_number ? `${data.version}+${data.build_number}` : data.version || '—';
-    document.getElementById('app-version').textContent = versionText;
-    document.getElementById('timezone').textContent = data.timezone || '—';
-    document.getElementById('dry-run').textContent = data.dry_run ? 'YES' : 'NO';
-    document.getElementById('keep-original').textContent = data.keep_original ? 'YES' : 'NO';
-    document.getElementById('log-verbosity').textContent = data.log_verbosity ? data.log_verbosity : '—';
-    document.getElementById('whisper-model').textContent = data.whisper_model ? data.whisper_model : '—';
-    document.getElementById('skip-caption-generation').textContent = data.skip_caption_generation ? 'YES' : 'NO';
-    document.getElementById('last-processed').textContent = data.last_processed 
-      ? new Date(data.last_processed).toLocaleString() 
-      : 'never';
-    const lastUpdate = document.getElementById('last-update');
-    if (lastUpdate) {
-      const ts = data.timestamp ? new Date(data.timestamp) : new Date();
-      lastUpdate.textContent = ts.toLocaleString();
+    const timezone = document.getElementById('timezone');
+    if (timezone) timezone.textContent = data.timezone || '—';
+    
+    const lastProcessed = document.getElementById('last-processed');
+    if (lastProcessed) {
+      lastProcessed.textContent = data.last_processed 
+        ? new Date(data.last_processed).toLocaleString() 
+        : 'never';
     }
-    document.getElementById('manual-process-queue').textContent = `${data.manual_process_queue_size} items`;
+    
+    // Update queue size in settings modal
+    const modalQueueSize = document.getElementById('modal-queue-size');
+    if (modalQueueSize) {
+      modalQueueSize.textContent = `${data.manual_process_queue_size} items`;
+    }
 
     // Update service health indicators (external services only)
     if (data.services) {
@@ -53,75 +49,82 @@ async function fetchStatus() {
           }
           const healthClass = svc.healthy ? 'service-healthy' : 'service-unhealthy';
           const statusText = svc.status || (svc.healthy ? 'Healthy' : 'Unhealthy');
-          servicesHtml += `<div class="service-status" title="${statusText}"><span class="${healthClass}">●</span> ${svc.name}</div>`;
+          servicesHtml += `<div class="navbar-service" title="${statusText}"><span class="${healthClass}">●</span> ${svc.name}</div>`;
         }
-        servicesContainer.innerHTML = servicesHtml;
+        servicesContainer.innerHTML = servicesHtml || '<div class="navbar-service"><span class="service-unhealthy">●</span> None</div>';
       }
     }
 
-    // Update process indicators for Whisper/ffmpeg
+    // Update process indicators for Whisper/ffmpeg/misc
     if (data.services) {
       const processesContainer = document.getElementById('processes');
       if (processesContainer) {
-        const processKeys = ['whisper', 'ffmpeg', 'misc'];
+        const processKeys = ['misc', 'whisper', 'ffmpeg'];
         let processesHtml = '';
-        for (const key of processKeys) {
-          const svc = data.services[key];
-          if (!svc) {
-            continue;
-          }
-          const healthClass = svc.healthy ? 'service-healthy' : 'service-unhealthy';
-          const statusText = svc.status || (svc.healthy ? 'Running' : 'Idle');
+        let activeProgress = null;
+        let activeKey = null;
 
-          let progress = null;
-          let progressJobId = null;
+        // First pass: find active progress
+        for (const key of processKeys) {
           if (data.progress) {
             const matches = Object.entries(data.progress)
               .filter(([, prog]) => prog.process_type === key)
               .sort((a, b) => (a[1].age_seconds ?? 999) - (b[1].age_seconds ?? 999));
             if (matches.length) {
-              progressJobId = matches[0][0];
-              progress = matches[0][1];
+              activeProgress = matches[0][1];
+              activeKey = key;
+              break; // Only one can be active
             }
           }
+        }
 
-          let progressHtml = '';
-          if (progress) {
-            const percent = Math.round(progress.percent);
-            progressHtml = `
-              <div class="service-progress">
-                <div class="progress-bar-compact">
-                  <div class="progress-fill" style="width: ${progress.percent}%"></div>
-                </div>
-                <span class="progress-text">${percent}%</span>
-              </div>
-            `;
+        // Second pass: render indicators
+        for (const key of processKeys) {
+          const svc = data.services[key];
+          if (!svc) {
+            continue;
           }
-
-          let jobMetaHtml = '';
-          if (progress && (progress.job_number || progressJobId)) {
-            const jobNumberText = progress.job_number ? `Job ${progress.job_number}` : '';
-            const titleText = progressJobId ? formatJobTitle(progressJobId) : '';
-            jobMetaHtml = `
-              <div class="process-right">
-                ${jobNumberText ? `<span class="process-job">${jobNumberText}</span>` : ''}
-                ${titleText ? `<span class="process-title" title="${escapeAttr(titleText)}">${escapeHtml(titleText)}</span>` : ''}
-              </div>
-            `;
-          }
+          
+          // Only show green if this is the active process
+          const isActive = activeKey === key;
+          const healthClass = isActive ? 'service-healthy' : 'service-unhealthy';
+          const statusText = isActive ? 'Running' : 'Idle';
 
           processesHtml += `
-            <div class="service-status process-row" title="${statusText}">
+            <div class="navbar-service" title="${statusText}">
               <span class="${healthClass}">●</span>
-              ${svc.name}
-              ${progressHtml}
-              ${jobMetaHtml}
+              <span>${svc.name}</span>
             </div>
           `;
         }
 
-        processesContainer.innerHTML = processesHtml || '<div class="service-status"><span class="service-unhealthy">●</span> No process data</div>';
+        // Add shared progress bar at the end if any process is active
+        if (activeProgress) {
+          const percent = Math.round(activeProgress.percent);
+          const messageText = activeProgress.message || '';
+          processesHtml += `
+            <div class="service-progress">
+              <div class="progress-bar-compact">
+                <div class="progress-fill" style="width: ${activeProgress.percent}%"></div>
+              </div>
+              <span class="progress-text">${percent}% ${messageText}</span>
+            </div>
+          `;
+        }
+
+        processesContainer.innerHTML = processesHtml || '<div class="navbar-service"><span class="service-unhealthy">●</span> No processes</div>';
       }
+    }
+
+    // Update version in navbar and settings modal
+    const versionText = data.build_number ? `${data.version}+${data.build_number}` : data.version || '—';
+    const versionNav = document.getElementById('webui-version-nav');
+    if (versionNav) {
+      versionNav.textContent = `v${versionText}`;
+    }
+    const webuiVersion = document.getElementById('webui-version');
+    if (webuiVersion) {
+      webuiVersion.textContent = `v${versionText}`;
     }
 
     // Update heartbeat indicators with pulse animation
@@ -151,8 +154,6 @@ async function fetchStatus() {
 
     // Progress bars are now handled inline with services above
   } catch (err) {
-    document.getElementById('status-pill').className = 'pill pill-error';
-    document.getElementById('status-pill').textContent = 'error';
     console.error('Status fetch error:', err);
   }
 }
@@ -426,20 +427,6 @@ async function clearFailedExecutions() {
   return clearList();
 }
 
-async function clearPendingExecutions() {
-  try {
-    if (!confirm('Clear stale pending executions from the list?')) {
-      return;
-    }
-    const res = await fetch('/api/executions/clear_pending?max_age_minutes=60', { method: 'POST' });
-    if (!res.ok) throw new Error('Failed to clear pending executions');
-    await res.json();
-    fetchExecutions();
-  } catch (err) {
-    alert('Clear pending error: ' + err.message);
-  }
-}
-
 async function clearPollingCache() {
   try {
     if (!confirm('Clear polling cache? This will allow the system to re-discover and process recordings that were previously seen.\n\nUse this if recordings are not being picked up after fixing issues.')) {
@@ -508,7 +495,7 @@ async function fetchLogs() {
 async function showManualProcessModal() {
   const modal = document.getElementById('manual-process-modal');
   const listContainer = document.getElementById('manual-process-list');
-  const verbositySelect = document.getElementById('log-verbosity');
+  const verbositySelect = document.getElementById('manual-process-log-verbosity');
   
   // Show modal
   modal.style.display = 'flex';
@@ -518,7 +505,7 @@ async function showManualProcessModal() {
     const verbosityRes = await fetch('/api/logging/verbosity');
     if (verbosityRes.ok) {
       const verbosityData = await verbosityRes.json();
-      if (verbosityData.verbosity) {
+      if (verbosityData.verbosity && verbositySelect) {
         verbositySelect.value = verbosityData.verbosity.toUpperCase();
       }
     }

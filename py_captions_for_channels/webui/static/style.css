@@ -21,42 +21,159 @@ body {
               radial-gradient(circle at 50% 80%, rgba(255, 255, 255, 0.04), transparent 35%),
               var(--bg);
   color: var(--text);
-  padding: 48px 64px 64px;
+  padding: 0;
 }
 
-.hero {
+/* Navbar Styles */
+.navbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 24px;
-  margin-bottom: 28px;
+  gap: 16px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--panel-border);
+  backdrop-filter: blur(6px);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
 }
 
-.eyebrow {
-  letter-spacing: 0.08em;
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: 12px;
+  padding-right: 16px;
+  border-right: 1px solid var(--panel-border);
+}
+
+.navbar-logo {
+  width: 40px;
+  height: 40px;
+}
+
+.navbar-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navbar-app-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.navbar-version {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.navbar-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.navbar-services {
+  border-left: 2px solid rgba(92, 225, 230, 0.4);
+}
+
+.navbar-heartbeat {
+  border-left: 2px solid rgba(76, 175, 80, 0.4);
+}
+
+.navbar-processes {
+  border-left: 2px solid rgba(255, 179, 71, 0.4);
+  flex: 1;
+  min-width: 0;
+}
+
+.navbar-section-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
   text-transform: uppercase;
-  color: var(--muted);
-  margin: 0 0 8px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.navbar-items {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.navbar-service {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
+  white-space: nowrap;
 }
 
-h1 {
-  margin: 0;
-  font-size: 36px;
+.navbar-process-items {
+  gap: 16px;
 }
 
-.lede {
-  margin: 10px 0 0;
+.navbar-heartbeat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.navbar-heartbeat-label {
+  font-size: 11px;
   color: var(--muted);
-  max-width: 620px;
-  line-height: 1.6;
 }
 
-.grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: 480px 1fr;
-  min-height: 600px;
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.navbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.navbar-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(92, 225, 230, 0.5);
+  transform: translateY(-1px);
+}
+
+.navbar-btn-icon {
+  font-size: 16px;
+}
+
+.navbar-btn-label {
+  font-weight: 500;
+}
+
+/* Main content area */
+.main-content {
+  padding: 24px;
+  min-height: calc(100vh - 65px);
 }
 
 .card {
@@ -251,9 +368,10 @@ h1 {
 }
 
 .progress-bar-compact {
-  width: 150px;
+  width: 180px;
   height: 14px;
-  background-color: var(--bg-secondary);
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 7px;
   overflow: hidden;
   position: relative;
@@ -288,8 +406,10 @@ h1 {
 .progress-text {
   font-size: 11px;
   color: var(--muted);
-  min-width: 35px;
-  text-align: right;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @keyframes progress-shimmer {
@@ -650,6 +770,37 @@ h1 {
     overflow-y: auto;
     flex: 1;
     min-height: 0; /* Important for flexbox scrolling */
+  }
+
+  .settings-status-section {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .settings-status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 24px;
+  }
+
+  .settings-status-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .settings-status-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .settings-status-value {
+    font-size: 13px;
+    color: var(--text);
   }
 
   .detail-section {

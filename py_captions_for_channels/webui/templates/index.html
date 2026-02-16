@@ -13,113 +13,68 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header class="hero">
-    <div style="display: flex; align-items: center; gap: 1rem;">
-      <img src="/static/channels_cc_favicon_big/icon-192.png" alt="Py Captions" style="width: 256px; height: 256px;" />
-      <div>
-        <p class="eyebrow">Py Captions</p>
-        <h1>Real-time caption pipeline</h1>
-        <p class="lede">Monitor jobs, logs, and system health from a single place.</p>
+  <!-- Compact navigation bar -->
+  <nav class="navbar">
+    <!-- Logo and Title -->
+    <div class="navbar-brand">
+      <img src="/static/channels_cc_favicon_big/icon-48.png" alt="Py Captions" class="navbar-logo" />
+      <div class="navbar-title">
+        <div class="navbar-app-name">Py Captions</div>
+        <div class="navbar-version" id="webui-version-nav">v0.9.0</div>
       </div>
     </div>
-    <div class="pill">v0.9.0</div>
-  </header>
 
-  <main class="grid">
-    <section class="card" id="status-card">
-      <div class="card-head">
-        <div class="card-title">
-          <h2>Status</h2>
-          <button id="status-toggle" class="status-toggle" onclick="openSettingsModal()" title="Open settings">
-            ⚙
-          </button>
-        </div>
-        <span id="status-pill" class="pill pill-muted">loading</span>
+    <!-- Services Section -->
+    <div class="navbar-section navbar-services">
+      <div class="navbar-section-label">Services</div>
+      <div id="services" class="navbar-items">
+        <div class="navbar-service"><span class="service-unhealthy">●</span> Checking...</div>
       </div>
-      <table class="status-table">
-        <tr>
-          <td class="status-label">Application:</td>
-          <td class="status-value"><span id="app-name">—</span>, <span id="app-version">—</span></td>
-        </tr>
-        <tr>
-          <td class="status-label">Server Timezone:</td>
-          <td class="status-value" id="timezone">—</td>
-        </tr>
-           <tr>
-             <td class="status-label">Dry Run:</td>
-             <td class="status-value" id="dry-run">—</td>
-           </tr>
-           <tr>
-             <td class="status-label">Keep Original:</td>
-             <td class="status-value" id="keep-original">—</td>
-           </tr>
-           <tr>
-             <td class="status-label">Log Verbosity:</td>
-             <td class="status-value" id="log-verbosity">—</td>
-           </tr>
-           <tr>
-             <td class="status-label">Whisper Model:</td>
-             <td class="status-value" id="whisper-model">—</td>
-           </tr>
-           <tr>
-             <td class="status-label">Skip Caption Generation:</td>
-             <td class="status-value" id="skip-caption-generation">—</td>
-           </tr>
-        <tr>
-          <td class="status-label">Last Processed:</td>
-          <td class="status-value value-sub" id="last-processed">—</td>
-        </tr>
-        <tr>
-          <td class="status-label">Last Update:</td>
-          <td class="status-value value-sub" id="last-update">—</td>
-        </tr>
-        <tr>
-          <td class="status-label">Manual Process Queue:</td>
-          <td class="status-value">
-            <span id="manual-process-queue">0 items</span>
-            <button onclick="showManualProcessModal()" class="btn-small" style="margin-left: 10px;">Manage</button>
-          </td>
-        </tr>
-        <tr>
-          <td class="status-label">Services:</td>
-          <td class="status-value">
-            <div id="services" class="services-container">
-              <div class="service-status"><span class="service-unhealthy">●</span> Checking...</div>
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td class="status-label">Processes:</td>
-          <td class="status-value">
-            <div id="processes" class="services-container processes-container">
-              <div class="service-status"><span class="service-unhealthy">●</span> Checking...</div>
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td class="status-label">Heartbeat:</td>
-          <td class="status-value">
-            <div style="display: flex; gap: 12px; align-items: center;">
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <span id="heartbeat-polling" class="heartbeat-indicator" title="API Polling">●</span>
-                <span style="font-size: 12px; color: var(--muted);">Polling</span>
-              </div>
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <span id="heartbeat-manual" class="heartbeat-indicator" title="Manual Queue">●</span>
-                <span style="font-size: 12px; color: var(--muted);">Manual</span>
-              </div>
-            </div>
-          </td>
-        </tr>
-      </table>
-    </section>
+    </div>
 
+    <!-- Heartbeat Section -->
+    <div class="navbar-section navbar-heartbeat">
+      <div class="navbar-section-label">Heartbeat</div>
+      <div class="navbar-items">
+        <div class="navbar-heartbeat-item">
+          <span id="heartbeat-polling" class="heartbeat-indicator" title="API Polling">●</span>
+          <span class="navbar-heartbeat-label">Polling</span>
+        </div>
+        <div class="navbar-heartbeat-item">
+          <span id="heartbeat-manual" class="heartbeat-indicator" title="Manual Queue">●</span>
+          <span class="navbar-heartbeat-label">Manual</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Process Indicators Section -->
+    <div class="navbar-section navbar-processes">
+      <div class="navbar-section-label">Processing</div>
+      <div id="processes" class="navbar-items navbar-process-items">
+        <div class="navbar-service"><span class="service-unhealthy">●</span> Checking...</div>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="navbar-actions">
+      <button class="navbar-btn" onclick="showManualProcessModal()" title="Browse and select recordings">
+        <span class="navbar-btn-icon">☑</span>
+        <span class="navbar-btn-label">Recordings</span>
+      </button>
+      <button class="navbar-btn" onclick="openSettingsModal()" title="Settings">
+        <span class="navbar-btn-icon">⚙</span>
+      </button>
+    </div>
+  </nav>
+
+  <main class="main-content">
     <section class="card">
       <div class="card-head">
         <h2>Pipeline Activity</h2>
         <div class="tabs">
           <button class="tab-btn active" onclick="switchTab('executions')">Executions</button>
           <button class="tab-btn" onclick="switchTab('logs')">Full Logs</button>
+          <button class="tab-btn" onclick="switchTab('glances')">System Monitor</button>
         </div>
       </div>
       
@@ -128,7 +83,6 @@
           <small class="muted" id="exec-count">(loading)</small>
           <div style="margin-left:auto; display:flex; gap:8px;">
             <button class="btn-small" onclick="clearList()">Clear List</button>
-            <button class="btn-small" onclick="clearPendingExecutions()">Clear Pending</button>
             <button class="btn-small" onclick="clearPollingCache()" title="Clear polling cache to allow reprocessing recordings">Reset Cache</button>
           </div>
         </div>
@@ -153,6 +107,19 @@
         <ul class="log-list" id="log-list">
           <li class="muted">Loading logs...</li>
         </ul>
+      </div>
+
+      <div id="glances-tab" class="tab-content">
+        <div class="tab-header">
+          <small class="muted">Real-time system and GPU monitoring via Glances</small>
+        </div>
+        <div style="width: 100%; height: 600px; background: #1a1a1a; border-radius: 8px; overflow: hidden;">
+          <iframe 
+            src="http://192.168.3.150:61208/" 
+            style="width: 100%; height: 100%; border: none;"
+            title="Glances System Monitor"
+          ></iframe>
+        </div>
       </div>
     </section>
 
@@ -214,11 +181,37 @@
         <div class="modal-header">
           <div style="display: flex; align-items: center; gap: 10px;">
             <h2>Pipeline Settings</h2>
-            <span id="webui-version" class="pill pill-muted">webui v0.9.0+build1</span>
+            <span id="webui-version" class="pill pill-muted">v—</span>
           </div>
           <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
         </div>
         <div class="modal-body">
+          <!-- Status Information Section -->
+          <div class="settings-status-section">
+            <h3 style="margin: 0 0 12px 0; font-size: 14px; color: var(--muted);">System Status</h3>
+            <div class="settings-status-grid">
+              <div class="settings-status-item">
+                <span class="settings-status-label">Application:</span>
+                <span class="settings-status-value"><span id="app-name">—</span> v<span id="app-version">—</span></span>
+              </div>
+              <div class="settings-status-item">
+                <span class="settings-status-label">Timezone:</span>
+                <span class="settings-status-value" id="timezone">—</span>
+              </div>
+              <div class="settings-status-item">
+                <span class="settings-status-label">Last Processed:</span>
+                <span class="settings-status-value" id="last-processed">—</span>
+              </div>
+              <div class="settings-status-item">
+                <span class="settings-status-label">Queue Size:</span>
+                <span class="settings-status-value" id="modal-queue-size">—</span>
+              </div>
+            </div>
+          </div>
+          
+          <hr style="border: none; border-top: 1px solid var(--panel-border); margin: 20px 0;">
+          
+          <h3 style="margin: 0 0 16px 0; font-size: 14px; color: var(--muted);">Configuration</h3>
           <form id="settings-form" onsubmit="saveSettings(event)">
             <div class="settings-group">
               <label for="discovery-mode-select">Discovery Mode</label>
