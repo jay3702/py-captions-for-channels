@@ -880,6 +880,14 @@ let monitorInterval = null;
 const MONITOR_WINDOW_SEC = 300; // 5 minutes
 const MONITOR_MAX_POINTS = 300; // 5 minutes at 1Hz
 
+// Track maximum values seen for persistent scaling
+const chartMaxValues = {
+  cpu: 10,      // Start with 10% minimum
+  disk: 1,      // Start with 1 MB/s minimum
+  network: 1,   // Start with 1 Mbps minimum
+  gpu: 10       // Start with 10% minimum
+};
+
 function initSystemMonitor() {
   if (monitorCharts) return; // Already initialized
   
@@ -901,10 +909,10 @@ function initSystemMonitor() {
   
   console.log('Initializing system monitor charts...');
   
-  // Get chart width from parent container
+  // Get chart width from parent container wrapper
   const getChartWidth = () => {
-    const container = cpuEl.parentElement;
-    return container ? container.clientWidth - 40 : 600; // Subtract padding
+    const wrapper = cpuEl.parentElement;
+    return wrapper ? wrapper.clientWidth - 20 : 600; // Subtract padding
   };
   const chartWidth = getChartWidth();
   console.log('Chart width:', chartWidth);
@@ -912,11 +920,19 @@ function initSystemMonitor() {
   // Common options for all charts
   const commonOpts = {
     width: chartWidth,
-    height: 150,
+    height: 100,
     class: 'monitor-chart',
     scales: {
       x: { time: true },
-      y: { auto: true }
+      y: { 
+        auto: false,
+        range: (u, dataMin, dataMax) => {
+          // Use tracked max or a minimum value
+          const chartId = u.root.parentElement.id.replace('chart-', '');
+          const max = chartMaxValues[chartId] || 10;
+          return [0, Math.max(max, 10)];
+        }
+      }
     },
     axes: [
       { 
@@ -991,11 +1007,11 @@ function initSystemMonitor() {
         if (monitorCharts) {
           const newWidth = getChartWidth();
           console.log('Resizing charts to:', newWidth);
-          monitorCharts.cpu.setSize({ width: newWidth, height: 150 });
-          monitorCharts.disk.setSize({ width: newWidth, height: 150 });
-          monitorCharts.network.setSize({ width: newWidth, height: 150 });
+          monitorCharts.cpu.setSize({ width: newWidth, height: 100 });
+          monitorCharts.disk.setSize({ width: newWidth, height: 100 });
+          monitorCharts.network.setSize({ width: newWidth, height: 100 });
           if (monitorCharts.gpu) {
-            monitorCharts.gpu.setSize({ width: newWidth, height: 150 });
+            monitorCharts.gpu.setSize({ width: newWidth, height: 100 });
           }
         }
       }, 250); // Debounce resize events
@@ -1082,6 +1098,22 @@ function updateSystemMonitor() {
 function appendChartData(chart, timestamp, values) {
   const data = chart.data;
   const maxPoints = MONITOR_MAX_POINTS;
+  
+  // Track maximum value encountered (for persistent scaling)
+  const chartId = chart.root.parentElement.id.replace('chart-', '');
+  let maxVal = 0;
+  values.forEach(v => {
+    if (v !== null && v !== undefined) {
+      maxVal = Math.max(maxVal, v);
+    }
+  });
+  
+  // Update tracked max if we've seen a higher value
+  if (maxVal > chartMaxValues[chartId]) {
+    chartMaxValues[chartId] = maxVal * 1.1; // Add 10% headroom
+    // Update the scale range
+    chart.scales.y.range = () => [0, Math.max(chartMaxValues[chartId], 10)];
+  }
   
   // Append new data
   data[0].push(timestamp);
