@@ -993,16 +993,22 @@ function initSystemMonitor() {
       }, [[], [], []], networkEl)
     };
     
-    // GPU Chart (conditionally created)
+    // GPU Chart - defer creation until container is visible
+    // (initializing while display:none can cause rendering issues)
     if (gpuEl) {
-      monitorCharts.gpu = new uPlot({
-        ...commonOpts,
-        series: [
-          {},
-          { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
-          { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
-        ]
-      }, [[], [], []], gpuEl);
+      const gpuContainer = document.getElementById('gpu-chart-container');
+      if (gpuContainer && gpuContainer.style.display !== 'none') {
+        // Container is already visible, create chart now
+        monitorCharts.gpu = new uPlot({
+          ...commonOpts,
+          series: [
+            {},
+            { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
+            { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+          ]
+        }, [[], [], []], gpuEl);
+      }
+      // If container is hidden, chart will be created when first shown (see updateSystemMonitor)
     }
     
     console.log('Charts initialized successfully');
@@ -1109,14 +1115,62 @@ function updateSystemMonitor() {
         if (gpuContainer) gpuContainer.style.display = 'block';
         if (gpuUnavailable) gpuUnavailable.style.display = 'none';
         
-        if (monitorCharts.gpu) {
-          // If GPU chart was just revealed, resize it to match other charts
-          if (wasHidden) {
-            const gpuEl = document.getElementById('chart-gpu');
-            const width = getChartWidth(gpuEl);
-            monitorCharts.gpu.setSize({ width: width, height: 130 });
+        // Create GPU chart if it doesn't exist yet (deferred creation)
+        if (!monitorCharts.gpu) {
+          const gpuEl = document.getElementById('chart-gpu');
+          if (gpuEl) {
+            const chartWidth = getChartWidth(gpuEl);
+            const commonOpts = {
+              width: chartWidth,
+              height: 130,
+              class: 'monitor-chart',
+              scales: {
+                x: { time: true },
+                y: { 
+                  auto: false,
+                  range: (u, dataMin, dataMax) => {
+                    const max = chartMaxValues.gpu || 10;
+                    return [0, Math.max(max, 10)];
+                  }
+                }
+              },
+              axes: [
+                { 
+                  scale: 'x', 
+                  space: 80, 
+                  incrs: [10, 30, 60, 120, 300], 
+                  values: (u, vals) => vals.map(v => new Date(v * 1000).toLocaleTimeString()),
+                  stroke: '#ffffff',
+                  grid: { stroke: '#333', width: 1 }
+                },
+                { 
+                  scale: 'y', 
+                  space: 40,
+                  stroke: '#ffffff',
+                  grid: { stroke: '#333', width: 1 }
+                }
+              ],
+              series: []
+            };
+            
+            monitorCharts.gpu = new uPlot({
+              ...commonOpts,
+              series: [
+                {},
+                { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
+                { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+              ]
+            }, [[], [], []], gpuEl);
+            console.log('GPU chart created on-demand with width:', chartWidth);
           }
-          
+        } else if (wasHidden) {
+          // Chart already exists but was just revealed, resize it
+          const gpuEl = document.getElementById('chart-gpu');
+          const width = getChartWidth(gpuEl);
+          monitorCharts.gpu.setSize({ width: width, height: 130 });
+        }
+        
+        if (monitorCharts.gpu) {
           const vramPct = metrics.gpu_mem_total_mb > 0 
             ? (metrics.gpu_mem_used_mb / metrics.gpu_mem_total_mb) * 100 
             : 0;
