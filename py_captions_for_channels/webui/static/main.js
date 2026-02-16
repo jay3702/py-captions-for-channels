@@ -920,7 +920,7 @@ function initSystemMonitor() {
   // Common options for all charts
   const commonOpts = {
     width: chartWidth,
-    height: 100,
+    height: 130,
     class: 'monitor-chart',
     scales: {
       x: { time: true },
@@ -1007,11 +1007,11 @@ function initSystemMonitor() {
         if (monitorCharts) {
           const newWidth = getChartWidth();
           console.log('Resizing charts to:', newWidth);
-          monitorCharts.cpu.setSize({ width: newWidth, height: 100 });
-          monitorCharts.disk.setSize({ width: newWidth, height: 100 });
-          monitorCharts.network.setSize({ width: newWidth, height: 100 });
+          monitorCharts.cpu.setSize({ width: newWidth, height: 130 });
+          monitorCharts.disk.setSize({ width: newWidth, height: 130 });
+          monitorCharts.network.setSize({ width: newWidth, height: 130 });
           if (monitorCharts.gpu) {
-            monitorCharts.gpu.setSize({ width: newWidth, height: 100 });
+            monitorCharts.gpu.setSize({ width: newWidth, height: 130 });
           }
         }
       }, 250); // Debounce resize events
