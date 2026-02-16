@@ -540,6 +540,37 @@ async def logs_endpoint(lines: int = 100) -> dict:
     }
 
 
+@app.get("/glances/{path:path}")
+async def glances_proxy(path: str = ""):
+    """Proxy requests to Glances web interface running on port 61208.
+
+    Args:
+        path: Path to proxy to Glances
+
+    Returns:
+        Response from Glances
+    """
+    from fastapi.responses import Response
+    import httpx
+
+    # Connect to Glances running in the main container via host IP
+    glances_url = f"http://192.168.3.150:61208/{path}"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(glances_url)
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
+    except Exception as e:
+        return Response(
+            content=f"Error connecting to Glances: {str(e)}",
+            status_code=503,
+        )
+
+
 @app.get("/api/executions")
 async def get_executions(limit: int = 50) -> dict:
     """Get recent pipeline executions.
@@ -610,7 +641,12 @@ async def clear_list_executions(cancel_pending: bool = False) -> dict:
     - Cancelled executions (status="cancelled")
     - Dry-run executions (status="dry_run")
     - Discovered executions (status="discovered")
-    - Invalid pending executions (not in manual process queue and stale)
+    - Stale pending executions (not in manual process queue AND older than 60 minutes)
+
+    Stale pending executions are those that will never be processed:
+    - Created more than 60 minutes ago
+    - No longer in the manual process queue
+    - Not actively being processed
 
     If there are legitimate pending executions (in queue and recent),
     returns them for confirmation before clearing.
@@ -723,56 +759,12 @@ async def clear_failed_executions() -> dict:
 
 @app.post("/api/executions/clear_pending")
 async def clear_pending_executions(max_age_minutes: int = 60) -> dict:
-    """Remove stale pending executions.
+    """DEPRECATED: Use clear_list endpoint instead.
 
-    Pending items are removed if they are older than max_age_minutes or
-    are not present in the manual process queue.
+    This endpoint is retained for backward compatibility but redirect to clear_list.
+    The clear_list endpoint now handles stale pending executions automatically.
     """
-    try:
-        tracker = get_tracker()
-        executions = tracker.get_executions(limit=10000)
-        manual_queue = set(state_backend.get_manual_process_queue())
-        now = datetime.now(timezone.utc)
-        removed_ids = []
-
-        for exec_data in executions:
-            if exec_data.get("status") != "pending":
-                continue
-
-            job_id = exec_data.get("id")
-            path = exec_data.get("path")
-
-            started_at = exec_data.get("started_at")
-            stale = False
-            if started_at:
-                try:
-                    dt = datetime.fromisoformat(started_at)
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    age_minutes = (now - dt).total_seconds() / 60.0
-                    if age_minutes > max_age_minutes:
-                        stale = True
-                except Exception:
-                    stale = True
-            else:
-                stale = True
-
-            # Remove if stale or not in manual queue (for manual items)
-            if stale or (path and path not in manual_queue):
-                if job_id and tracker.remove_execution(job_id):
-                    removed_ids.append(job_id)
-
-        return {
-            "removed": len(removed_ids),
-            "removed_ids": removed_ids,
-            "timestamp": datetime.now().isoformat(),
-        }
-    except Exception as e:
-        return {
-            "removed": 0,
-            "error": str(e),
-            "timestamp": datetime.now().isoformat(),
-        }
+    return await clear_list_executions()
 
 
 @app.post("/api/polling-cache/clear")

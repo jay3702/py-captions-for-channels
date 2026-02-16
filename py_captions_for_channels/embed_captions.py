@@ -337,8 +337,11 @@ def validate_and_trim_srt(srt_path, max_end_time, log):
     log.info(f"Trimmed SRT to {max_end_time:.2f}s for Android compatibility.")
 
 
-def encode_av_only(mpg_orig, temp_av, log):
+def encode_av_only(mpg_orig, temp_av, log, job_id=None):
     """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs."""
+    # Get video duration for progress tracking
+    video_duration = probe_duration(mpg_orig, log)
+
     # Detect if content is VFR (Chrome capture) or CFR (broadcast TV)
     is_vfr = detect_variable_frame_rate(mpg_orig, log)
 
@@ -346,6 +349,8 @@ def encode_av_only(mpg_orig, temp_av, log):
     cmd_nvenc = [
         "ffmpeg",
         "-y",
+        "-progress",
+        "pipe:2",  # Enable progress reporting to stderr
         "-i",
         mpg_orig,
         "-c:v",
@@ -377,7 +382,9 @@ def encode_av_only(mpg_orig, temp_av, log):
     )
     log.info(f"Trying NVENC encode: {' '.join(cmd_nvenc)}")
     try:
-        subprocess.check_call(cmd_nvenc)
+        _run_ffmpeg_with_progress(
+            cmd_nvenc, video_duration, "Encoding (GPU)", log, job_id
+        )
         return
     except subprocess.CalledProcessError:
         log.warning("NVENC failed, falling back to CPU (libx264)")
@@ -386,6 +393,8 @@ def encode_av_only(mpg_orig, temp_av, log):
     cmd_cpu = [
         "ffmpeg",
         "-y",
+        "-progress",
+        "pipe:2",  # Enable progress reporting to stderr
         "-i",
         mpg_orig,
         "-c:v",
@@ -416,10 +425,65 @@ def encode_av_only(mpg_orig, temp_av, log):
     )
     log.info(f"Trying CPU encode: {' '.join(cmd_cpu)}")
     try:
-        subprocess.check_call(cmd_cpu)
+        _run_ffmpeg_with_progress(
+            cmd_cpu, video_duration, "Encoding (CPU)", log, job_id
+        )
     except subprocess.CalledProcessError as e:
         log.error(f"ffmpeg failed: {e}")
         sys.exit(1)
+
+
+def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
+    """Run ffmpeg and parse progress from stderr output."""
+    import re
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        bufsize=1,
+    )
+
+    last_progress = 0
+    progress_pattern = re.compile(r"out_time_ms=(\d+)")
+
+    try:
+        for line in process.stderr:
+            # Parse ffmpeg progress output (format: key=value)
+            match = progress_pattern.search(line)
+            if match and duration > 0:
+                # out_time_ms is in microseconds
+                current_time = int(match.group(1)) / 1000000.0
+                progress = min(95, int((current_time / duration) * 100))
+
+                # Report every 5% or significant progress
+                if progress >= last_progress + 5:
+                    if job_id:
+                        update_misc_progress(
+                            job_id,
+                            progress,
+                            f"{step_name}: {current_time:.0f}/{duration:.0f}s",
+                        )
+                    log.info(
+                        f"ffmpeg progress: {progress}% "
+                        f"({current_time:.1f}/{duration:.1f}s)"
+                    )
+                    last_progress = progress
+
+        # Wait for process to complete
+        returncode = process.wait()
+
+        if returncode != 0:
+            raise subprocess.CalledProcessError(returncode, cmd)
+
+        # Final progress update
+        if job_id:
+            update_misc_progress(job_id, 100, f"{step_name} complete")
+
+    finally:
+        process.stdout.close()
+        process.stderr.close()
 
 
 def probe_av_end(temp_av, log):
@@ -510,8 +574,11 @@ def clamp_srt_to_end(srt_path, end_time, log):
     log.info(f"Clamped SRT to END={end_time:.3f}s")
 
 
-def mux_subs(av_path, srt_path, output_path, log):
+def mux_subs(av_path, srt_path, output_path, log, job_id=None):
     """Step 4: Mux subtitles into MP4 with mov_text, +faststart."""
+    if job_id:
+        update_misc_progress(job_id, 0, "Muxing subtitles...")
+
     cmd = [
         "ffmpeg",
         "-y",
@@ -538,6 +605,8 @@ def mux_subs(av_path, srt_path, output_path, log):
     log.info(f"Muxing subs: {' '.join(cmd)}")
     try:
         subprocess.check_call(cmd)
+        if job_id:
+            update_misc_progress(job_id, 100, "Muxing complete")
     except subprocess.CalledProcessError as e:
         log.error(f"ffmpeg mux failed: {e}")
         sys.exit(1)
@@ -677,24 +746,55 @@ def main():
 
                 # Transcribe with progress tracking
                 log.info(f"Transcribing audio from: {mpg_path}")
-                segments, info = model.transcribe(
-                    mpg_path,
-                    language="en",
-                    beam_size=5,
-                    vad_filter=True,  # Voice activity detection for better accuracy
-                    vad_parameters=dict(
-                        min_silence_duration_ms=500
-                    ),  # Reduce hallucinations
-                )
+
+                # Get video duration for progress calculation
+                video_duration = probe_duration(mpg_path, log)
+                log.info(f"Video duration: {video_duration:.1f}s for progress tracking")
+
+                # Try GPU transcription first, fall back to CPU if GPU libraries fail
+                try:
+                    segments_generator, info = model.transcribe(
+                        mpg_path,
+                        language="en",
+                        beam_size=5,
+                        vad_filter=True,  # Voice activity detection for better accuracy
+                        vad_parameters=dict(
+                            min_silence_duration_ms=500
+                        ),  # Reduce hallucinations
+                    )
+                except Exception as e:
+                    # GPU transcription failed (e.g., CUDA library missing)
+                    if device == "cuda":
+                        log.error(f"Faster-Whisper transcription failed: {e}")
+                        log.warning("Retrying with CPU...")
+                        device = "cpu"
+                        compute_type = "int8"
+                        model = WhisperModel(
+                            args.model, device=device, compute_type=compute_type
+                        )
+                        log.info("Faster-Whisper model reloaded with CPU")
+                        segments_generator, info = model.transcribe(
+                            mpg_path,
+                            language="en",
+                            beam_size=5,
+                            vad_filter=True,
+                            vad_parameters=dict(min_silence_duration_ms=500),
+                        )
+                    else:
+                        raise  # CPU transcription failed, re-raise
 
                 log.info(
                     f"Detected language: {info.language} "
                     f"(probability: {info.language_probability:.2f})"
                 )
 
-                # Write SRT file
+                # Write SRT file with real-time progress tracking
                 srt_lines = []
-                for i, segment in enumerate(segments, start=1):
+                last_progress_report = 0
+                segment_count = 0
+
+                for i, segment in enumerate(segments_generator, start=1):
+                    segment_count = i
                     # Format timestamps for SRT
                     start_time = format_srt_timestamp(segment.start)
                     end_time = format_srt_timestamp(segment.end)
@@ -704,6 +804,32 @@ def main():
                     srt_lines.append(f"{start_time} --> {end_time}\n")
                     srt_lines.append(f"{segment.text.strip()}\n")
                     srt_lines.append("\n")
+
+                    # Update progress based on segment end time
+                    if video_duration > 0:
+                        progress = min(95, int((segment.end / video_duration) * 100))
+                        # Report every 5% or when significant progress is made
+                        if progress >= last_progress_report + 5 or (
+                            progress - last_progress_report >= 1 and time.time() % 2 < 1
+                        ):
+                            update_misc_progress(
+                                args.job_id,
+                                progress,
+                                f"Transcribing: {segment.end:.0f}/"
+                                f"{video_duration:.0f}s "
+                                f"({segment_count} segments)",
+                            )
+                            last_progress_report = progress
+                            log.info(
+                                f"Whisper progress: {progress}% "
+                                f"({segment.end:.1f}/{video_duration:.1f}s)"
+                            )
+
+                # Final progress update
+                update_misc_progress(
+                    args.job_id, 95, f"Transcription complete: {segment_count} segments"
+                )
+                log.info(f"Transcribed {segment_count} segments total")
 
                 # Write SRT file atomically
                 srt_tmp = srt_path + ".tmp"
@@ -750,7 +876,7 @@ def main():
     # Step 1: Encode A/V only
     run_step(
         "ffmpeg_encode",
-        lambda: encode_av_only(orig_path, temp_av, log),
+        lambda: encode_av_only(orig_path, temp_av, log, args.job_id),
         input_path=orig_path,
         output_path=temp_av,
     )
@@ -770,7 +896,7 @@ def main():
     # Step 4: Mux subtitles
     run_step(
         "ffmpeg_mux",
-        lambda: mux_subs(temp_av, srt_path, temp_muxed, log),
+        lambda: mux_subs(temp_av, srt_path, temp_muxed, log, args.job_id),
         input_path=temp_av,
         output_path=temp_muxed,
     )

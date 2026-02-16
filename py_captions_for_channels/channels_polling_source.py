@@ -196,13 +196,20 @@ class ChannelsPollingSource:
                     all_executions = tracker.get_executions(limit=1000)
 
                     # Count pending jobs (not running, just waiting)
+                    # Exclude manual_process jobs (handled by separate loop)
                     pending_execs = [
-                        e for e in all_executions if e.get("status") == "pending"
+                        e
+                        for e in all_executions
+                        if e.get("status") == "pending"
+                        and e.get("kind") != "manual_process"
                     ]
                     pending_count = len(pending_execs)
 
                     running_count = sum(
-                        1 for e in all_executions if e.get("status") == "running"
+                        1
+                        for e in all_executions
+                        if e.get("status") == "running"
+                        and e.get("kind") != "manual_process"
                     )
 
                     # If we have a pending job and nothing running, enqueue it
@@ -235,8 +242,12 @@ class ChannelsPollingSource:
                     # Normal flow: job starts → promotes next discovered → pending
                     if pending_count == 0:
                         # Get discovered executions (oldest first by started_at)
+                        # Exclude manual_process jobs (handled by separate loop)
                         discovered = [
-                            e for e in all_executions if e.get("status") == "discovered"
+                            e
+                            for e in all_executions
+                            if e.get("status") == "discovered"
+                            and e.get("kind") != "manual_process"
                         ]
 
                         if discovered:
