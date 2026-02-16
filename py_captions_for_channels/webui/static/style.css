@@ -1108,6 +1108,7 @@ body {
   grid-template-columns: 1fr;
   gap: 20px;
   margin-top: 20px;
+  min-width: 0;
 }
 
 .chart-container {
@@ -1118,6 +1119,7 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  min-width: 0;
 }
 
 .chart-title {

@@ -1018,15 +1018,38 @@ function initSystemMonitor() {
           const diskWidth = getChartWidth(diskEl);
           const networkWidth = getChartWidth(networkEl);
           
-          console.log('Resizing charts to:', cpuWidth);
+          console.log('Window resized. Container width:', cpuEl.closest('.chart-container').clientWidth);
+          console.log('Calculated chart width:', cpuWidth);
+          console.log('Current CPU chart width:', monitorCharts.cpu.width);
+          
+          // Force canvas elements to update their width attribute before setSize
+          if (monitorCharts.cpu.root) {
+            const cpuCanvas = monitorCharts.cpu.root.querySelector('canvas');
+            if (cpuCanvas) cpuCanvas.style.width = cpuWidth + 'px';
+          }
+          if (monitorCharts.disk.root) {
+            const diskCanvas = monitorCharts.disk.root.querySelector('canvas');
+            if (diskCanvas) diskCanvas.style.width = diskWidth + 'px';
+          }
+          if (monitorCharts.network.root) {
+            const networkCanvas = monitorCharts.network.root.querySelector('canvas');
+            if (networkCanvas) networkCanvas.style.width = networkWidth + 'px';
+          }
+          
           monitorCharts.cpu.setSize({ width: cpuWidth, height: 130 });
           monitorCharts.disk.setSize({ width: diskWidth, height: 130 });
           monitorCharts.network.setSize({ width: networkWidth, height: 130 });
           
           if (monitorCharts.gpu && gpuEl) {
             const gpuWidth = getChartWidth(gpuEl);
+            if (monitorCharts.gpu.root) {
+              const gpuCanvas = monitorCharts.gpu.root.querySelector('canvas');
+              if (gpuCanvas) gpuCanvas.style.width = gpuWidth + 'px';
+            }
             monitorCharts.gpu.setSize({ width: gpuWidth, height: 130 });
           }
+          
+          console.log('Charts resized. New CPU width:', monitorCharts.cpu.width);
         }
       }, 250); // Debounce resize events
     });
