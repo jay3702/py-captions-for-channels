@@ -138,16 +138,43 @@ COPY requirements.txt ./
 # Install PyTorch with CUDA 11.8 support explicitly FIRST
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
-# Install remaining requirements (will skip torch since already installed)
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Glances with GPU plugin support and orjson for API responses
-RUN pip install --no-cache-dir 'glances[gpu]==4.0.5' orjson
-
 # Copy FFmpeg from build stage
 COPY --from=ffmpeg-build /ffmpeg_build/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-build /ffmpeg_build/bin/ffprobe /usr/local/bin/ffprobe
 COPY --from=ffmpeg-build /ffmpeg_build/lib/ /usr/local/lib/
+
+# Update library cache so FFmpeg libraries are found
+RUN ldconfig
+
+# Install FFmpeg dev packages temporarily for av package compilation
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libavfilter-dev \
+    libswscale-dev \
+    libswresample-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install remaining requirements (av will compile against FFmpeg)
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Remove FFmpeg dev packages (no longer needed after av is compiled)
+RUN apt-get remove -y \
+    pkg-config \
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libavfilter-dev \
+    libswscale-dev \
+    libswresample-dev \
+    && apt-get autoremove -y
+
+# Install Glances with GPU plugin support and orjson for API responses
+RUN pip install --no-cache-dir 'glances[gpu]==4.0.5' orjson
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Copy application code
