@@ -6,10 +6,7 @@ httpx
 numpy<2
 # Faster-Whisper for automatic speech recognition (4-5x faster than openai-whisper)
 # NOTE: PyTorch installed separately in Dockerfile with CUDA support
-# ctranslate2 pinned to 3.x for CUDA 11.8 compatibility (4.x requires CUDA 12)
-ctranslate2>=3.0,<4.0
-# faster-whisper will auto-resolve to latest version compatible with ctranslate2 3.x
-faster-whisper<1.0.3
+faster-whisper
 fastapi
 uvicorn[standard]
 jinja2
