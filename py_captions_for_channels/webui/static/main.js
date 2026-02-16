@@ -720,12 +720,21 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.remove('active');
   });
-  event.target.classList.add('active');
+  // Find and activate the button for this tab
+  const buttons = document.querySelectorAll('.tab-btn');
+  buttons.forEach((btn, index) => {
+    const expectedTabs = ['executions', 'logs', 'glances'];
+    if (expectedTabs[index] === tabName) {
+      btn.classList.add('active');
+    }
+  });
+  
   // Update tab content
   document.querySelectorAll('.tab-content').forEach(content => {
     content.classList.remove('active');
   });
   document.getElementById(`${tabName}-tab`).classList.add('active');
+  
   // Handle log streaming - only when logs tab is active
   if (tabName === 'logs') {
     stopLogPolling();
@@ -733,6 +742,13 @@ function switchTab(tabName) {
   } else {
     stopLogWebSocket();
     stopLogPolling();  // Stop polling when NOT on logs tab
+  }
+  
+  // Handle system monitor - only when glances tab is active
+  if (tabName === 'glances') {
+    startSystemMonitor();
+  } else {
+    stopSystemMonitor();
   }
 }
 
@@ -1083,19 +1099,6 @@ function stopSystemMonitor() {
   if (monitorInterval) {
     clearInterval(monitorInterval);
     monitorInterval = null;
-  }
-}
-
-// Update switchTab to handle system monitor
-const originalSwitchTab = switchTab;
-function switchTab(tabName) {
-  originalSwitchTab.call(this, tabName);
-  
-  // Start/stop system monitor based on active tab
-  if (tabName === 'glances') {
-    startSystemMonitor();
-  } else {
-    stopSystemMonitor();
   }
 }
 
