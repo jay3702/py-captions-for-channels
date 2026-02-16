@@ -1140,6 +1140,11 @@ body {
 .chart {
   width: 100%;
   height: 130px;
+  max-width: 100%;
+}
+
+.chart canvas {
+  max-width: 100% !important;
 }
 
 /* uPlot customizations for dark theme */

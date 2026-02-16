@@ -1005,13 +1005,19 @@ function initSystemMonitor() {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
         if (monitorCharts) {
-          const newWidth = getChartWidth();
-          console.log('Resizing charts to:', newWidth);
-          monitorCharts.cpu.setSize({ width: newWidth, height: 130 });
-          monitorCharts.disk.setSize({ width: newWidth, height: 130 });
-          monitorCharts.network.setSize({ width: newWidth, height: 130 });
-          if (monitorCharts.gpu) {
-            monitorCharts.gpu.setSize({ width: newWidth, height: 130 });
+          // Calculate width for each chart from its own wrapper
+          const cpuWidth = cpuEl.parentElement.clientWidth - 20;
+          const diskWidth = diskEl.parentElement.clientWidth - 20;
+          const networkWidth = networkEl.parentElement.clientWidth - 20;
+          
+          console.log('Resizing charts to:', cpuWidth);
+          monitorCharts.cpu.setSize({ width: cpuWidth, height: 130 });
+          monitorCharts.disk.setSize({ width: diskWidth, height: 130 });
+          monitorCharts.network.setSize({ width: networkWidth, height: 130 });
+          
+          if (monitorCharts.gpu && gpuEl) {
+            const gpuWidth = gpuEl.parentElement.clientWidth - 20;
+            monitorCharts.gpu.setSize({ width: gpuWidth, height: 130 });
           }
         }
       }, 250); // Debounce resize events
