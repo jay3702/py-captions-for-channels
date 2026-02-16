@@ -17,7 +17,9 @@ services:
       - USE_WEBHOOK=${USE_WEBHOOK:-true}
       - WEBHOOK_HOST=${WEBHOOK_HOST:-0.0.0.0}
       - WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
+      - WEB_UI_PORT=${WEB_UI_PORT:-8000}
       - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
+      - CHANNELWATCH_URL=${CHANNELWATCH_URL:-ws://localhost:8501/events}
       - API_TIMEOUT=${API_TIMEOUT:-10}
       
       # Caption processing options
@@ -40,39 +42,9 @@ services:
       - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
-      - "61208:61208"  # Glances web UI
-    
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  py-captions-web:
-    image: py-captions-for-channels:latest
-    depends_on:
-      - py-captions
-    restart: unless-stopped
-    command: uvicorn py_captions_for_channels.web_app:app --host 0.0.0.0 --port ${WEB_UI_PORT:-8000}
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LOG_FILE=${LOG_FILE:-/app/logs/app.log}
-      - STATE_FILE=${STATE_FILE:-/app/data/state.json}
-      - DRY_RUN=${DRY_RUN:-false}
-      # Set container timezone (recommended for local timestamp display)
-      - TZ=${TZ:-}
-      # Explicit server timezone used by app for formatting
-      - SERVER_TZ=${SERVER_TZ:-}
-      - CAPTION_COMMAND=${CAPTION_COMMAND:-bash -c 'whisper --model medium --output_format srt --output_dir "$(dirname "{path}")" "{path}"'}
-      - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
-      - CHANNELWATCH_URL=${CHANNELWATCH_URL:-ws://localhost:8501/events}
-      - USE_WEBHOOK=${USE_WEBHOOK:-true}
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./py_captions_for_channels:/app/py_captions_for_channels
-    ports:
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
+      - "61208:61208"  # Glances web UI (legacy, may be removed)
+    
     logging:
       driver: "json-file"
       options:
