@@ -36,6 +36,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
+  flex-wrap: wrap;
 }
 
 .navbar-brand {
@@ -45,6 +46,7 @@ body {
   margin-right: 12px;
   padding-right: 16px;
   border-right: 1px solid var(--panel-border);
+  flex-shrink: 0;
 }
 
 .navbar-logo {
@@ -79,6 +81,8 @@ body {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .navbar-services {
@@ -953,6 +957,35 @@ body {
     grid-template-columns: 1fr;
     min-height: auto;
   }
+  
+  .navbar {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+  
+  .navbar-brand {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 12px;
+    margin-bottom: 8px;
+    margin-right: 0;
+    padding-right: 0;
+  }
+  
+  .navbar-section {
+    flex: 1 1 auto;
+    min-width: 150px;
+  }
+  
+  .navbar-processes {
+    width: 100%;
+  }
+  
+  .navbar-actions {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 
 .status-table {
@@ -1071,6 +1104,7 @@ body {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   padding: 20px;
+  overflow: hidden;
 }
 
 .chart-container h3 {

@@ -901,8 +901,12 @@ function initSystemMonitor() {
   
   console.log('Initializing system monitor charts...');
   
-  // Get chart width - use parent container width if element width is 0 (hidden tab)
-  const chartWidth = cpuEl.clientWidth > 0 ? cpuEl.clientWidth : cpuEl.parentElement.clientWidth || 600;
+  // Get chart width from parent container
+  const getChartWidth = () => {
+    const container = cpuEl.parentElement;
+    return container ? container.clientWidth - 40 : 600; // Subtract padding
+  };
+  const chartWidth = getChartWidth();
   console.log('Chart width:', chartWidth);
   
   // Common options for all charts
@@ -978,6 +982,24 @@ function initSystemMonitor() {
     }
     
     console.log('Charts initialized successfully');
+    
+    // Add resize handler
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (monitorCharts) {
+          const newWidth = getChartWidth();
+          console.log('Resizing charts to:', newWidth);
+          monitorCharts.cpu.setSize({ width: newWidth, height: 200 });
+          monitorCharts.disk.setSize({ width: newWidth, height: 200 });
+          monitorCharts.network.setSize({ width: newWidth, height: 200 });
+          if (monitorCharts.gpu) {
+            monitorCharts.gpu.setSize({ width: newWidth, height: 200 });
+          }
+        }
+      }, 250); // Debounce resize events
+    });
   } catch (error) {
     console.error('Failed to create charts:', error);
     monitorCharts = null;
