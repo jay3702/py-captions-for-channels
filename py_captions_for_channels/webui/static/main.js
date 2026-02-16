@@ -888,6 +888,18 @@ const chartMaxValues = {
   gpu: 10       // Start with 10% minimum
 };
 
+// Helper function to calculate chart width from container
+function getChartWidth(chartEl) {
+  if (!chartEl) return 600;
+  // Go up to chart-container level to get true available width
+  const container = chartEl.closest('.chart-container');
+  if (!container) return 600;
+  
+  // Subtract padding (20px left + 20px right) + title width (80px) + gap (10px) + extra padding (20px)
+  const containerWidth = container.clientWidth;
+  return Math.max(200, containerWidth - 130);
+}
+
 function initSystemMonitor() {
   if (monitorCharts) return; // Already initialized
   
@@ -909,12 +921,8 @@ function initSystemMonitor() {
   
   console.log('Initializing system monitor charts...');
   
-  // Get chart width from parent container wrapper
-  const getChartWidth = () => {
-    const wrapper = cpuEl.parentElement;
-    return wrapper ? wrapper.clientWidth - 20 : 600; // Subtract padding
-  };
-  const chartWidth = getChartWidth();
+  // Calculate initial chart width
+  const chartWidth = getChartWidth(cpuEl);
   console.log('Chart width:', chartWidth);
   
   // Common options for all charts
@@ -1005,10 +1013,10 @@ function initSystemMonitor() {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
         if (monitorCharts) {
-          // Calculate width for each chart from its own wrapper
-          const cpuWidth = cpuEl.parentElement.clientWidth - 20;
-          const diskWidth = diskEl.parentElement.clientWidth - 20;
-          const networkWidth = networkEl.parentElement.clientWidth - 20;
+          // Calculate width for each chart from its container (not wrapper)
+          const cpuWidth = getChartWidth(cpuEl);
+          const diskWidth = getChartWidth(diskEl);
+          const networkWidth = getChartWidth(networkEl);
           
           console.log('Resizing charts to:', cpuWidth);
           monitorCharts.cpu.setSize({ width: cpuWidth, height: 130 });
@@ -1016,7 +1024,7 @@ function initSystemMonitor() {
           monitorCharts.network.setSize({ width: networkWidth, height: 130 });
           
           if (monitorCharts.gpu && gpuEl) {
-            const gpuWidth = gpuEl.parentElement.clientWidth - 20;
+            const gpuWidth = getChartWidth(gpuEl);
             monitorCharts.gpu.setSize({ width: gpuWidth, height: 130 });
           }
         }
@@ -1081,9 +1089,8 @@ function updateSystemMonitor() {
         if (monitorCharts.gpu) {
           // If GPU chart was just revealed, resize it to match other charts
           if (wasHidden) {
-            const cpuEl = document.getElementById('chart-cpu');
-            const wrapper = cpuEl ? cpuEl.parentElement : null;
-            const width = wrapper ? wrapper.clientWidth - 20 : 600;
+            const gpuEl = document.getElementById('chart-gpu');
+            const width = getChartWidth(gpuEl);
             monitorCharts.gpu.setSize({ width: width, height: 130 });
           }
           

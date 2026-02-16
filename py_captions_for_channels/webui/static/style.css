@@ -1135,6 +1135,7 @@ body {
   flex: 1;
   min-width: 0;
   padding-bottom: 5px;
+  overflow: hidden;
 }
 
 .chart {
@@ -1145,6 +1146,7 @@ body {
 
 .chart canvas {
   max-width: 100% !important;
+  display: block;
 }
 
 /* uPlot customizations for dark theme */
