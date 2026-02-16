@@ -57,8 +57,14 @@ async def startup_event():
     """Initialize database and system monitor on application startup."""
     init_db()
     # Start system monitor
-    monitor = get_system_monitor()
-    monitor.start()
+    try:
+        monitor = get_system_monitor()
+        provider_info = monitor.get_gpu_provider_info()
+        logger.info(f"System monitor GPU provider: {provider_info}")
+        monitor.start()
+        logger.info("System monitor started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start system monitor: {e}", exc_info=True)
 
 
 @app.on_event("shutdown")
