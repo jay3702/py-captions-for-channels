@@ -251,6 +251,191 @@ def save_settings(settings: dict, db: Session = None):
             db.close()
 
 
+# ==============================================================================
+# ENV FILE SETTINGS MANAGEMENT
+# ==============================================================================
+
+
+def get_env_file_path() -> Path:
+    """Get the .env file path."""
+    return Path(__file__).parent.parent / ".env"
+
+
+def load_env_settings() -> dict:
+    """Load all settings from .env file with their structure and metadata.
+
+    Returns:
+        Dict with settings grouped by category:
+        {
+            "channels_dvr": {
+                "CHANNELS_API_URL": {
+                    "value": "...",
+                    "description": "..."
+                }
+            },
+            "event_source": {...},
+            ...
+        }
+    """
+    env_path = get_env_file_path()
+
+    if not env_path.exists():
+        return {"error": ".env file not found"}
+
+    settings = {
+        "channels_dvr": {},
+        "channelwatch": {},
+        "event_source": {},
+        "polling": {},
+        "webhook": {},
+        "pipeline": {},
+        "state_logging": {},
+        "advanced": {},
+    }
+
+    current_category = None
+    current_description = []
+
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line_stripped = line.strip()
+
+                # Category headers
+                if "CHANNELS DVR CONFIGURATION" in line:
+                    current_category = "channels_dvr"
+                elif "CHANNELWATCH CONFIGURATION" in line:
+                    current_category = "channelwatch"
+                elif "EVENT SOURCE CONFIGURATION" in line:
+                    current_category = "event_source"
+                elif "POLLING SOURCE CONFIGURATION" in line:
+                    current_category = "polling"
+                elif "WEBHOOK SERVER CONFIGURATION" in line:
+                    current_category = "webhook"
+                elif "CAPTION PIPELINE CONFIGURATION" in line:
+                    current_category = "pipeline"
+                elif "STATE AND LOGGING CONFIGURATION" in line:
+                    current_category = "state_logging"
+                elif "ADVANCED CONFIGURATION" in line:
+                    current_category = "advanced"
+
+                # Collect comment lines as description
+                elif line_stripped.startswith("#") and current_category:
+                    # Skip section dividers
+                    if not line_stripped.startswith("# ===="):
+                        desc = line_stripped.lstrip("# ").strip()
+                        if (
+                            desc
+                            and not desc.startswith("Default:")
+                            and not desc.startswith("Note:")
+                        ):
+                            current_description.append(desc)
+
+                # Parse setting line
+                elif (
+                    "=" in line_stripped
+                    and not line_stripped.startswith("#")
+                    and current_category
+                ):
+                    key, value = line_stripped.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+
+                    # Extract default from description
+                    default_value = None
+                    for desc_line in current_description:
+                        if desc_line.startswith("Default:"):
+                            default_value = desc_line.replace("Default:", "").strip()
+
+                    settings[current_category][key] = {
+                        "value": value,
+                        "description": " ".join(current_description),
+                        "default": default_value,
+                    }
+                    current_description = []
+
+                # Empty line resets description
+                elif not line_stripped:
+                    current_description = []
+
+        return settings
+
+    except Exception as e:
+        LOG.error(f"Error loading .env settings: {e}")
+        return {"error": str(e)}
+
+
+def save_env_settings(settings: dict) -> dict:
+    """Save settings back to .env file, preserving structure and comments.
+
+    Args:
+        settings: Dict of settings by category and key
+
+    Returns:
+        Success/error dict
+    """
+    env_path = get_env_file_path()
+
+    try:
+        # Read original file to preserve structure
+        with open(env_path, "r", encoding="utf-8") as f:
+            original_lines = f.readlines()
+
+        # Update values while preserving comments and structure
+        new_lines = []
+        for line in original_lines:
+            line_stripped = line.strip()
+
+            # Keep comments and empty lines as-is
+            if line_stripped.startswith("#") or not line_stripped:
+                new_lines.append(line)
+
+            # Update setting value if present in new settings
+            elif "=" in line_stripped:
+                key = line_stripped.split("=", 1)[0].strip()
+
+                # Find this key in settings
+                found = False
+                for category in settings.values():
+                    if isinstance(category, dict) and key in category:
+                        new_value = category[key].get("value", "")
+                        new_lines.append(f"{key}={new_value}\n")
+                        found = True
+                        break
+
+                if not found:
+                    # Keep original if not in update
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+
+        # Write back to file
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+        LOG.info("Settings saved to .env file")
+        return {
+            "success": True,
+            "message": "Settings saved. Restart required to apply changes.",
+        }
+
+    except Exception as e:
+        LOG.error(f"Error saving .env settings: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/env-settings")
+async def get_env_settings() -> dict:
+    """Get all settings from .env file."""
+    return load_env_settings()
+
+
+@app.post("/api/env-settings")
+async def set_env_settings(data: dict = Body(...)) -> dict:
+    """Update settings in .env file."""
+    return save_env_settings(data)
+
+
 @app.get("/api/settings")
 async def get_settings(db: Session = Depends(get_db)) -> dict:
     """Get pipeline settings and whitelist from database."""
@@ -896,6 +1081,7 @@ def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
         List of log lines matching the job_id
     """
     from collections import deque
+    import json as json_module
 
     job_logs = deque(maxlen=max_lines)
     log_path = Path(LOG_FILE_READ)
@@ -904,10 +1090,27 @@ def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
         return []
 
     try:
-        # Read the log file and find lines containing [job_id]
+        # Read the log file and find lines containing job_id
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
-                if f"[{job_id}]" in line:
+                # Try JSON format first (structured logger)
+                if line.strip().startswith("{"):
+                    try:
+                        log_entry = json_module.loads(line.strip())
+                        if log_entry.get("job_id") == job_id:
+                            # Format as readable text: [timestamp] LEVEL: message
+                            timestamp = log_entry.get("timestamp", "")[
+                                :19
+                            ]  # Remove timezone
+                            level = log_entry.get("level", "INFO")
+                            msg = log_entry.get("msg", "")
+                            formatted = f"[{timestamp}] {level}: {msg}"
+                            job_logs.append(formatted)
+                    except json_module.JSONDecodeError:
+                        # Not valid JSON, skip
+                        pass
+                # Also check traditional format [job_id] for backward compatibility
+                elif f"[{job_id}]" in line:
                     job_logs.append(line.rstrip())
     except Exception as e:
         LOG.error("Error extracting job logs: %s", e)
