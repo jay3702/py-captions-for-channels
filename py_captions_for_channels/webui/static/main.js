@@ -968,6 +968,7 @@ function initSystemMonitor() {
   
   try {
     // CPU Chart
+    console.log('Creating CPU chart...');
     monitorCharts = {
       cpu: new uPlot({
         ...commonOpts,
@@ -1007,6 +1008,10 @@ function initSystemMonitor() {
         ]
       }, [[], [], []], gpuEl) : null
     };
+    
+    console.log('Charts created. CPU chart:', monitorCharts.cpu);
+    console.log('CPU chart has legend?', monitorCharts.cpu.root.querySelector('.u-legend') !== null);
+    console.log('CPU chart has axes?', monitorCharts.cpu.root.querySelectorAll('.u-axis').length);
     
     console.log('Charts initialized successfully');
     
