@@ -1135,7 +1135,7 @@ body {
 .chart-wrapper {
   flex: 1;
   min-width: 0;
-  padding-bottom: 10px;
+  padding-bottom: 25px;
   overflow: visible;
 }
 
