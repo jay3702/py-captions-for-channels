@@ -872,10 +872,14 @@ def main():
                 channel_number = extract_channel_number(mpg_path)
                 if WHISPER_MODE == "automatic":
                     whisper_params = get_whisper_parameters(mpg_path, channel_number)
+                    beam_size = whisper_params.get("beam_size")
+                    vad_ms = whisper_params.get("vad_parameters", {}).get(
+                        "min_silence_duration_ms"
+                    )
                     log.info(
-                        f"Using automatic Whisper parameters (channel={channel_number}): "
-                        f"beam_size={whisper_params.get('beam_size')}, "
-                        f"vad_min_silence_ms={whisper_params.get('vad_parameters', {}).get('min_silence_duration_ms')}"
+                        f"Using automatic Whisper parameters "
+                        f"(channel={channel_number}): "
+                        f"beam_size={beam_size}, vad_min_silence_ms={vad_ms}"
                     )
                 else:
                     # Standard mode: use hardcoded parameters (proven, reliable)
@@ -886,7 +890,7 @@ def main():
                         "vad_parameters": {"min_silence_duration_ms": 500},
                     }
                     log.info(
-                        f"Using standard Whisper parameters (WHISPER_MODE=standard)"
+                        "Using standard Whisper parameters (WHISPER_MODE=standard)"
                     )
 
                 # Try GPU transcription first, fall back to CPU if GPU libraries fail
@@ -897,7 +901,8 @@ def main():
                     )
                     transcription_successful = True
                 except Exception as e:
-                    # GPU transcription failed (e.g., CUDA library missing or codec error)
+                    # GPU transcription failed
+                    # (e.g., CUDA library missing or codec error)
                     if device == "cuda":
                         log.error(f"Faster-Whisper transcription failed: {e}")
                         log.warning("Retrying with CPU...")
@@ -914,14 +919,18 @@ def main():
                             transcription_successful = True
                         except Exception as cpu_error:
                             log.error(
-                                f"Faster-Whisper transcription failed: {cpu_error}"
+                                "Faster-Whisper transcription failed: %s",
+                                cpu_error,
                             )
                             # Check if this is a codec error
-                            if "avcodec" in str(cpu_error).lower() or "16976906" in str(
-                                cpu_error
+                            error_str = str(cpu_error)
+                            if (
+                                "avcodec" in error_str.lower()
+                                or "16976906" in error_str
                             ):
                                 log.warning(
-                                    "Codec error detected. Attempting workaround: extracting audio to WAV..."
+                                    "Codec error detected. Attempting "
+                                    "workaround: extracting audio to WAV..."
                                 )
                                 # Try extracting audio as WAV first
                                 wav_path = f"{mpg_path}.temp.wav"
@@ -959,17 +968,19 @@ def main():
                                         "Transcription successful using WAV workaround"
                                     )
 
-                                    # Clean up WAV file after successful transcription
+                                    # Clean up WAV file after success
                                     try:
                                         os.remove(wav_path)
                                         log.info(
-                                            f"Cleaned up temporary WAV file: {wav_path}"
+                                            "Cleaned up temporary WAV file: %s",
+                                            wav_path,
                                         )
                                     except Exception:
                                         pass
                                 except Exception as wav_error:
                                     log.error(
-                                        f"WAV extraction workaround also failed: {wav_error}"
+                                        "WAV extraction workaround failed: %s",
+                                        wav_error,
                                     )
                                     # Clean up partial WAV if it exists
                                     try:
