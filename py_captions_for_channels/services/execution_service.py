@@ -350,7 +350,7 @@ class ExecutionService:
 
         # Handle stuck "running" executions
         running_execs = self.get_executions(limit=1000, status="running")
-        LOG.info(f"Checking {len(running_execs)} running executions for staleness")
+        LOG.debug(f"Checking {len(running_execs)} running executions for staleness")
         for execution in running_execs:
             started_at = execution.started_at
             if started_at.tzinfo is None:
@@ -375,7 +375,7 @@ class ExecutionService:
 
         # Handle stuck "canceling" executions from previous run
         canceling_execs = self.get_executions(limit=1000, status="canceling")
-        LOG.info(
+        LOG.debug(
             f"Checking {len(canceling_execs)} canceling executions from "
             f"previous run"
         )
@@ -438,7 +438,7 @@ class ExecutionService:
                     except Exception:
                         pass  # Rollback itself may fail if no transaction
                     raise
-            LOG.info(f"Committed {marked} stale execution updates to database")
+            LOG.debug(f"Committed {marked} stale execution updates to database")
 
         return marked
 

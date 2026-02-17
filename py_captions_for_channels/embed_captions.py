@@ -17,9 +17,56 @@ from py_captions_for_channels.logging.structured_logger import get_logger
 from py_captions_for_channels.database import get_db
 from py_captions_for_channels.progress_tracker import get_progress_tracker
 from py_captions_for_channels.services.execution_service import ExecutionService
+from py_captions_for_channels.config import WHISPER_MODE
+from py_captions_for_channels.encoding_profiles import (
+    get_whisper_parameters,
+    get_ffmpeg_parameters,
+)
 
 # Unique identifier for our subtitle tracks
 SUBTITLE_TRACK_NAME = "py-captions-for-channels"
+
+
+def extract_channel_number(video_path):
+    """
+    Attempt to extract channel number from the recording file path.
+
+    Looks for patterns like:
+    - Directory names: "4.1 KRON", "11.3 KNTV", "6030 CNN"
+    - Path components with channel info
+
+    Returns:
+        str or None: Channel number (e.g., "4.1", "6030") or None if not found
+    """
+    import re
+
+    path_str = str(video_path)
+
+    # Pattern 1: OTA channels (X.Y format) in directory name
+    # e.g., "/recordings/TV/4.1 KRON/..." or "/4.1 - KRON/..."
+    ota_match = re.search(r"/(\d+\.\d+)[\s\-]", path_str)
+    if ota_match:
+        return ota_match.group(1)
+
+    # Pattern 2: 4+ digit TV Everywhere channels
+    # e.g., "/6030 CNN/..." or "/6030-CNN/..."
+    tve_match = re.search(r"/(\d{4,})[\s\-]", path_str)
+    if tve_match:
+        return tve_match.group(1)
+
+    # Pattern 3: Check filename itself for channel info
+    # e.g., "Recording-4.1-..." or "Recording_6030_..."
+    filename = Path(video_path).name
+    filename_ota = re.search(r"[-_](\d+\.\d+)[-_]", filename)
+    if filename_ota:
+        return filename_ota.group(1)
+
+    filename_tve = re.search(r"[-_](\d{4,})[-_]", filename)
+    if filename_tve:
+        return filename_tve.group(1)
+
+    # Could not determine channel number
+    return None
 
 
 def detect_variable_frame_rate(video_path, log):
@@ -384,6 +431,22 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
     # Detect if content is VFR (Chrome capture) or CFR (broadcast TV)
     is_vfr = detect_variable_frame_rate(mpg_orig, log)
 
+    # Determine encoder presets based on WHISPER_MODE
+    channel_number = extract_channel_number(mpg_orig)
+    if WHISPER_MODE == "automatic":
+        ffmpeg_params = get_ffmpeg_parameters(mpg_orig, channel_number)
+        nvenc_preset = ffmpeg_params["nvenc_preset"]
+        x264_preset = ffmpeg_params["x264_preset"]
+        log.info(
+            f"Using automatic ffmpeg presets (channel={channel_number}): "
+            f"nvenc={nvenc_preset}, x264={x264_preset}"
+        )
+    else:
+        # Standard mode: use hardcoded presets (current default)
+        nvenc_preset = "fast"
+        x264_preset = "fast"
+        log.info("Using standard ffmpeg presets (WHISPER_MODE=standard)")
+
     # Build base command for NVENC
     cmd_nvenc = [
         "ffmpeg",
@@ -395,7 +458,7 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
         "-c:v",
         "h264_nvenc",
         "-preset",
-        "fast",
+        nvenc_preset,
     ]
 
     # Add VFR handling if needed (critical for Chrome-captured content)
@@ -439,7 +502,7 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
         "-c:v",
         "libx264",
         "-preset",
-        "fast",
+        x264_preset,
     ]
 
     if is_vfr:
@@ -805,19 +868,36 @@ def main():
                 video_duration = probe_duration(mpg_path, log)
                 log.info(f"Video duration: {video_duration:.1f}s for progress tracking")
 
+                # Determine Whisper parameters based on WHISPER_MODE
+                channel_number = extract_channel_number(mpg_path)
+                if WHISPER_MODE == "automatic":
+                    whisper_params = get_whisper_parameters(mpg_path, channel_number)
+                    log.info(
+                        f"Using automatic Whisper parameters (channel={channel_number}): "
+                        f"beam_size={whisper_params.get('beam_size')}, "
+                        f"vad_min_silence_ms={whisper_params.get('vad_parameters', {}).get('min_silence_duration_ms')}"
+                    )
+                else:
+                    # Standard mode: use hardcoded parameters (proven, reliable)
+                    whisper_params = {
+                        "language": "en",
+                        "beam_size": 5,
+                        "vad_filter": True,
+                        "vad_parameters": {"min_silence_duration_ms": 500},
+                    }
+                    log.info(
+                        f"Using standard Whisper parameters (WHISPER_MODE=standard)"
+                    )
+
                 # Try GPU transcription first, fall back to CPU if GPU libraries fail
+                transcription_successful = False
                 try:
                     segments_generator, info = model.transcribe(
-                        mpg_path,
-                        language="en",
-                        beam_size=5,
-                        vad_filter=True,  # Voice activity detection for better accuracy
-                        vad_parameters=dict(
-                            min_silence_duration_ms=500
-                        ),  # Reduce hallucinations
+                        mpg_path, **whisper_params
                     )
+                    transcription_successful = True
                 except Exception as e:
-                    # GPU transcription failed (e.g., CUDA library missing)
+                    # GPU transcription failed (e.g., CUDA library missing or codec error)
                     if device == "cuda":
                         log.error(f"Faster-Whisper transcription failed: {e}")
                         log.warning("Retrying with CPU...")
@@ -827,15 +907,84 @@ def main():
                             args.model, device=device, compute_type=compute_type
                         )
                         log.info("Faster-Whisper model reloaded with CPU")
-                        segments_generator, info = model.transcribe(
-                            mpg_path,
-                            language="en",
-                            beam_size=5,
-                            vad_filter=True,
-                            vad_parameters=dict(min_silence_duration_ms=500),
-                        )
+                        try:
+                            segments_generator, info = model.transcribe(
+                                mpg_path, **whisper_params
+                            )
+                            transcription_successful = True
+                        except Exception as cpu_error:
+                            log.error(
+                                f"Faster-Whisper transcription failed: {cpu_error}"
+                            )
+                            # Check if this is a codec error
+                            if "avcodec" in str(cpu_error).lower() or "16976906" in str(
+                                cpu_error
+                            ):
+                                log.warning(
+                                    "Codec error detected. Attempting workaround: extracting audio to WAV..."
+                                )
+                                # Try extracting audio as WAV first
+                                wav_path = f"{mpg_path}.temp.wav"
+                                try:
+                                    extract_cmd = [
+                                        "ffmpeg",
+                                        "-y",
+                                        "-i",
+                                        mpg_path,
+                                        "-vn",  # No video
+                                        "-acodec",
+                                        "pcm_s16le",  # PCM audio
+                                        "-ar",
+                                        "16000",  # 16kHz sample rate (Whisper standard)
+                                        "-ac",
+                                        "1",  # Mono
+                                        wav_path,
+                                    ]
+                                    log.info(
+                                        f"Extracting audio: {' '.join(extract_cmd)}"
+                                    )
+                                    subprocess.run(
+                                        extract_cmd, check=True, capture_output=True
+                                    )
+                                    log.info(
+                                        f"Audio extracted successfully to {wav_path}"
+                                    )
+
+                                    # Try transcribing the WAV file
+                                    segments_generator, info = model.transcribe(
+                                        wav_path, **whisper_params
+                                    )
+                                    transcription_successful = True
+                                    log.info(
+                                        "Transcription successful using WAV workaround"
+                                    )
+
+                                    # Clean up WAV file after successful transcription
+                                    try:
+                                        os.remove(wav_path)
+                                        log.info(
+                                            f"Cleaned up temporary WAV file: {wav_path}"
+                                        )
+                                    except Exception:
+                                        pass
+                                except Exception as wav_error:
+                                    log.error(
+                                        f"WAV extraction workaround also failed: {wav_error}"
+                                    )
+                                    # Clean up partial WAV if it exists
+                                    try:
+                                        if os.path.exists(wav_path):
+                                            os.remove(wav_path)
+                                    except Exception:
+                                        pass
+                                    raise cpu_error  # Re-raise original error
+                            else:
+                                raise cpu_error
                     else:
                         raise  # CPU transcription failed, re-raise
+
+                if not transcription_successful:
+                    raise RuntimeError("Transcription failed on all attempts")
 
                 log.info(
                     f"Detected language: {info.language} "
