@@ -895,9 +895,9 @@ function getChartWidth(chartEl) {
   const container = chartEl.closest('.chart-container');
   if (!container) return 600;
   
-  // Subtract padding (20px left + 20px right) + title width (80px) + gap (10px) + extra padding (20px)
+  // Subtract padding (15px left + 15px right) + title width (80px) + gap (10px)
   const containerWidth = container.clientWidth;
-  return Math.max(200, containerWidth - 130);
+  return Math.max(200, containerWidth - 120);
 }
 
 function initSystemMonitor() {
