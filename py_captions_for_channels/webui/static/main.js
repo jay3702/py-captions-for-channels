@@ -1290,61 +1290,64 @@ async function loadHistoricalData() {
       if (gpuUnavailable) gpuUnavailable.style.display = 'none';
       
       if (gpuEl && !monitorCharts.gpu) {
-        const gpuWidth = getChartWidth(gpuEl);
-        console.log('Creating GPU chart from historical data with width:', gpuWidth);
-        
-        const gpuOpts = {
-          width: gpuWidth,
-          height: 130,
-          class: 'monitor-chart',
-          legend: { show: true, live: false },
-          scales: {
-            x: { time: true },
-            y: {
-              auto: false,
-              range: (u, dataMin, dataMax) => {
-                const max = chartMaxValues.gpu || 10;
-                return [0, Math.max(max, 10)];
+        // Wait for layout to complete before creating chart
+        requestAnimationFrame(() => {
+          const gpuWidth = getChartWidth(gpuEl);
+          console.log('Creating GPU chart from historical data with width:', gpuWidth);
+          
+          const gpuOpts = {
+            width: gpuWidth,
+            height: 130,
+            class: 'monitor-chart',
+            legend: { show: true, live: false },
+            scales: {
+              x: { time: true },
+              y: {
+                auto: false,
+                range: (u, dataMin, dataMax) => {
+                  const max = chartMaxValues.gpu || 10;
+                  return [0, Math.max(max, 10)];
+                }
               }
-            }
-          },
-          axes: [
-            {
-              show: true,
-              scale: 'x',
-              space: 80,
-              incrs: [10, 30, 60, 120, 300],
-              values: (u, vals) => vals.map(v => new Date(v * 1000).toLocaleTimeString()),
-              stroke: '#ffffff',
-              grid: { stroke: '#333', width: 1 }
             },
-            {
-              show: true,
-              scale: 'y',
-              space: 40,
-              stroke: '#ffffff',
-              grid: { stroke: '#333', width: 1 }
-            }
-          ]
-        };
-        
-        monitorCharts.gpu = new uPlot({
-          ...gpuOpts,
-          series: [
-            {},
-            { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
-            { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
-          ]
-        }, gpuData, gpuEl);
-        
-        // Calculate max from GPU data
-        chartMaxValues.gpu = Math.max(
-          ...gpuData[1],
-          ...gpuData[2],
-          10
-        ) * 1.1;
-        
-        console.log('GPU chart created from historical data. Width:', monitorCharts.gpu.width);
+            axes: [
+              {
+                show: true,
+                scale: 'x',
+                space: 80,
+                incrs: [10, 30, 60, 120, 300],
+                values: (u, vals) => vals.map(v => new Date(v * 1000).toLocaleTimeString()),
+                stroke: '#ffffff',
+                grid: { stroke: '#333', width: 1 }
+              },
+              {
+                show: true,
+                scale: 'y',
+                space: 40,
+                stroke: '#ffffff',
+                grid: { stroke: '#333', width: 1 }
+              }
+            ]
+          };
+          
+          monitorCharts.gpu = new uPlot({
+            ...gpuOpts,
+            series: [
+              {},
+              { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
+              { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+            ]
+          }, gpuData, gpuEl);
+          
+          // Calculate max from GPU data
+          chartMaxValues.gpu = Math.max(
+            ...gpuData[1],
+            ...gpuData[2],
+            10
+          ) * 1.1;
+          
+          console.log('GPU chart created from historical data. Width:', monitorCharts.gpu.width);
+        });
       }
     }
     
