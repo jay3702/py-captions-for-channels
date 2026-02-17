@@ -1012,6 +1012,9 @@ function initSystemMonitor() {
     console.log('Charts created. CPU chart:', monitorCharts.cpu);
     console.log('CPU chart has legend?', monitorCharts.cpu.root.querySelector('.u-legend') !== null);
     console.log('CPU chart has axes?', monitorCharts.cpu.root.querySelectorAll('.u-axis').length);
+    if (monitorCharts.gpu) {
+      console.log('GPU chart created with width:', monitorCharts.gpu.width, '(container is hidden)');
+    }
     
     console.log('Charts initialized successfully');
     
@@ -1122,7 +1125,19 @@ function updateSystemMonitor() {
           if (wasHidden) {
             const gpuEl = document.getElementById('chart-gpu');
             const width = getChartWidth(gpuEl);
+            console.log('GPU chart revealed. Resizing from', monitorCharts.gpu.width, 'to', width);
+            
+            // Force canvas width before setSize (like we do in window resize)
+            if (monitorCharts.gpu.root) {
+              const gpuCanvas = monitorCharts.gpu.root.querySelector('canvas');
+              if (gpuCanvas) {
+                gpuCanvas.style.width = width + 'px';
+                console.log('GPU canvas width set to:', width);
+              }
+            }
+            
             monitorCharts.gpu.setSize({ width: width, height: 130 });
+            console.log('GPU chart resized to:', monitorCharts.gpu.width);
           }
           
           const vramPct = metrics.gpu_mem_total_mb > 0 
