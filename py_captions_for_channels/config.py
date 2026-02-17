@@ -57,6 +57,11 @@ LOCAL_TEST_DIR = os.getenv("LOCAL_TEST_DIR", None)
 # Caption command to run (whisper or other captioning tool)
 CAPTION_COMMAND = os.getenv("CAPTION_COMMAND", 'echo "Would process: {path}"')
 
+# Whisper parameter optimization mode
+# "standard" - Use hardcoded parameters (default, proven)
+# "automatic" - Detect encoding and optimize parameters per file
+WHISPER_MODE = os.getenv("WHISPER_MODE", "standard")
+
 # State file for tracking last processed timestamp
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
 
