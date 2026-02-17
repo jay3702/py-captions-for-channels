@@ -996,25 +996,16 @@ function initSystemMonitor() {
           { label: 'RX Mbps', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
           { label: 'TX Mbps', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
         ]
-      }, [[], [], []], networkEl),
-      
-      // GPU Chart - create it even if hidden, will resize when shown
-      gpu: gpuEl ? new uPlot({
-        ...commonOpts,
-        series: [
-          {},
-          { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
-          { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
-        ]
-      }, [[], [], []], gpuEl) : null
+      }, [[], [], []], networkEl)
     };
+    
+    // Don't create GPU chart yet - will be created when first needed
+    monitorCharts.gpu = null;
     
     console.log('Charts created. CPU chart:', monitorCharts.cpu);
     console.log('CPU chart has legend?', monitorCharts.cpu.root.querySelector('.u-legend') !== null);
     console.log('CPU chart has axes?', monitorCharts.cpu.root.querySelectorAll('.u-axis').length);
-    if (monitorCharts.gpu) {
-      console.log('GPU chart created with width:', monitorCharts.gpu.width, '(container is hidden)');
-    }
+    console.log('GPU chart deferred - will be created when GPU becomes available');
     
     console.log('Charts initialized successfully');
     
@@ -1120,26 +1111,62 @@ function updateSystemMonitor() {
         if (gpuContainer) gpuContainer.style.display = 'block';
         if (gpuUnavailable) gpuUnavailable.style.display = 'none';
         
-        if (monitorCharts.gpu) {
-          // If GPU chart was just revealed, resize it to match other charts
-          if (wasHidden) {
-            const gpuEl = document.getElementById('chart-gpu');
-            const width = getChartWidth(gpuEl);
-            console.log('GPU chart revealed. Resizing from', monitorCharts.gpu.width, 'to', width);
-            
-            // Force canvas width before setSize (like we do in window resize)
-            if (monitorCharts.gpu.root) {
-              const gpuCanvas = monitorCharts.gpu.root.querySelector('canvas');
-              if (gpuCanvas) {
-                gpuCanvas.style.width = width + 'px';
-                console.log('GPU canvas width set to:', width);
-              }
-            }
-            
-            monitorCharts.gpu.setSize({ width: width, height: 130 });
-            console.log('GPU chart resized to:', monitorCharts.gpu.width);
-          }
+        // Create GPU chart on first use (when container is already visible)
+        if (!monitorCharts.gpu && gpuEl) {
+          const gpuWidth = getChartWidth(gpuEl);
+          console.log('Creating GPU chart with width:', gpuWidth);
           
+          const gpuOpts = {
+            width: gpuWidth,
+            height: 130,
+            class: 'monitor-chart',
+            legend: {
+              show: true,
+              live: false
+            },
+            scales: {
+              x: { time: true },
+              y: { 
+                auto: false,
+                range: (u, dataMin, dataMax) => {
+                  const max = chartMaxValues.gpu || 10;
+                  return [0, Math.max(max, 10)];
+                }
+              }
+            },
+            axes: [
+              { 
+                show: true,
+                scale: 'x', 
+                space: 80, 
+                incrs: [10, 30, 60, 120, 300], 
+                values: (u, vals) => vals.map(v => new Date(v * 1000).toLocaleTimeString()),
+                stroke: '#ffffff',
+                grid: { stroke: '#333', width: 1 }
+              },
+              { 
+                show: true,
+                scale: 'y', 
+                space: 40,
+                stroke: '#ffffff',
+                grid: { stroke: '#333', width: 1 }
+              }
+            ]
+          };
+          
+          monitorCharts.gpu = new uPlot({
+            ...gpuOpts,
+            series: [
+              {},
+              { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
+              { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+            ]
+          }, [[], [], []], gpuEl);
+          
+          console.log('GPU chart created successfully. Width:', monitorCharts.gpu.width);
+        }
+        
+        if (monitorCharts.gpu) {
           const vramPct = metrics.gpu_mem_total_mb > 0 
             ? (metrics.gpu_mem_used_mb / metrics.gpu_mem_total_mb) * 100 
             : 0;
