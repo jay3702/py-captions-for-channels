@@ -1173,6 +1173,11 @@ function updateSystemMonitor() {
             
             console.log('GPU chart created successfully. Width:', monitorCharts.gpu.width);
             console.log('GPU chart element:', monitorCharts.gpu.root);
+            
+            // Force layout recalculation for flex centering
+            gpuContainer.style.display = 'none';
+            void gpuContainer.offsetHeight; // Force reflow
+            gpuContainer.style.display = 'flex';
           } catch (error) {
             console.error('Failed to create GPU chart:', error);
             monitorCharts.gpu = null;
@@ -1349,6 +1354,14 @@ async function loadHistoricalData() {
           ) * 1.1;
           
           console.log('GPU chart created from historical data. Width:', monitorCharts.gpu.width);
+          
+          // Force layout recalculation for flex centering
+          const gpuChartContainer = document.getElementById('gpu-chart-container');
+          if (gpuChartContainer) {
+            gpuChartContainer.style.display = 'none';
+            void gpuChartContainer.offsetHeight; // Force reflow
+            gpuChartContainer.style.display = 'flex';
+          }
         });
       }
     }
