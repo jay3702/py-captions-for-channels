@@ -1115,7 +1115,7 @@ body {
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  padding: 10px 15px;
+  padding: 10px 15px 5px 15px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1135,6 +1135,7 @@ body {
 .chart-wrapper {
   flex: 1;
   min-width: 0;
+  padding-bottom: 10px;
   overflow: visible;
 }
 
