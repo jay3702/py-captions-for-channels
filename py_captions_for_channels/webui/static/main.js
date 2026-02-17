@@ -1115,7 +1115,7 @@ function updateSystemMonitor() {
       
       if (gpuProvider.available && metrics.gpu_util_percent !== null) {
         const wasHidden = gpuContainer && gpuContainer.style.display === 'none';
-        if (gpuContainer) gpuContainer.style.display = 'block';
+        if (gpuContainer) gpuContainer.style.display = 'flex';
         if (gpuUnavailable) gpuUnavailable.style.display = 'none';
         
         // Create GPU chart on first use (when container is already visible)
