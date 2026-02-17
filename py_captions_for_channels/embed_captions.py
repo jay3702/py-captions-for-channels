@@ -40,7 +40,8 @@ def extract_channel_number(video_path):
     """
     import re
 
-    path_str = str(video_path)
+    # Normalize path separators to forward slashes for consistent regex
+    path_str = str(video_path).replace("\\", "/")
 
     # Pattern 1: OTA channels (X.Y format) in directory name
     # e.g., "/recordings/TV/4.1 KRON/..." or "/4.1 - KRON/..."
