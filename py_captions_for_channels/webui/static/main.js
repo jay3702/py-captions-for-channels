@@ -974,7 +974,7 @@ function initSystemMonitor() {
         ...commonOpts,
         series: [
           {},
-          { label: 'CPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' }
+          { label: 'CPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)', points: {show: false} }
         ]
       }, [[], []], cpuEl),
       
@@ -983,8 +983,8 @@ function initSystemMonitor() {
         ...commonOpts,
         series: [
           {},
-          { label: 'Read MB/s', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
-          { label: 'Write MB/s', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+          { label: 'Read MB/s', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)', points: {show: false} },
+          { label: 'Write MB/s', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)', points: {show: false} }
         ]
       }, [[], [], []], diskEl),
       
@@ -993,8 +993,8 @@ function initSystemMonitor() {
         ...commonOpts,
         series: [
           {},
-          { label: 'RX Mbps', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
-          { label: 'TX Mbps', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+          { label: 'RX Mbps', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)', points: {show: false} },
+          { label: 'TX Mbps', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)', points: {show: false} }
         ]
       }, [[], [], []], networkEl)
     };
@@ -1166,8 +1166,8 @@ function updateSystemMonitor() {
               ...gpuOpts,
               series: [
                 {},
-                { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
-                { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+                { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)', points: {show: false} },
+                { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)', points: {show: false} }
               ]
             }, [[], [], []], gpuEl);
             
@@ -1292,7 +1292,9 @@ async function loadHistoricalData() {
       if (gpuEl && !monitorCharts.gpu) {
         // Wait for layout to complete before creating chart
         requestAnimationFrame(() => {
-          const gpuWidth = getChartWidth(gpuEl);
+          // Use CPU container width (already visible) instead of GPU container
+          const cpuEl = document.getElementById('chart-cpu');
+          const gpuWidth = cpuEl ? getChartWidth(cpuEl) : getChartWidth(gpuEl);
           console.log('Creating GPU chart from historical data with width:', gpuWidth);
           
           const gpuOpts = {
@@ -1334,8 +1336,8 @@ async function loadHistoricalData() {
             ...gpuOpts,
             series: [
               {},
-              { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
-              { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+              { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)', points: {show: false} },
+              { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)', points: {show: false} }
             ]
           }, gpuData, gpuEl);
           
