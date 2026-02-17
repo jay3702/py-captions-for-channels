@@ -1189,7 +1189,6 @@ function updateSystemMonitor() {
             vramPct
           ]);
         }
-        }
       } else {
         if (gpuContainer) gpuContainer.style.display = 'none';
         if (gpuUnavailable) {
