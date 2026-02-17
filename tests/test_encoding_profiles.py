@@ -65,7 +65,9 @@ class TestProfileMatching:
             channel_number="4.1",
         )
         profile = match_profile(sig)
-        assert profile == "ota_hd_60fps_5.1"
+        assert profile.name == "OTA HD 60fps 5.1"
+        assert profile.beam_size == 5
+        assert profile.vad_min_silence_ms == 700
 
     def test_ota_hd_30fps_stereo_match(self):
         """Test OTA HD 30fps with stereo audio."""
@@ -82,7 +84,9 @@ class TestProfileMatching:
             channel_number="11.3",
         )
         profile = match_profile(sig)
-        assert profile == "ota_hd_30fps_stereo"
+        assert profile.name == "OTA HD 30fps Stereo"
+        assert profile.beam_size == 5
+        assert profile.vad_min_silence_ms == 600
 
     def test_tve_hd_30fps_stereo_match(self):
         """Test TV Everywhere HD 30fps with stereo."""
@@ -99,7 +103,9 @@ class TestProfileMatching:
             channel_number="6030",
         )
         profile = match_profile(sig)
-        assert profile == "tve_hd_30fps_stereo"
+        assert profile.name == "TV Everywhere HD Stereo"
+        assert profile.beam_size == 5
+        assert profile.vad_min_silence_ms == 500
 
     def test_tve_hd_60fps_stereo_match(self):
         """Test TV Everywhere HD 60fps with stereo."""
@@ -116,7 +122,9 @@ class TestProfileMatching:
             channel_number="9043",
         )
         profile = match_profile(sig)
-        assert profile == "tve_hd_60fps_stereo"
+        assert profile.name == "TV Everywhere HD 60fps Stereo"
+        assert profile.beam_size == 5
+        assert profile.vad_min_silence_ms == 500
 
     def test_sd_content_match(self):
         """Test SD content detection."""
@@ -133,7 +141,9 @@ class TestProfileMatching:
             channel_number="2.1",
         )
         profile = match_profile(sig)
-        assert profile == "sd_content"
+        assert profile.name == "SD Content"
+        assert profile.beam_size == 4
+        assert profile.vad_min_silence_ms == 400
 
     def test_unknown_channel_defaults_to_tve(self):
         """Test unknown channel number defaults to TVE profile."""
@@ -150,7 +160,7 @@ class TestProfileMatching:
             channel_number=None,
         )
         profile = match_profile(sig)
-        assert profile == "tve_hd_30fps_stereo"  # Default
+        assert profile.name == "TV Everywhere HD Stereo"  # Default
 
 
 class TestWhisperParameters:
