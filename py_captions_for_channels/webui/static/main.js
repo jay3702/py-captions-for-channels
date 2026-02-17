@@ -1009,6 +1009,13 @@ function initSystemMonitor() {
     
     console.log('Charts initialized successfully');
     
+    // Load historical data to populate charts immediately
+    loadHistoricalData().then(() => {
+      console.log('Historical data loaded');
+    }).catch(err => {
+      console.error('Failed to load historical data:', err);
+    });
+    
     // Add resize handler
     let resizeTimeout;
     window.addEventListener('resize', () => {
@@ -1154,26 +1161,34 @@ function updateSystemMonitor() {
             ]
           };
           
-          monitorCharts.gpu = new uPlot({
-            ...gpuOpts,
-            series: [
-              {},
-              { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
-              { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
-            ]
-          }, [[], [], []], gpuEl);
-          
-          console.log('GPU chart created successfully. Width:', monitorCharts.gpu.width);
+          try {
+            monitorCharts.gpu = new uPlot({
+              ...gpuOpts,
+              series: [
+                {},
+                { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
+                { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+              ]
+            }, [[], [], []], gpuEl);
+            
+            console.log('GPU chart created successfully. Width:', monitorCharts.gpu.width);
+            console.log('GPU chart element:', monitorCharts.gpu.root);
+          } catch (error) {
+            console.error('Failed to create GPU chart:', error);
+            monitorCharts.gpu = null;
+          }
         }
         
         if (monitorCharts.gpu) {
           const vramPct = metrics.gpu_mem_total_mb > 0 
             ? (metrics.gpu_mem_used_mb / metrics.gpu_mem_total_mb) * 100 
             : 0;
+          console.log('Appending GPU data:', metrics.gpu_util_percent, vramPct);
           appendChartData(monitorCharts.gpu, timestamp, [
             metrics.gpu_util_percent,
             vramPct
           ]);
+        }
         }
       } else {
         if (gpuContainer) gpuContainer.style.display = 'none';
@@ -1188,6 +1203,157 @@ function updateSystemMonitor() {
       updatePipelineStatus(pipeline);
     })
     .catch(err => console.error('Failed to fetch monitor data:', err));
+}
+
+async function loadHistoricalData() {
+  try {
+    const response = await fetch('/api/monitor/window?seconds=300');
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const metrics = data.metrics;
+    const gpuProvider = data.gpu_provider;
+    
+    if (!metrics || metrics.length === 0) {
+      console.log('No historical data available');
+      return;
+    }
+    
+    console.log(`Loading ${metrics.length} historical data points`);
+    
+    // Build data arrays for each chart
+    const cpuData = [[], []];
+    const diskData = [[], [], []];
+    const networkData = [[], [], []];
+    let gpuData = null;
+    let hasGpuData = false;
+    
+    // Process historical metrics
+    for (const metric of metrics) {
+      const ts = metric.timestamp;
+      
+      // CPU
+      cpuData[0].push(ts);
+      cpuData[1].push(metric.cpu_percent);
+      
+      // Disk
+      diskData[0].push(ts);
+      diskData[1].push(metric.disk_read_mbps);
+      diskData[2].push(metric.disk_write_mbps);
+      
+      // Network
+      networkData[0].push(ts);
+      networkData[1].push(metric.net_recv_mbps);
+      networkData[2].push(metric.net_sent_mbps);
+      
+      // GPU (if available)
+      if (metric.gpu_util_percent !== null) {
+        if (!gpuData) {
+          gpuData = [[], [], []];
+        }
+        hasGpuData = true;
+        const vramPct = metric.gpu_mem_total_mb > 0
+          ? (metric.gpu_mem_used_mb / metric.gpu_mem_total_mb) * 100
+          : 0;
+        gpuData[0].push(ts);
+        gpuData[1].push(metric.gpu_util_percent);
+        gpuData[2].push(vramPct);
+      }
+    }
+    
+    // Update charts with historical data
+    monitorCharts.cpu.setData(cpuData);
+    monitorCharts.disk.setData(diskData);
+    monitorCharts.network.setData(networkData);
+    
+    // Calculate max values from historical data
+    chartMaxValues.cpu = Math.max(...cpuData[1], 10) * 1.1;
+    chartMaxValues.disk = Math.max(
+      ...diskData[1],
+      ...diskData[2],
+      1
+    ) * 1.1;
+    chartMaxValues.network = Math.max(
+      ...networkData[1],
+      ...networkData[2],
+      1
+    ) * 1.1;
+    
+    // Create and populate GPU chart if historical data exists
+    if (hasGpuData && gpuData && gpuProvider.available) {
+      const gpuContainer = document.getElementById('gpu-chart-container');
+      const gpuEl = document.getElementById('chart-gpu');
+      const gpuUnavailable = document.getElementById('gpu-unavailable');
+      
+      if (gpuContainer) gpuContainer.style.display = 'block';
+      if (gpuUnavailable) gpuUnavailable.style.display = 'none';
+      
+      if (gpuEl && !monitorCharts.gpu) {
+        const gpuWidth = getChartWidth(gpuEl);
+        console.log('Creating GPU chart from historical data with width:', gpuWidth);
+        
+        const gpuOpts = {
+          width: gpuWidth,
+          height: 130,
+          class: 'monitor-chart',
+          legend: { show: true, live: false },
+          scales: {
+            x: { time: true },
+            y: {
+              auto: false,
+              range: (u, dataMin, dataMax) => {
+                const max = chartMaxValues.gpu || 10;
+                return [0, Math.max(max, 10)];
+              }
+            }
+          },
+          axes: [
+            {
+              show: true,
+              scale: 'x',
+              space: 80,
+              incrs: [10, 30, 60, 120, 300],
+              values: (u, vals) => vals.map(v => new Date(v * 1000).toLocaleTimeString()),
+              stroke: '#ffffff',
+              grid: { stroke: '#333', width: 1 }
+            },
+            {
+              show: true,
+              scale: 'y',
+              space: 40,
+              stroke: '#ffffff',
+              grid: { stroke: '#333', width: 1 }
+            }
+          ]
+        };
+        
+        monitorCharts.gpu = new uPlot({
+          ...gpuOpts,
+          series: [
+            {},
+            { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)' },
+            { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)' }
+          ]
+        }, gpuData, gpuEl);
+        
+        // Calculate max from GPU data
+        chartMaxValues.gpu = Math.max(
+          ...gpuData[1],
+          ...gpuData[2],
+          10
+        ) * 1.1;
+        
+        console.log('GPU chart created from historical data. Width:', monitorCharts.gpu.width);
+      }
+    }
+    
+    console.log('Historical data loaded. Max values:', chartMaxValues);
+    
+  } catch (error) {
+    console.error('Error loading historical data:', error);
+  }
 }
 
 function appendChartData(chart, timestamp, values) {
