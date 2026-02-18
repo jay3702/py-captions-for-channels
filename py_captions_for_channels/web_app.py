@@ -300,23 +300,24 @@ def load_env_settings() -> dict:
         with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
                 line_stripped = line.strip()
+                line_upper = line_stripped.upper()
 
-                # Category headers
-                if "CHANNELS DVR CONFIGURATION" in line:
+                # Category headers (case-insensitive)
+                if "CHANNELS DVR CONFIGURATION" in line_upper:
                     current_category = "channels_dvr"
-                elif "CHANNELWATCH CONFIGURATION" in line:
+                elif "CHANNELWATCH CONFIGURATION" in line_upper:
                     current_category = "channelwatch"
-                elif "EVENT SOURCE CONFIGURATION" in line:
+                elif "EVENT SOURCE CONFIGURATION" in line_upper:
                     current_category = "event_source"
-                elif "POLLING SOURCE CONFIGURATION" in line:
+                elif "POLLING SOURCE CONFIGURATION" in line_upper:
                     current_category = "polling"
-                elif "WEBHOOK SERVER CONFIGURATION" in line:
+                elif "WEBHOOK SERVER CONFIGURATION" in line_upper:
                     current_category = "webhook"
-                elif "CAPTION PIPELINE CONFIGURATION" in line:
+                elif "CAPTION PIPELINE CONFIGURATION" in line_upper:
                     current_category = "pipeline"
-                elif "STATE AND LOGGING CONFIGURATION" in line:
+                elif "STATE AND LOGGING CONFIGURATION" in line_upper:
                     current_category = "state_logging"
-                elif "ADVANCED CONFIGURATION" in line:
+                elif "ADVANCED CONFIGURATION" in line_upper:
                     current_category = "advanced"
 
                 # Collect comment lines as description
