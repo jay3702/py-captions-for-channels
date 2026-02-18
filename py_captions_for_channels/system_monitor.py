@@ -429,6 +429,8 @@ class PipelineTimeline:
                 self.current_stage.ended_at = current.get("ended_at")
                 self.current_stage.gpu_engaged = current.get("gpu_engaged", False)
 
+            # Only load completed stages that match current job
+            # This prevents showing stale data from previous jobs
             self.completed_stages = [
                 PipelineStage(
                     stage=s["stage"],
@@ -437,10 +439,18 @@ class PipelineTimeline:
                     started_at=s["started_at"],
                 )
                 for s in state.get("completed_stages", [])
+                if s.get("job_id") == self.current_job_id
             ]
-            for i, s in enumerate(state.get("completed_stages", [])):
-                self.completed_stages[i].ended_at = s.get("ended_at")
-                self.completed_stages[i].gpu_engaged = s.get("gpu_engaged", False)
+            for i, s in enumerate(
+                [
+                    s
+                    for s in state.get("completed_stages", [])
+                    if s.get("job_id") == self.current_job_id
+                ]
+            ):
+                if i < len(self.completed_stages):
+                    self.completed_stages[i].ended_at = s.get("ended_at")
+                    self.completed_stages[i].gpu_engaged = s.get("gpu_engaged", False)
 
         except (FileNotFoundError, json.JSONDecodeError):
             pass  # Start fresh if no valid state file
