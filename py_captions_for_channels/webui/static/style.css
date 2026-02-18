@@ -342,7 +342,7 @@ body {
 
 .heartbeat-indicator.pulse {
   color: #00ff00;
-  animation: heartbeat-pulse 1s ease-out;
+  animation: heartbeat-pulse 0.25s ease-out;
 }
 
 @keyframes heartbeat-pulse {
@@ -361,6 +361,15 @@ body {
     transform: scale(1);
     color: #666;
   }
+}
+
+/* Process label styling */
+.process-label-active {
+  color: #fff;
+}
+
+.process-label-inactive {
+  color: #888;
 }
 
 /* Progress bars - compact inline version */

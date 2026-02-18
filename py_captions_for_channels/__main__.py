@@ -33,7 +33,7 @@ def run_web_ui():
         "py_captions_for_channels.web_app:app",
         host="0.0.0.0",
         port=web_port,
-        log_level="info",
+        log_level="warning",  # Suppress INFO-level HTTP access logs
     )
 
 

@@ -88,12 +88,13 @@ async function fetchStatus() {
           // Only show green if this is the active process
           const isActive = activeKey === key;
           const healthClass = isActive ? 'service-healthy' : 'service-unhealthy';
+          const labelClass = isActive ? 'process-label-active' : 'process-label-inactive';
           const statusText = isActive ? 'Running' : 'Idle';
 
           processesHtml += `
             <div class="navbar-service" title="${statusText}">
               <span class="${healthClass}">●</span>
-              <span>${svc.name}</span>
+              <span class="${labelClass}">${svc.name}</span>
             </div>
           `;
         }
@@ -132,14 +133,14 @@ async function fetchStatus() {
       for (const [name, hb] of Object.entries(data.heartbeat)) {
         const indicator = document.getElementById(`heartbeat-${name}`);
         if (indicator) {
-          if (hb.alive && hb.age_seconds < 1) {
-            // Very recent heartbeat (< 1s) - bright green pulse
+          if (hb.alive && hb.age_seconds < 0.5) {
+            // Very recent heartbeat (< 0.5s) - bright green pulse (250ms)
             indicator.classList.remove('pulse'); // Remove first to restart animation
             void indicator.offsetWidth; // Force reflow
             indicator.classList.add('pulse');
-            setTimeout(() => indicator.classList.remove('pulse'), 1000);
+            setTimeout(() => indicator.classList.remove('pulse'), 250);
           } else if (hb.alive && hb.age_seconds < 4) {
-            // Recent (1-4s) - regular green, no pulse
+            // Recent (0.5-4s) - regular green, no pulse
             indicator.style.color = '#00cc00';
           } else if (hb.alive) {
             // Alive but older (4-30s) - grey
@@ -770,29 +771,139 @@ function stopLogPolling() {
 // --- Pipeline Settings UI ---
 async function loadSettings() {
   try {
-    const res = await fetch('/api/settings');
+    const res = await fetch('/api/env-settings');
     if (!res.ok) throw new Error('Failed to load settings');
     const data = await res.json();
-    document.getElementById('discovery-mode-select').value = data.discovery_mode || 'polling';
-    document.getElementById('dry-run-toggle').checked = !!data.dry_run;
-    document.getElementById('keep-original-toggle').checked = !!data.keep_original;
-    document.getElementById('log-verbosity-select').value = (data.log_verbosity || 'NORMAL').toUpperCase();
-    document.getElementById('whisper-model-select').value = data.whisper_model || 'medium';
-    document.getElementById('whitelist-editor').value = data.whitelist || '';
+    renderSettingsUI(data);
   } catch (err) {
-    alert('Failed to load settings: ' + err.message);
+    console.error('Failed to load settings:', err);
+    const container = document.getElementById('settings-container');
+    if (container) {
+      container.innerHTML = `<p style="color:red;">Failed to load settings: ${err.message}</p>`;
+    }
+  }
+}
+
+function renderSettingsUI(settings) {
+  const container = document.getElementById('settings-container');
+  if (!container) return;
+  
+  const categoryTitles = {
+    channels_dvr: 'Channels DVR Configuration',
+    channelwatch: 'ChannelWatch Configuration', 
+    event_source: 'Event Source Configuration',
+    polling: 'Polling Source Configuration',
+    webhook: 'Webhook Server Configuration',
+    pipeline: 'Caption Pipeline Configuration',
+    state_logging: 'State and Logging Configuration',
+    advanced: 'Advanced Configuration'
+  };
+  
+  const booleanFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'TRANSCODE_FOR_FIRETV', 
+                         'KEEP_ORIGINAL', 'DRY_RUN'];
+  
+  let html = '';
+  
+  for (const [category, items] of Object.entries(settings)) {
+    if (!items || typeof items !== 'object' || Object.keys(items).length === 0) continue;
+    
+    html += `<div class="settings-category" style="margin-bottom: 24px;">`;
+    html += `<h3 style="margin: 0 0 16px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">
+              ${categoryTitles[category] || category}
+             </h3>`;
+    
+    for (const [key, config] of Object.entries(items)) {
+      const value = config.value || '';
+      const desc = config.description || '';
+      const defaultVal = config.default || '';
+      
+      html += `<div class="settings-group" style="margin-bottom: 16px;">`;
+      html += `<label for="env-${key}" style="font-weight: 600; display: block; margin-bottom: 4px;">${key}</label>`;
+      
+      if (desc) {
+        html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 8px 0;">${desc}</p>`;
+      }
+      
+      // Boolean fields as checkbox
+      if (booleanFields.includes(key)) {
+        const checked = value.toLowerCase() === 'true' ? 'checked' : '';
+        html += `<input type="checkbox" id="env-${key}" name="${key}" data-category="${category}" ${checked}>`;
+      }
+      // Long text fields as textarea
+      else if (key.includes('COMMAND') || key.includes('PATH') && value.length > 50) {
+        html += `<textarea id="env-${key}" name="${key}" data-category="${category}" rows="2" style="width:100%; font-family: monospace; font-size: 12px;">${value}</textarea>`;
+      }
+      // Regular text input
+      else {
+        html += `<input type="text" id="env-${key}" name="${key}" data-category="${category}" value="${value}" placeholder="${defaultVal}" style="width:100%;">`;
+      }
+      
+      html += `</div>`;
+    }
+    
+    html += `</div>`;
+  }
+  
+  container.innerHTML = html;
+}
+
+async function saveEnvSettings(event) {
+  event.preventDefault();
+  
+  // Collect all settings grouped by category
+  const form = document.getElementById('settings-form');
+  const inputs = form.querySelectorAll('input, textarea, select');
+  const settings = {};
+  
+  inputs.forEach(input => {
+    const category = input.dataset.category;
+    const name = input.name;
+    
+    if (!category || !name) return;
+    
+    if (!settings[category]) {
+      settings[category] = {};
+    }
+    
+    let value;
+    if (input.type === 'checkbox') {
+      value = input.checked ? 'true' : 'false';
+    } else {
+      value = input.value;
+    }
+    
+    settings[category][name] = { value };
+  });
+  
+  try {
+    const res = await fetch('/api/env-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    const data = await res.json();
+    
+    if (!res.ok || data.error) {
+      throw new Error(data.error || 'Failed to save settings');
+    }
+    
+    alert('✓ Settings saved to .env file!\n\nPlease restart the application for changes to take effect.');
+    closeSettingsModal();
+  } catch (err) {
+    alert('✗ Failed to save settings: ' + err.message);
   }
 }
 
 async function saveSettings(event) {
+  // Legacy function - kept for compatibility
   event.preventDefault();
   const payload = {
-    discovery_mode: document.getElementById('discovery-mode-select').value,
-    dry_run: document.getElementById('dry-run-toggle').checked,
-    keep_original: document.getElementById('keep-original-toggle').checked,
-    log_verbosity: document.getElementById('log-verbosity-select').value,
-    whisper_model: document.getElementById('whisper-model-select').value,
-    whitelist: document.getElementById('whitelist-editor').value,
+    discovery_mode: document.getElementById('discovery-mode-select')?.value,
+    dry_run: document.getElementById('dry-run-toggle')?.checked,
+    keep_original: document.getElementById('keep-original-toggle')?.checked,
+    log_verbosity: document.getElementById('log-verbosity-select')?.value,
+    whisper_model: document.getElementById('whisper-model-select')?.value,
+    whitelist: document.getElementById('whitelist-editor')?.value,
   };
   try {
     const res = await fetch('/api/settings', {
@@ -812,7 +923,7 @@ async function saveSettings(event) {
 // Initial fetch
 fetchStatus();
 fetchExecutions();
-loadSettings();
+// Settings now loaded on-demand when settings modal opens
 applyStatusPanelVisibility();
 // Note: Don't start log polling on init - only when logs tab is clicked
 
@@ -853,6 +964,8 @@ function openSettingsModal() {
   const modal = document.getElementById('settings-modal');
   if (modal) {
     modal.style.display = 'flex';
+    // Load settings when modal opens
+    loadSettings();
   }
 }
 
