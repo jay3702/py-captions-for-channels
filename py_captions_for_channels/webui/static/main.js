@@ -1645,9 +1645,9 @@ function updatePipelineActivityFromExecution(execution) {
   const indicator = document.getElementById('pipeline-activity-indicator');
   if (!indicator) return;
   
-  if (execution && execution.input_path) {
+  if (execution && execution.path) {
     // Show full file path
-    const displayPath = execution.input_path;
+    const displayPath = execution.path;
     indicator.innerHTML = `Pipeline Activity: <strong style="color: var(--text);">${displayPath}</strong>`;
   } else {
     indicator.textContent = 'Real-time system and pipeline monitoring';
