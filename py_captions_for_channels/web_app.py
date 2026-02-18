@@ -333,10 +333,10 @@ def load_env_settings() -> dict:
 
                 # Parse setting line (active or commented)
                 elif "=" in line_stripped and current_category:
-                    # Handle both "KEY=value" and "# KEY=value" (commented optional settings)
+                    # Handle "KEY=value" and "# KEY=value" (commented optional)
                     is_commented = line_stripped.startswith("#")
                     setting_line = line_stripped.lstrip("#").strip()
-                    
+
                     if "=" in setting_line:
                         key, value = setting_line.split("=", 1)
                         key = key.strip()
@@ -346,13 +346,15 @@ def load_env_settings() -> dict:
                         default_value = None
                         for desc_line in current_description:
                             if desc_line.startswith("Default:"):
-                                default_value = desc_line.replace("Default:", "").strip()
+                                default_value = desc_line.replace(
+                                    "Default:", ""
+                                ).strip()
 
                         settings[current_category][key] = {
                             "value": value,
                             "description": " ".join(current_description),
                             "default": default_value,
-                            "optional": is_commented,  # Mark commented settings as optional
+                            "optional": is_commented,
                         }
                         current_description = []
 
