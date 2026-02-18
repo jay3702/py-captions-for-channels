@@ -824,7 +824,11 @@ function renderSettingsUI(settings) {
   let html = '';
   
   for (const [category, items] of Object.entries(settings)) {
-    if (!items || typeof items !== 'object' || Object.keys(items).length === 0) continue;
+    console.log(`Processing category: ${category}, items:`, items, 'keys:', Object.keys(items || {}));
+    if (!items || typeof items !== 'object' || Object.keys(items).length === 0) {
+      console.log(`Skipping category ${category} - empty or invalid`);
+      continue;
+    }
     
     html += `<div class="settings-category" style="margin-bottom: 24px;">`;
     html += `<h3 style="margin: 0 0 16px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">
