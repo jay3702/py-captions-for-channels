@@ -354,14 +354,96 @@ class SystemMonitor:
 
 
 class PipelineTimeline:
-    """Track pipeline stage timing and GPU engagement."""
+    """Track pipeline stage timing and GPU engagement with file-based persistence."""
 
-    def __init__(self, system_monitor: Optional[SystemMonitor] = None):
+    def __init__(
+        self,
+        system_monitor: Optional[SystemMonitor] = None,
+        state_file: str = "/app/data/pipeline_state.json",
+    ):
         self.system_monitor = system_monitor
+        self.state_file = state_file
         self.lock = threading.Lock()
         self.current_stage: Optional[PipelineStage] = None
         self.completed_stages: List[PipelineStage] = []
         self.current_job_id: Optional[str] = None
+
+    def _save_state(self):
+        """Persist pipeline state to file for cross-process sharing."""
+        try:
+            state = {
+                "current_job_id": self.current_job_id,
+                "current_stage": None,
+                "completed_stages": [],
+            }
+
+            if self.current_stage:
+                state["current_stage"] = {
+                    "stage": self.current_stage.stage,
+                    "job_id": self.current_stage.job_id,
+                    "filename": self.current_stage.filename,
+                    "started_at": self.current_stage.started_at,
+                    "ended_at": self.current_stage.ended_at,
+                    "gpu_engaged": self.current_stage.gpu_engaged,
+                }
+
+            state["completed_stages"] = [
+                {
+                    "stage": s.stage,
+                    "job_id": s.job_id,
+                    "filename": s.filename,
+                    "started_at": s.started_at,
+                    "ended_at": s.ended_at,
+                    "gpu_engaged": s.gpu_engaged,
+                }
+                for s in self.completed_stages
+            ]
+
+            import os
+            import json
+
+            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            with open(self.state_file, "w") as f:
+                json.dump(state, f)
+        except Exception:
+            pass  # Don't let persistence errors break pipeline execution
+
+    def _load_state(self):
+        """Load pipeline state from file."""
+        try:
+            import json
+
+            with open(self.state_file, "r") as f:
+                state = json.load(f)
+
+            self.current_job_id = state.get("current_job_id")
+
+            current = state.get("current_stage")
+            if current:
+                self.current_stage = PipelineStage(
+                    stage=current["stage"],
+                    job_id=current["job_id"],
+                    filename=current["filename"],
+                    started_at=current["started_at"],
+                )
+                self.current_stage.ended_at = current.get("ended_at")
+                self.current_stage.gpu_engaged = current.get("gpu_engaged", False)
+
+            self.completed_stages = [
+                PipelineStage(
+                    stage=s["stage"],
+                    job_id=s["job_id"],
+                    filename=s["filename"],
+                    started_at=s["started_at"],
+                )
+                for s in state.get("completed_stages", [])
+            ]
+            for i, s in enumerate(state.get("completed_stages", [])):
+                self.completed_stages[i].ended_at = s.get("ended_at")
+                self.completed_stages[i].gpu_engaged = s.get("gpu_engaged", False)
+
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass  # Start fresh if no valid state file
 
     def stage_start(self, stage: str, job_id: str, filename: str):
         """Start tracking a new pipeline stage."""
@@ -380,6 +462,7 @@ class PipelineTimeline:
                 stage=stage, job_id=job_id, filename=filename, started_at=time.time()
             )
             self.current_job_id = job_id
+            self._save_state()
 
     def stage_end(self, stage: str, job_id: str):
         """End the current stage."""
@@ -396,6 +479,7 @@ class PipelineTimeline:
                     )
                 self.completed_stages.append(self.current_stage)
                 self.current_stage = None
+                self._save_state()
 
     def job_complete(self, job_id: str):
         """Mark entire job as complete."""
@@ -420,9 +504,14 @@ class PipelineTimeline:
             if self.current_job_id == job_id:
                 self.current_job_id = None
 
+            self._save_state()
+
     def get_status(self) -> Dict[str, Any]:
-        """Get current pipeline status."""
+        """Get current pipeline status, loading from file for cross-process visibility."""
         with self.lock:
+            # Load latest state from file (updated by subprocess)
+            self._load_state()
+
             result = {
                 "active": self.current_stage is not None,
                 "current_job_id": self.current_job_id,
