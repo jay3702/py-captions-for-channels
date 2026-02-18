@@ -456,6 +456,9 @@ def save_env_settings(settings: dict) -> dict:
         with open(env_path, "r", encoding="utf-8") as f:
             original_lines = f.readlines()
 
+        # Track which settings have been written
+        written_keys = set()
+
         # Update values while preserving comments and structure
         new_lines = []
         for line in original_lines:
@@ -489,6 +492,7 @@ def save_env_settings(settings: dict) -> dict:
                         # Keep as empty if was originally uncommented
                         else:
                             new_lines.append(f"{key}=\n")
+                        written_keys.add(key)
                         found = True
                         break
 
@@ -497,6 +501,16 @@ def save_env_settings(settings: dict) -> dict:
                     new_lines.append(line)
             else:
                 new_lines.append(line)
+
+        # Append any new settings that weren't in the original file
+        for category_name, category in settings.items():
+            if isinstance(category, dict):
+                for key, config in category.items():
+                    if key not in written_keys:
+                        new_value = config.get("value", "")
+                        if new_value:
+                            new_lines.append(f"{key}={new_value}\n")
+                            LOG.info(f"Adding new setting to .env: {key}={new_value}")
 
         # Write back to file
         with open(env_path, "w", encoding="utf-8") as f:
