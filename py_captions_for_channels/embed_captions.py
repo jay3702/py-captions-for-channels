@@ -290,25 +290,54 @@ def validate_audio_decodability(path, log):
 
     Returns True if file is safe to decode directly, False if audio should
     be extracted to WAV first to avoid segfaults from corrupted video frames.
+
+    MPEG2 files are always flagged for WAV extraction due to frequent
+    corruption issues that can occur anywhere in the file.
     """
-    # Try to decode just 1 second of audio to test decodability
+    # Check codec type first - MPEG2 is prone to corruption
+    try:
+        probe_cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            path,
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
+        codec = result.stdout.strip().lower()
+
+        # MPEG2 files: always use WAV extraction (corruption can be anywhere)
+        if codec == "mpeg2video":
+            log.warning(
+                f"MPEG2 codec detected - using WAV extraction to avoid "
+                f"potential corruption (codec: {codec})"
+            )
+            return False
+
+    except Exception as e:
+        log.warning(f"Failed to probe codec type: {e}, proceeding with decode test")
+
+    # For other codecs, do a quick decode test of first few seconds
     cmd = [
         "ffmpeg",
         "-v",
-        "error",  # Only show errors
+        "error",
         "-t",
-        "1",  # Test first 1 second only
+        "5",  # Test first 5 seconds
         "-i",
         path,
         "-vn",  # Skip video (we only care about audio)
         "-f",
-        "null",  # Don't write output
+        "null",
         "-",
     ]
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=10  # 10 second timeout
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 
         # Check for fatal errors in stderr that indicate corrupted frames
         if result.returncode != 0:
@@ -323,9 +352,7 @@ def validate_audio_decodability(path, log):
                     "error",
                 ]
             ):
-                log.warning(
-                    f"Audio decodability test failed for {path}: {result.stderr[:200]}"
-                )
+                log.warning(f"Audio decodability test failed: {result.stderr[:200]}")
                 return False
 
         log.info("Audio decodability test passed - file can be decoded directly")

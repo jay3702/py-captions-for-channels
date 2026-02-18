@@ -164,5 +164,5 @@ class Whitelist:
                 )
                 return True
 
-        LOG.info("Recording '%s' not in whitelist, skipping", title)
+        LOG.debug("Recording '%s' not in whitelist, skipping", title)
         return False
