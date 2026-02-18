@@ -802,6 +802,14 @@ function renderSettingsUI(settings) {
   const booleanFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'TRANSCODE_FOR_FIRETV', 
                          'KEEP_ORIGINAL', 'DRY_RUN'];
   
+  const dropdownFields = {
+    'WHISPER_MODE': ['standard', 'automatic'],
+    'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+  };
+  
+  const numericFields = ['POLL_INTERVAL_SECONDS', 'POLL_LIMIT', 'WEBHOOK_PORT', 
+                         'PIPELINE_TIMEOUT', 'STALE_EXECUTION_SECONDS', 'API_TIMEOUT'];
+  
   let html = '';
   
   for (const [category, items] of Object.entries(settings)) {
@@ -816,21 +824,37 @@ function renderSettingsUI(settings) {
       const value = config.value || '';
       const desc = config.description || '';
       const defaultVal = config.default || '';
+      const isOptional = config.optional || false;
       
       html += `<div class="settings-group" style="margin-bottom: 16px;">`;
-      html += `<label for="env-${key}" style="font-weight: 600; display: block; margin-bottom: 4px;">${key}</label>`;
+      html += `<label for="env-${key}" style="font-weight: 600; display: block; margin-bottom: 4px;">
+                ${key}${isOptional ? ' <span style="color: var(--muted); font-weight: normal;">(optional)</span>' : ''}
+               </label>`;
       
       if (desc) {
         html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 8px 0;">${desc}</p>`;
       }
       
+      // Dropdown fields
+      if (dropdownFields[key]) {
+        html += `<select id="env-${key}" name="${key}" data-category="${category}" style="width:100%;">`;
+        for (const option of dropdownFields[key]) {
+          const selected = value === option ? 'selected' : '';
+          html += `<option value="${option}" ${selected}>${option}</option>`;
+        }
+        html += `</select>`;
+      }
       // Boolean fields as checkbox
-      if (booleanFields.includes(key)) {
+      else if (booleanFields.includes(key)) {
         const checked = value.toLowerCase() === 'true' ? 'checked' : '';
         html += `<input type="checkbox" id="env-${key}" name="${key}" data-category="${category}" ${checked}>`;
       }
+      // Numeric fields
+      else if (numericFields.includes(key)) {
+        html += `<input type="number" id="env-${key}" name="${key}" data-category="${category}" value="${value}" placeholder="${defaultVal}" style="width:100%;">`;
+      }
       // Long text fields as textarea
-      else if (key.includes('COMMAND') || key.includes('PATH') && value.length > 50) {
+      else if (key.includes('COMMAND') || (key.includes('PATH') && value.length > 50)) {
         html += `<textarea id="env-${key}" name="${key}" data-category="${category}" rows="2" style="width:100%; font-family: monospace; font-size: 12px;">${value}</textarea>`;
       }
       // Regular text input

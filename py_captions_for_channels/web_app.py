@@ -331,28 +331,30 @@ def load_env_settings() -> dict:
                         ):
                             current_description.append(desc)
 
-                # Parse setting line
-                elif (
-                    "=" in line_stripped
-                    and not line_stripped.startswith("#")
-                    and current_category
-                ):
-                    key, value = line_stripped.split("=", 1)
-                    key = key.strip()
-                    value = value.strip()
+                # Parse setting line (active or commented)
+                elif "=" in line_stripped and current_category:
+                    # Handle both "KEY=value" and "# KEY=value" (commented optional settings)
+                    is_commented = line_stripped.startswith("#")
+                    setting_line = line_stripped.lstrip("#").strip()
+                    
+                    if "=" in setting_line:
+                        key, value = setting_line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip()
 
-                    # Extract default from description
-                    default_value = None
-                    for desc_line in current_description:
-                        if desc_line.startswith("Default:"):
-                            default_value = desc_line.replace("Default:", "").strip()
+                        # Extract default from description
+                        default_value = None
+                        for desc_line in current_description:
+                            if desc_line.startswith("Default:"):
+                                default_value = desc_line.replace("Default:", "").strip()
 
-                    settings[current_category][key] = {
-                        "value": value,
-                        "description": " ".join(current_description),
-                        "default": default_value,
-                    }
-                    current_description = []
+                        settings[current_category][key] = {
+                            "value": value,
+                            "description": " ".join(current_description),
+                            "default": default_value,
+                            "optional": is_commented,  # Mark commented settings as optional
+                        }
+                        current_description = []
 
                 # Empty line resets description
                 elif not line_stripped:
@@ -386,20 +388,34 @@ def save_env_settings(settings: dict) -> dict:
         for line in original_lines:
             line_stripped = line.strip()
 
-            # Keep comments and empty lines as-is
-            if line_stripped.startswith("#") or not line_stripped:
+            # Keep section headers and pure comments as-is
+            if (
+                line_stripped.startswith("#")
+                and "=" not in line_stripped
+                or not line_stripped
+            ):
                 new_lines.append(line)
 
-            # Update setting value if present in new settings
+            # Check for setting lines (commented or not)
             elif "=" in line_stripped:
-                key = line_stripped.split("=", 1)[0].strip()
+                is_commented = line_stripped.startswith("#")
+                setting_line = line_stripped.lstrip("#").strip()
+                key = setting_line.split("=", 1)[0].strip()
 
-                # Find this key in settings
+                # Find this key in new settings
                 found = False
                 for category in settings.values():
                     if isinstance(category, dict) and key in category:
                         new_value = category[key].get("value", "")
-                        new_lines.append(f"{key}={new_value}\n")
+                        # Uncomment and set value if provided
+                        if new_value:
+                            new_lines.append(f"{key}={new_value}\n")
+                        # Keep commented if value is empty and was originally commented
+                        elif is_commented:
+                            new_lines.append(line)
+                        # Keep as empty if was originally uncommented
+                        else:
+                            new_lines.append(f"{key}=\n")
                         found = True
                         break
 
