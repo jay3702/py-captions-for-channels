@@ -47,7 +47,10 @@ async function fetchStatus() {
           ) {
             continue;
           }
-          const healthClass = svc.healthy ? 'service-healthy' : 'service-unhealthy';
+          // Use blue color for Channels DVR, green for others
+          const healthClass = svc.healthy 
+            ? (svc.name === 'Channels DVR' ? 'service-healthy-blue' : 'service-healthy')
+            : 'service-unhealthy';
           const statusText = svc.status || (svc.healthy ? 'Healthy' : 'Unhealthy');
           servicesHtml += `<div class="navbar-service" title="${statusText}"><span class="${healthClass}">●</span> ${svc.name}</div>`;
         }
@@ -128,27 +131,54 @@ async function fetchStatus() {
       webuiVersion.textContent = `v${versionText}`;
     }
 
-    // Update heartbeat indicators with pulse animation
+    // Update consolidated heartbeat indicator with priority-based pulse animation
     if (data.heartbeat) {
-      for (const [name, hb] of Object.entries(data.heartbeat)) {
-        const indicator = document.getElementById(`heartbeat-${name}`);
-        if (indicator) {
+      const pollingIndicator = document.getElementById('heartbeat-polling');
+      if (pollingIndicator) {
+        // Priority order: API polling > manual queue > other
+        let mostRecentPriority = null;
+        let mostRecentAge = Infinity;
+        
+        // Check all heartbeats and determine which one to show
+        for (const [name, hb] of Object.entries(data.heartbeat)) {
           if (hb.alive && hb.age_seconds < 0.5) {
-            // Very recent heartbeat (< 0.5s) - bright green pulse (250ms)
-            indicator.classList.remove('pulse'); // Remove first to restart animation
-            void indicator.offsetWidth; // Force reflow
-            indicator.classList.add('pulse');
-            setTimeout(() => indicator.classList.remove('pulse'), 250);
-          } else if (hb.alive && hb.age_seconds < 4) {
-            // Recent (0.5-4s) - regular green, no pulse
-            indicator.style.color = '#00cc00';
-          } else if (hb.alive) {
-            // Alive but older (4-30s) - grey
-            indicator.style.color = '#666';
-          } else {
-            // Stale (30s+) - grey
-            indicator.style.color = '#666';
+            const priority = name === 'polling' ? 1 : (name === 'manual' ? 2 : 3);
+            if (priority < (mostRecentPriority || 999)) {
+              mostRecentPriority = priority;
+              mostRecentAge = hb.age_seconds;
+            }
           }
+        }
+        
+        // Apply appropriate pulse animation based on priority
+        if (mostRecentPriority === 1) {
+          // API polling - blue pulse (500ms)
+          pollingIndicator.classList.remove('pulse-blue', 'pulse-green', 'pulse-yellow');
+          void pollingIndicator.offsetWidth; // Force reflow
+          pollingIndicator.classList.add('pulse-blue');
+          setTimeout(() => pollingIndicator.classList.remove('pulse-blue'), 500);
+        } else if (mostRecentPriority === 2) {
+          // Manual queue - green pulse (500ms)
+          pollingIndicator.classList.remove('pulse-blue', 'pulse-green', 'pulse-yellow');
+          void pollingIndicator.offsetWidth; // Force reflow
+          pollingIndicator.classList.add('pulse-green');
+          setTimeout(() => pollingIndicator.classList.remove('pulse-green'), 500);
+        } else if (mostRecentPriority === 3) {
+          // Other polling - yellow pulse (250ms)
+          pollingIndicator.classList.remove('pulse-blue', 'pulse-green', 'pulse-yellow');
+          void pollingIndicator.offsetWidth; // Force reflow
+          pollingIndicator.classList.add('pulse-yellow');
+          setTimeout(() => pollingIndicator.classList.remove('pulse-yellow'), 250);
+        } else if (!mostRecentPriority) {
+          // No recent activity - check if any are alive
+          let anyAlive = false;
+          for (const [name, hb] of Object.entries(data.heartbeat)) {
+            if (hb.alive && hb.age_seconds < 4) {
+              anyAlive = true;
+              break;
+            }
+          }
+          pollingIndicator.style.color = anyAlive ? '#666' : '#666';
         }
       }
     }
