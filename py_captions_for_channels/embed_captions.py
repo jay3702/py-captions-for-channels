@@ -780,13 +780,13 @@ def clamp_srt_to_end(srt_path, end_time, log):
 
 def shift_srt_timestamps(srt_path, delay_ms, log):
     """Shift all SRT timestamps forward by delay_ms milliseconds.
-    
-    Useful for accessibility - some viewers prefer captions appearing 
+
+    Useful for accessibility - some viewers prefer captions appearing
     slightly after audio.
     """
     if delay_ms <= 0:
         return  # No delay needed
-        
+
     import re
 
     lines = []
