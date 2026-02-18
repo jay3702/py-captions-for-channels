@@ -57,10 +57,12 @@ LOCAL_TEST_DIR = os.getenv("LOCAL_TEST_DIR", None)
 # Caption command to run (whisper or other captioning tool)
 CAPTION_COMMAND = os.getenv("CAPTION_COMMAND", 'echo "Would process: {path}"')
 
-# Whisper parameter optimization mode
+# Pipeline optimization mode (Whisper + ffmpeg)
 # "standard" - Use hardcoded parameters (default, proven)
 # "automatic" - Detect encoding and optimize parameters per file
-WHISPER_MODE = os.getenv("WHISPER_MODE", "standard")
+OPTIMIZATION_MODE = os.getenv(
+    "OPTIMIZATION_MODE", os.getenv("WHISPER_MODE", "standard")
+)
 
 # State file for tracking last processed timestamp
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
@@ -69,9 +71,14 @@ STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
 LOG_PATH = os.getenv("LOG_PATH", "/var/log/channels-dvr.log")
 
 # Event source configuration
-USE_MOCK = get_env_bool("USE_MOCK", False)
-USE_WEBHOOK = get_env_bool("USE_WEBHOOK", True)
-USE_POLLING = get_env_bool("USE_POLLING", False)
+# DISCOVERY_MODE: unified setting for event source ("polling", "webhook", "mock")
+# Default: "webhook"
+DISCOVERY_MODE = os.getenv("DISCOVERY_MODE", "webhook")
+
+# Set USE_* flags based on DISCOVERY_MODE for backward compatibility
+USE_MOCK = get_env_bool("USE_MOCK", DISCOVERY_MODE == "mock")
+USE_WEBHOOK = get_env_bool("USE_WEBHOOK", DISCOVERY_MODE == "webhook")
+USE_POLLING = get_env_bool("USE_POLLING", DISCOVERY_MODE == "polling")
 
 # Webhook configuration (when USE_WEBHOOK=True)
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "0.0.0.0")
