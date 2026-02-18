@@ -312,7 +312,7 @@ def _parse_env_file(file_path: Path) -> dict:
                 # Skip section dividers (lines that are just equal signs)
                 if line_stripped.lstrip("#").strip().replace("=", "") == "":
                     continue
-                
+
                 # Handle "KEY=value" and "# KEY=value" (commented optional)
                 is_commented = line_stripped.startswith("#")
                 setting_line = line_stripped.lstrip("#").strip()
