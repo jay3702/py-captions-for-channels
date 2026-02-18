@@ -1646,11 +1646,9 @@ function updatePipelineActivityFromExecution(execution) {
   if (!indicator) return;
   
   if (execution && execution.input_path) {
-    // Extract filename from path (handle both / and \\ separators)
-    const filename = execution.input_path.split(/[/\\]/).pop();
-    // Remove file extension
-    const displayName = filename.replace(/\.[^/.]+$/, '');
-    indicator.innerHTML = `Pipeline Activity: <strong style="color: var(--text);">${displayName}</strong>`;
+    // Show full file path
+    const displayPath = execution.input_path;
+    indicator.innerHTML = `Pipeline Activity: <strong style="color: var(--text);">${displayPath}</strong>`;
   } else {
     indicator.textContent = 'Real-time system and pipeline monitoring';
   }
