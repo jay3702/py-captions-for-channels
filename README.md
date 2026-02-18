@@ -11,6 +11,35 @@ Automatic caption generation for Channels DVR recordings using Whisper AI.
 ? **Robust** - Webhook receiver with automatic reconnection  
 ? **Dry-Run Mode** - Test before executing actual commands  
 
+## System Requirements
+
+**GPU-accelerated processing is strongly recommended** for practical real-time caption generation. CPU-only operation is significantly slower (3-5x real-time) and not suitable for typical DVR usage.
+
+### Minimum Viable Configuration
+- **GPU**: NVIDIA GTX 1660 Super or RTX 2060 (6GB+ VRAM)
+- **CPU**: 4+ cores (Intel i5-8400, AMD Ryzen 5 2600, or equivalent)
+- **RAM**: 8GB minimum, 16GB recommended
+- **Storage**: 10GB free space for temp files
+- **Performance**: Processes 30-min recording in ~15-18 minutes (0.5-0.6x real-time)
+- **Capacity**: Can handle 4-6 hours of recordings per day
+
+### Recommended Configuration
+- **GPU**: NVIDIA RTX 2060 or better (8GB+ VRAM)
+- **CPU**: 6+ cores
+- **RAM**: 16GB
+- **Performance**: Processes 30-min recording in ~8-12 minutes (0.3-0.4x real-time)
+- **Capacity**: Can handle 12-16+ hours of recordings per day
+
+### Modern Hardware (2023+)
+Systems with RTX 3060/4060 or newer will see 25-35% faster transcription times due to improved Tensor cores. CPU upgrades provide minimal benefit as Whisper transcription is GPU-bound.
+
+### Model Selection vs. Hardware
+- **base** model: Works on 4GB GPUs, lower quality, faster
+- **medium** model (default): Requires 6GB+ VRAM, good quality/speed balance
+- **large** model: Requires 8GB+ VRAM, best quality, slower
+
+**See [SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for detailed performance benchmarks and hardware selection guidance.**
+
 ## Quick Start
 
 ### Docker Deployment (Recommended)
@@ -67,9 +96,12 @@ DVR_RECORDINGS_PATH=/path/to/recordings
 CAPTION_COMMAND=/usr/local/bin/whisper --model medium {path}
 
 # Optional
-DRY_RUN=true        # Test mode
+DRY_RUN=true         # Test mode
 WEBHOOK_PORT=9000
+WHISPER_MODE=automatic  # "standard" (default) or "automatic" (optimized per source)
 ```
+
+**New**: `WHISPER_MODE=automatic` enables intelligent optimization of both Whisper transcription and ffmpeg encoding based on source characteristics (OTA vs TV Everywhere). Can reduce encoding time by 30-50% for OTA content. See [AUTOMATIC_WHISPER_OPTIMIZATION.md](docs/AUTOMATIC_WHISPER_OPTIMIZATION.md) for details.
 
 ## ChannelWatch Setup
 
