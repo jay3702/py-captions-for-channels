@@ -263,10 +263,10 @@ def get_env_file_path() -> Path:
 
 def _parse_env_file(file_path: Path) -> dict:
     """Parse an env file into structured settings.
-    
+
     Args:
         file_path: Path to the env file to parse
-        
+
     Returns:
         Dict with settings grouped by category
     """
