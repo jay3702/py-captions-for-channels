@@ -779,6 +779,8 @@ async function loadSettings() {
     const res = await fetch('/api/env-settings');
     if (!res.ok) throw new Error('Failed to load settings');
     const data = await res.json();
+    console.log('Settings data received:', data);
+    console.log('Settings keys:', Object.keys(data));
     renderSettingsUI(data);
   } catch (err) {
     console.error('Failed to load settings:', err);
@@ -790,8 +792,12 @@ async function loadSettings() {
 }
 
 function renderSettingsUI(settings) {
+  console.log('renderSettingsUI called with:', settings);
   const container = document.getElementById('settings-container');
-  if (!container) return;
+  if (!container) {
+    console.error('settings-container not found!');
+    return;
+  }
   
   const categoryTitles = {
     channels_dvr: 'Channels DVR Configuration',
@@ -873,7 +879,13 @@ function renderSettingsUI(settings) {
     html += `</div>`;
   }
   
-  container.innerHTML = html;
+  console.log('Generated HTML length:', html.length);
+  console.log('Number of categories processed:', Object.keys(settings).length);
+  if (html.length === 0) {
+    container.innerHTML = '<p style="color: orange;">No settings found in response.</p>';
+  } else {
+    container.innerHTML = html;
+  }
 }
 
 async function saveEnvSettings(event) {
