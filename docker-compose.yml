@@ -39,6 +39,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./py_captions_for_channels:/app/py_captions_for_channels
+      - ./.env:/app/.env
       - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
