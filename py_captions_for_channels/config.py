@@ -108,6 +108,12 @@ WHITELIST_FILE = os.getenv("WHITELIST_FILE", "./whitelist.txt")
 # API timeout
 API_TIMEOUT = get_env_int("API_TIMEOUT", 10)
 
+# Server timezone for "today" calculations (job numbers, etc.)
+# All timestamps are stored in UTC, but "today" is relative to this timezone
+# Format: IANA timezone names (e.g., "America/New_York", "Europe/London")
+# Default: System timezone if not specified
+SERVER_TZ = os.getenv("SERVER_TZ")
+
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_VERBOSITY = os.getenv("LOG_VERBOSITY", "NORMAL")  # MINIMAL, NORMAL, or VERBOSE
