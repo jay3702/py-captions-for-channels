@@ -448,6 +448,10 @@ class PipelineTimeline:
     def stage_start(self, stage: str, job_id: str, filename: str):
         """Start tracking a new pipeline stage."""
         with self.lock:
+            # If starting a new job, clear old completed stages
+            if self.current_job_id != job_id:
+                self.completed_stages = []
+            
             # End previous stage if any
             if self.current_stage and not self.current_stage.ended_at:
                 self.current_stage.ended_at = time.time()
@@ -531,10 +535,13 @@ class PipelineTimeline:
                     ),
                 }
 
-            # Include recent completed stages for current job
+            # CRITICAL: Only include completed stages for the CURRENT job
+            # This prevents showing stale data from previous jobs
             if self.current_job_id:
                 job_stages = [
-                    s for s in self.completed_stages if s.job_id == self.current_job_id
+                    s
+                    for s in self.completed_stages
+                    if s.job_id == self.current_job_id
                 ]
                 result["stages"] = [
                     {
