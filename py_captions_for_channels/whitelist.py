@@ -159,7 +159,7 @@ class Whitelist:
         # Check if any rule matches
         for rule in self.rules:
             if rule.matches(title, recording_time):
-                LOG.info(
+                LOG.debug(
                     "Recording '%s' matches whitelist rule: %s", title, rule.show_name
                 )
                 return True
