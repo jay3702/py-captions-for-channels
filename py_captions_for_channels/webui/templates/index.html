@@ -216,6 +216,27 @@
           <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
         </div>
         <div class="modal-body">
+          <!-- System Information Section -->
+          <div style="background: var(--panel-bg); border: 1px solid var(--panel-border); padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+            <h3 style="margin: 0 0 12px 0; font-size: 14px; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px;">System Information</h3>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px;">
+              <span style="color: var(--muted); font-weight: 600;">Application:</span>
+              <span id="app-name" style="color: var(--text);">—</span>
+              
+              <span style="color: var(--muted); font-weight: 600;">Version:</span>
+              <span id="app-version" style="color: var(--text);">—</span>
+              
+              <span style="color: var(--muted); font-weight: 600;">Server Timezone:</span>
+              <span id="timezone" style="color: var(--text);">—</span>
+              
+              <span style="color: var(--muted); font-weight: 600;">Last Processed:</span>
+              <span id="last-processed" style="color: var(--text);">—</span>
+              
+              <span style="color: var(--muted); font-weight: 600;">Manual Queue:</span>
+              <span id="modal-queue-size" style="color: var(--text);">—</span>
+            </div>
+          </div>
+
           <!-- Info Notice -->
           <div style="background: #d1ecf1; border: 1px solid #0c5460; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #0c5460;">
             <strong>ℹ️ Note:</strong> Changes to settings will require restarting the application to take effect.
