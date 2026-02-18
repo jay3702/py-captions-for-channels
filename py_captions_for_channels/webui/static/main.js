@@ -1043,9 +1043,16 @@ function initSystemMonitor() {
     width: chartWidth,
     height: 130,
     class: 'monitor-chart',
+    cursor: {
+      show: true,
+      drag: {
+        x: false,
+        y: false
+      }
+    },
     legend: {
       show: true,
-      live: false
+      live: true
     },
     scales: {
       x: { time: true },
