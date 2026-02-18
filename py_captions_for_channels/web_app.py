@@ -310,7 +310,8 @@ def _parse_env_file(file_path: Path) -> dict:
             # Parse setting line (active or commented) - check this BEFORE comment collection
             elif "=" in line_stripped and current_category:
                 # Skip section dividers (lines that are just equal signs)
-                if line_stripped.lstrip("#").strip().replace("=", "") == "":
+                stripped_no_comment = line_stripped.lstrip("#").strip()
+                if stripped_no_comment.replace("=", "") == "":
                     continue
 
                 # Handle "KEY=value" and "# KEY=value" (commented optional)
