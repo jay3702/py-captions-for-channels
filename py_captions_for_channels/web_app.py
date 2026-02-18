@@ -29,7 +29,7 @@ from .config import (
     LOG_VERBOSITY_FILE,
     USE_MOCK,
     USE_POLLING,
-    USE_WEBHOOK,
+    DISCOVERY_MODE,
 )
 from .state import StateBackend
 from .execution_tracker import build_manual_process_job_id, get_tracker
@@ -645,8 +645,8 @@ async def status() -> dict:
             },
         }
 
-        # Only add ChannelWatch if webhooks are enabled and it's configured
-        if USE_WEBHOOK and CHANNELWATCH_URL and os.getenv("CHANNELWATCH_URL"):
+        # Only add ChannelWatch if in webhook mode and it's configured
+        if DISCOVERY_MODE == "webhook" and CHANNELWATCH_URL:
             services["channelwatch"] = {
                 "name": "ChannelWatch",
                 "url": CHANNELWATCH_URL,
