@@ -807,18 +807,30 @@ function renderSettingsUI(settings) {
   const booleanFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'TRANSCODE_FOR_FIRETV', 
                          'KEEP_ORIGINAL', 'DRY_RUN'];
   
+  // Fields to hide (replaced by other settings)
+  const hiddenFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK'];  // Replaced by DISCOVERY_MODE
+  
   const dropdownFields = {
-    'WHISPER_MODE': ['standard', 'automatic'],
+    'DISCOVERY_MODE': ['polling', 'webhook', 'mock'],
+    'OPTIMIZATION_MODE': ['standard', 'automatic'],
     'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
   };
   
   const numericFields = ['POLL_INTERVAL_SECONDS', 'POLL_LIMIT', 'WEBHOOK_PORT', 
                          'PIPELINE_TIMEOUT', 'STALE_EXECUTION_SECONDS', 'API_TIMEOUT'];
   
+  // Get discovery mode to conditionally show/hide sections
+  const discoveryMode = settings.event_source?.DISCOVERY_MODE?.value || 'webhook';
+  
   let html = '';
   
   for (const [category, items] of Object.entries(settings)) {
     if (!items || typeof items !== 'object' || Object.keys(items).length === 0) continue;
+    
+    // Hide channelwatch and webhook sections when using polling
+    if (discoveryMode === 'polling' && (category === 'channelwatch' || category === 'webhook')) {
+      continue;
+    }
     
     html += `<div class="settings-category" style="margin-bottom: 24px;">`;
     html += `<h3 style="margin: 0 0 16px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">
@@ -826,6 +838,9 @@ function renderSettingsUI(settings) {
              </h3>`;
     
     for (const [key, config] of Object.entries(items)) {
+      // Skip hidden fields (replaced by other settings)
+      if (hiddenFields.includes(key)) continue;
+      
       const value = config.value || '';
       const desc = config.description || '';
       const defaultVal = config.default || '';

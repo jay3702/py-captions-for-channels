@@ -17,7 +17,7 @@ from py_captions_for_channels.logging.structured_logger import get_logger
 from py_captions_for_channels.database import get_db
 from py_captions_for_channels.progress_tracker import get_progress_tracker
 from py_captions_for_channels.services.execution_service import ExecutionService
-from py_captions_for_channels.config import WHISPER_MODE
+from py_captions_for_channels.config import OPTIMIZATION_MODE
 from py_captions_for_channels.encoding_profiles import (
     get_whisper_parameters,
     get_ffmpeg_parameters,
@@ -451,9 +451,9 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
     # Detect if content is VFR (Chrome capture) or CFR (broadcast TV)
     is_vfr = detect_variable_frame_rate(mpg_orig, log)
 
-    # Determine encoder presets based on WHISPER_MODE
+    # Determine encoder presets based on OPTIMIZATION_MODE
     channel_number = extract_channel_number(mpg_orig)
-    if WHISPER_MODE == "automatic":
+    if OPTIMIZATION_MODE == "automatic":
         ffmpeg_params = get_ffmpeg_parameters(mpg_orig, channel_number)
         nvenc_preset = ffmpeg_params["nvenc_preset"]
         x264_preset = ffmpeg_params["x264_preset"]
@@ -465,7 +465,7 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
         # Standard mode: use hardcoded presets (current default)
         nvenc_preset = "fast"
         x264_preset = "fast"
-        log.info("Using standard ffmpeg presets (WHISPER_MODE=standard)")
+        log.info("Using standard ffmpeg presets (OPTIMIZATION_MODE=standard)")
 
     # Build base command for NVENC
     cmd_nvenc = [
@@ -896,9 +896,9 @@ def main():
                 video_duration = probe_duration(mpg_path, log)
                 log.info(f"Video duration: {video_duration:.1f}s for progress tracking")
 
-                # Determine Whisper parameters based on WHISPER_MODE
+                # Determine Whisper parameters based on OPTIMIZATION_MODE
                 channel_number = extract_channel_number(mpg_path)
-                if WHISPER_MODE == "automatic":
+                if OPTIMIZATION_MODE == "automatic":
                     whisper_params = get_whisper_parameters(mpg_path, channel_number)
                     beam_size = whisper_params.get("beam_size")
                     vad_ms = whisper_params.get("vad_parameters", {}).get(
@@ -918,7 +918,7 @@ def main():
                         "vad_parameters": {"min_silence_duration_ms": 500},
                     }
                     log.info(
-                        "Using standard Whisper parameters (WHISPER_MODE=standard)"
+                        "Using standard Whisper parameters (OPTIMIZATION_MODE=standard)"
                     )
 
                 # Try GPU transcription first, fall back to CPU if GPU libraries fail
