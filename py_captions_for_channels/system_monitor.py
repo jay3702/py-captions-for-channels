@@ -461,7 +461,7 @@ class PipelineTimeline:
             # If starting a new job, clear old completed stages
             if self.current_job_id != job_id:
                 self.completed_stages = []
-            
+
             # End previous stage if any
             if self.current_stage and not self.current_stage.ended_at:
                 self.current_stage.ended_at = time.time()
@@ -549,9 +549,7 @@ class PipelineTimeline:
             # This prevents showing stale data from previous jobs
             if self.current_job_id:
                 job_stages = [
-                    s
-                    for s in self.completed_stages
-                    if s.job_id == self.current_job_id
+                    s for s in self.completed_stages if s.job_id == self.current_job_id
                 ]
                 result["stages"] = [
                     {
