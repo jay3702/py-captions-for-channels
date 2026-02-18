@@ -9,10 +9,18 @@ Supports:
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
 from contextvars import ContextVar
+from datetime import datetime, timezone
+
+# Try to import ZoneInfo (Python 3.9+)
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 # Context variable to track current job ID
 _job_id_context: ContextVar[Optional[str]] = ContextVar("job_id", default=None)
@@ -20,6 +28,38 @@ _job_id_context: ContextVar[Optional[str]] = ContextVar("job_id", default=None)
 
 class JobIDFormatter(logging.Formatter):
     """Custom formatter that includes job ID markers for easy log parsing."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Get server timezone on initialization
+        self._tz = self._get_timezone()
+
+    def _get_timezone(self):
+        """Get server timezone from SERVER_TZ env var."""
+        tz_name = os.getenv("SERVER_TZ")
+        if tz_name and ZoneInfo:
+            try:
+                return ZoneInfo(tz_name)
+            except Exception:
+                pass
+        # Fallback to local system timezone
+        try:
+            return datetime.now().astimezone().tzinfo
+        except Exception:
+            return None
+
+    def formatTime(self, record, datefmt=None):
+        """Override formatTime to use server timezone."""
+        # Get time in server timezone
+        if self._tz:
+            dt = datetime.fromtimestamp(record.created, tz=self._tz)
+        else:
+            dt = datetime.fromtimestamp(record.created).astimezone()
+
+        if datefmt:
+            return dt.strftime(datefmt)
+        else:
+            return dt.isoformat()
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record with job ID marker if available."""
