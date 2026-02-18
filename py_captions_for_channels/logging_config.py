@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime
 
 # Try to import ZoneInfo (Python 3.9+)
 try:
