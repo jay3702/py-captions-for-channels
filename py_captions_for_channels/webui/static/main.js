@@ -1702,6 +1702,7 @@ const PIPELINE_STAGES = {
   'file_copy': { display: 'Backup', group: 'encoding', weight: 5, description: 'Preserving original as .orig' },
   'ffmpeg_encode': { display: 'A/V Encode', group: 'encoding', weight: 15, description: 'Encoding audio/video streams to temp file' },
   'probe_av': { display: 'Probe', group: 'verification', weight: 1, description: 'Probing encoded media duration' },
+  'shift_srt': { display: 'Caption Delay', group: 'verification', weight: 1, description: 'Shifting caption timestamps (accessibility delay)' },
   'clamp_srt': { display: 'Clamp SRT', group: 'verification', weight: 1, description: 'Clamping subtitle timestamps to media duration' },
   'ffmpeg_mux': { display: 'Mux Captions', group: 'encoding', weight: 3, description: 'Muxing subtitles into video container' },
   'verify_mux': { display: 'Verify', group: 'verification', weight: 1, description: 'Verifying output compatibility' },

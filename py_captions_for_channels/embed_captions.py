@@ -17,7 +17,7 @@ from py_captions_for_channels.logging.structured_logger import get_logger
 from py_captions_for_channels.database import get_db
 from py_captions_for_channels.progress_tracker import get_progress_tracker
 from py_captions_for_channels.services.execution_service import ExecutionService
-from py_captions_for_channels.config import OPTIMIZATION_MODE
+from py_captions_for_channels.config import OPTIMIZATION_MODE, CAPTION_DELAY_MS
 from py_captions_for_channels.encoding_profiles import (
     get_whisper_parameters,
     get_ffmpeg_parameters,
@@ -778,6 +778,50 @@ def clamp_srt_to_end(srt_path, end_time, log):
     log.info(f"Clamped SRT to END={end_time:.3f}s")
 
 
+def shift_srt_timestamps(srt_path, delay_ms, log):
+    """Shift all SRT timestamps forward by delay_ms milliseconds.
+    
+    Useful for accessibility - some viewers prefer captions appearing 
+    slightly after audio.
+    """
+    if delay_ms <= 0:
+        return  # No delay needed
+        
+    import re
+
+    lines = []
+    timepat = re.compile(
+        r"(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})"
+    )
+
+    def to_sec(h, m, s, ms):
+        return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+    def to_srt_time(sec):
+        h = int(sec // 3600)
+        m = int((sec % 3600) // 60)
+        s = int(sec % 60)
+        ms = int((sec - int(sec)) * 1000)
+        return f"{h:02}:{m:02}:{s:02},{ms:03}"
+
+    delay_sec = delay_ms / 1000.0
+
+    with open(srt_path, encoding="utf-8") as f:
+        for line in f:
+            m = timepat.match(line)
+            if m:
+                start = to_sec(*m.groups()[:4]) + delay_sec
+                end = to_sec(*m.groups()[4:]) + delay_sec
+                new_line = f"{to_srt_time(start)} --> {to_srt_time(end)}\n"
+                lines.append(new_line)
+            else:
+                lines.append(line)
+
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+    log.info(f"Shifted SRT timestamps forward by {delay_ms}ms ({delay_sec:.3f}s)")
+
+
 def mux_subs(av_path, srt_path, output_path, log, job_id=None):
     """Step 4: Mux subtitles into MP4 with mov_text, +faststart."""
     if job_id:
@@ -1275,13 +1319,20 @@ def main():
         input_path=temp_av,
         misc_label="Probing media",
     )
-    # Step 3: Clamp SRT
+    # Step 3: Shift SRT timestamps (caption delay)
+    if CAPTION_DELAY_MS > 0:
+        run_step(
+            "shift_srt",
+            lambda: shift_srt_timestamps(srt_path, CAPTION_DELAY_MS, log),
+            input_path=srt_path,
+        )
+    # Step 4: Clamp SRT
     run_step(
         "clamp_srt",
         lambda: clamp_srt_to_end(srt_path, end_time, log),
         input_path=srt_path,
     )
-    # Step 4: Mux subtitles
+    # Step 5: Mux subtitles
     run_step(
         "ffmpeg_mux",
         lambda: mux_subs(temp_av, srt_path, temp_muxed, log, args.job_id),
