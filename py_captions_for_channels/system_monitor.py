@@ -507,7 +507,7 @@ class PipelineTimeline:
             self._save_state()
 
     def get_status(self) -> Dict[str, Any]:
-        """Get current pipeline status, loading from file for cross-process visibility."""
+        """Get current pipeline status from file (cross-process visibility)."""
         with self.lock:
             # Load latest state from file (updated by subprocess)
             self._load_state()
