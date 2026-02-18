@@ -779,8 +779,6 @@ async function loadSettings() {
     const res = await fetch('/api/env-settings');
     if (!res.ok) throw new Error('Failed to load settings');
     const data = await res.json();
-    console.log('Settings data received:', data);
-    console.log('Settings keys:', Object.keys(data));
     renderSettingsUI(data);
   } catch (err) {
     console.error('Failed to load settings:', err);
@@ -792,12 +790,8 @@ async function loadSettings() {
 }
 
 function renderSettingsUI(settings) {
-  console.log('renderSettingsUI called with:', settings);
   const container = document.getElementById('settings-container');
-  if (!container) {
-    console.error('settings-container not found!');
-    return;
-  }
+  if (!container) return;
   
   const categoryTitles = {
     channels_dvr: 'Channels DVR Configuration',
@@ -824,11 +818,7 @@ function renderSettingsUI(settings) {
   let html = '';
   
   for (const [category, items] of Object.entries(settings)) {
-    console.log(`Processing category: ${category}, items:`, items, 'keys:', Object.keys(items || {}));
-    if (!items || typeof items !== 'object' || Object.keys(items).length === 0) {
-      console.log(`Skipping category ${category} - empty or invalid`);
-      continue;
-    }
+    if (!items || typeof items !== 'object' || Object.keys(items).length === 0) continue;
     
     html += `<div class="settings-category" style="margin-bottom: 24px;">`;
     html += `<h3 style="margin: 0 0 16px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">
@@ -883,8 +873,6 @@ function renderSettingsUI(settings) {
     html += `</div>`;
   }
   
-  console.log('Generated HTML length:', html.length);
-  console.log('Number of categories processed:', Object.keys(settings).length);
   if (html.length === 0) {
     container.innerHTML = '<p style="color: orange;">No settings found in response.</p>';
   } else {
