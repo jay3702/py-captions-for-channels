@@ -157,6 +157,7 @@ ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 COPY py_captions_for_channels/ ./py_captions_for_channels/
 COPY scripts/ ./scripts/
 COPY whitelist.txt ./whitelist.txt
+COPY .env.example ./.env.example
 
 RUN chmod +x ./scripts/*.sh
 RUN mkdir -p /app/data /app/logs
