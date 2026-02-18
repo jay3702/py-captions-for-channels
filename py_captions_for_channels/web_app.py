@@ -376,23 +376,39 @@ def load_env_settings() -> dict:
     try:
         # Load template from .env.example (all available settings with descriptions)
         if not env_example_path.exists():
-            LOG.warning(".env.example not found, falling back to .env only")
+            LOG.warning(
+                f".env.example not found at {env_example_path}, falling back to .env only"
+            )
             template = {}
         else:
+            LOG.debug(f"Loading template from {env_example_path}")
             template = _parse_env_file(env_example_path)
+            LOG.debug(
+                f"Template loaded: {sum(len(v) for v in template.values())} settings"
+            )
 
         # Load actual values from .env
         if not env_path.exists():
-            LOG.warning(".env file not found, using .env.example defaults only")
+            LOG.warning(
+                f".env file not found at {env_path}, using .env.example defaults only"
+            )
             actual = {}
         else:
+            LOG.debug(f"Loading actual values from {env_path}")
             actual = _parse_env_file(env_path)
+            LOG.debug(
+                f"Actual loaded: {sum(len(v) for v in actual.values())} settings"
+            )
 
         # Merge: start with template, override values from actual .env
+        # Get all unique categories from both template and actual
+        all_categories = set(template.keys()) | set(actual.keys())
+        
         merged = {}
-        for category in template.keys():
+        for category in all_categories:
             merged[category] = {}
-            # Add all settings from template
+            
+            # Add all settings from template for this category
             for key, config in template.get(category, {}).items():
                 merged[category][key] = config.copy()
                 # Override value if present in actual .env
@@ -408,10 +424,13 @@ def load_env_settings() -> dict:
                 if key not in merged[category]:
                     merged[category][key] = config.copy()
 
+        LOG.info(
+            f"Loaded settings: {sum(len(v) for v in merged.values())} settings across {len(merged)} categories"
+        )
         return merged
 
     except Exception as e:
-        LOG.error(f"Error loading .env settings: {e}")
+        LOG.error(f"Error loading .env settings: {e}", exc_info=True)
         return {"error": str(e)}
 
 
