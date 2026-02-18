@@ -2,8 +2,14 @@ import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
-from datetime import datetime
+from datetime import datetime, timezone
 import json
+
+# Try to import ZoneInfo (Python 3.9+)
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 # Verbosity levels
 LOG_LEVELS = {
@@ -69,9 +75,29 @@ def get_logger(name="pipeline", job_id=None):
 
 
 class StructuredLogFormatter(logging.Formatter):
+    def __init__(self):
+        super().__init__()
+        # Get server timezone on initialization
+        self._tz = self._get_timezone()
+
+    def _get_timezone(self):
+        """Get server timezone from SERVER_TZ env var."""
+        tz_name = os.getenv("SERVER_TZ")
+        if tz_name and ZoneInfo:
+            try:
+                return ZoneInfo(tz_name)
+            except Exception:
+                pass
+        # Fallback to UTC
+        return timezone.utc
+
     def format(self, record):
+        # Get current time in server timezone
+        now = datetime.now(self._tz)
+        timestamp = now.isoformat()
+
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": timestamp,
             "level": record.levelname,
             "event": getattr(record, "event", None),
             "msg": record.getMessage(),
