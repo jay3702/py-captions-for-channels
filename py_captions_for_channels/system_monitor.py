@@ -515,8 +515,8 @@ class PipelineTimeline:
                 if s.started_at >= cutoff or s.job_id == job_id
             ]
 
-            if self.current_job_id == job_id:
-                self.current_job_id = None
+            # Keep current_job_id set so completed stages remain visible
+            # It will be cleared when the next job starts in stage_start()
 
             self._save_state()
 
