@@ -19,7 +19,7 @@ class JobNumberManager:
 
     def __init__(self, server_tz: ZoneInfo | None = None):
         """Initialize job number manager.
-        
+
         Args:
             server_tz: Timezone to use for "today" calculations. If None, uses UTC.
         """
