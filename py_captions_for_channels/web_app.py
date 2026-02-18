@@ -377,7 +377,8 @@ def load_env_settings() -> dict:
         # Load template from .env.example (all available settings with descriptions)
         if not env_example_path.exists():
             LOG.warning(
-                f".env.example not found at {env_example_path}, falling back to .env only"
+                f".env.example not found at {env_example_path}, "
+                f"falling back to .env only"
             )
             template = {}
         else:
@@ -396,18 +397,16 @@ def load_env_settings() -> dict:
         else:
             LOG.debug(f"Loading actual values from {env_path}")
             actual = _parse_env_file(env_path)
-            LOG.debug(
-                f"Actual loaded: {sum(len(v) for v in actual.values())} settings"
-            )
+            LOG.debug(f"Actual loaded: {sum(len(v) for v in actual.values())} settings")
 
         # Merge: start with template, override values from actual .env
         # Get all unique categories from both template and actual
         all_categories = set(template.keys()) | set(actual.keys())
-        
+
         merged = {}
         for category in all_categories:
             merged[category] = {}
-            
+
             # Add all settings from template for this category
             for key, config in template.get(category, {}).items():
                 merged[category][key] = config.copy()
@@ -425,7 +424,8 @@ def load_env_settings() -> dict:
                     merged[category][key] = config.copy()
 
         LOG.info(
-            f"Loaded settings: {sum(len(v) for v in merged.values())} settings across {len(merged)} categories"
+            f"Loaded settings: {sum(len(v) for v in merged.values())} "
+            f"settings across {len(merged)} categories"
         )
         return merged
 
