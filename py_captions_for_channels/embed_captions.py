@@ -284,6 +284,61 @@ def wait_for_file_stability(
             sys.exit(1)
 
 
+def validate_audio_decodability(path, log):
+    """
+    Test if ffmpeg can safely decode audio from the file without crashing.
+
+    Returns True if file is safe to decode directly, False if audio should
+    be extracted to WAV first to avoid segfaults from corrupted video frames.
+    """
+    # Try to decode just 1 second of audio to test decodability
+    cmd = [
+        "ffmpeg",
+        "-v",
+        "error",  # Only show errors
+        "-t",
+        "1",  # Test first 1 second only
+        "-i",
+        path,
+        "-vn",  # Skip video (we only care about audio)
+        "-f",
+        "null",  # Don't write output
+        "-",
+    ]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=10  # 10 second timeout
+        )
+
+        # Check for fatal errors in stderr that indicate corrupted frames
+        if result.returncode != 0:
+            stderr_lower = result.stderr.lower()
+            if any(
+                error in stderr_lower
+                for error in [
+                    "invalid frame dimensions",
+                    "segmentation fault",
+                    "invalid data",
+                    "corrupt",
+                    "error",
+                ]
+            ):
+                log.warning(
+                    f"Audio decodability test failed for {path}: {result.stderr[:200]}"
+                )
+                return False
+
+        log.info("Audio decodability test passed - file can be decoded directly")
+        return True
+
+    except subprocess.TimeoutExpired:
+        log.warning(f"Audio decodability test timed out for {path}")
+        return False
+    except Exception as e:
+        log.warning(f"Audio decodability test error for {path}: {e}")
+        return False
+
+
 def probe_duration(path, log):
     """Return duration in seconds using ffprobe."""
     cmd = [
@@ -921,11 +976,66 @@ def main():
                         "Using standard Whisper parameters (OPTIMIZATION_MODE=standard)"
                     )
 
+                # Check if file can be safely decoded - if not, extract audio first
+                wav_path = None
+                use_wav_path = mpg_path  # Default to direct transcription
+
+                if not validate_audio_decodability(mpg_path, log):
+                    log.warning(
+                        "File contains corrupted/problematic frames - "
+                        "extracting audio to WAV first to avoid segfault"
+                    )
+                    wav_path = f"{mpg_path}.temp.wav"
+                    try:
+                        extract_cmd = [
+                            "ffmpeg",
+                            "-y",
+                            "-err_detect",
+                            "ignore_err",  # Ignore decoding errors
+                            "-i",
+                            mpg_path,
+                            "-vn",  # No video
+                            "-acodec",
+                            "pcm_s16le",  # PCM audio
+                            "-ar",
+                            "16000",  # 16kHz sample rate (Whisper standard)
+                            "-ac",
+                            "1",  # Mono
+                            wav_path,
+                        ]
+                        log.info(f"Extracting audio: {' '.join(extract_cmd)}")
+                        result = subprocess.run(
+                            extract_cmd,
+                            check=False,  # Don't raise on non-zero exit
+                            capture_output=True,
+                            text=True,
+                        )
+
+                        if result.returncode == 0 and os.path.exists(wav_path):
+                            log.info(f"Audio extracted successfully to {wav_path}")
+                            use_wav_path = wav_path  # Use WAV for transcription
+                        else:
+                            log.error(
+                                f"Audio extraction failed (exit {result.returncode}): "
+                                f"{result.stderr[:500]}"
+                            )
+                            raise Exception("Proactive WAV extraction failed")
+
+                    except Exception as e:
+                        log.error(f"Failed to extract audio proactively: {e}")
+                        # Clean up partial WAV
+                        if wav_path and os.path.exists(wav_path):
+                            try:
+                                os.remove(wav_path)
+                            except Exception:
+                                pass
+                        raise
+
                 # Try GPU transcription first, fall back to CPU if GPU libraries fail
                 transcription_successful = False
                 try:
                     segments_generator, info = model.transcribe(
-                        mpg_path, **whisper_params
+                        use_wav_path, **whisper_params
                     )
                     transcription_successful = True
                 except Exception as e:
@@ -941,86 +1051,87 @@ def main():
                         )
                         log.info("Faster-Whisper model reloaded with CPU")
                         try:
+                            # Use same path (WAV if we extracted it, mpg otherwise)
                             segments_generator, info = model.transcribe(
-                                mpg_path, **whisper_params
+                                use_wav_path, **whisper_params
                             )
                             transcription_successful = True
                         except Exception as cpu_error:
                             log.error(
-                                "Faster-Whisper transcription failed: %s",
+                                "Faster-Whisper transcription failed on CPU: %s",
                                 cpu_error,
                             )
-                            # Check if this is a codec error
-                            error_str = str(cpu_error)
-                            if (
-                                "avcodec" in error_str.lower()
-                                or "16976906" in error_str
-                            ):
-                                log.warning(
-                                    "Codec error detected. Attempting "
-                                    "workaround: extracting audio to WAV..."
-                                )
-                                # Try extracting audio as WAV first
-                                wav_path = f"{mpg_path}.temp.wav"
-                                try:
-                                    extract_cmd = [
-                                        "ffmpeg",
-                                        "-y",
-                                        "-i",
-                                        mpg_path,
-                                        "-vn",  # No video
-                                        "-acodec",
-                                        "pcm_s16le",  # PCM audio
-                                        "-ar",
-                                        "16000",  # 16kHz sample rate (Whisper standard)
-                                        "-ac",
-                                        "1",  # Mono
-                                        wav_path,
-                                    ]
-                                    log.info(
-                                        f"Extracting audio: {' '.join(extract_cmd)}"
+                            # If we haven't tried WAV extraction yet, try it now
+                            if wav_path is None:
+                                error_str = str(cpu_error)
+                                if (
+                                    "avcodec" in error_str.lower()
+                                    or "16976906" in error_str
+                                    or "invalid" in error_str.lower()
+                                ):
+                                    log.warning(
+                                        "Codec error detected. Attempting "
+                                        "workaround: extracting audio to WAV..."
                                     )
-                                    subprocess.run(
-                                        extract_cmd, check=True, capture_output=True
-                                    )
-                                    log.info(
-                                        f"Audio extracted successfully to {wav_path}"
-                                    )
-
-                                    # Try transcribing the WAV file
-                                    segments_generator, info = model.transcribe(
-                                        wav_path, **whisper_params
-                                    )
-                                    transcription_successful = True
-                                    log.info(
-                                        "Transcription successful using WAV workaround"
-                                    )
-
-                                    # Clean up WAV file after success
+                                    wav_path = f"{mpg_path}.temp.wav"
                                     try:
-                                        os.remove(wav_path)
-                                        log.info(
-                                            "Cleaned up temporary WAV file: %s",
+                                        extract_cmd = [
+                                            "ffmpeg",
+                                            "-y",
+                                            "-err_detect",
+                                            "ignore_err",
+                                            "-i",
+                                            mpg_path,
+                                            "-vn",  # No video
+                                            "-acodec",
+                                            "pcm_s16le",  # PCM audio
+                                            "-ar",
+                                            "16000",  # 16kHz sample rate
+                                            "-ac",
+                                            "1",  # Mono
                                             wav_path,
+                                        ]
+                                        log.info(
+                                            f"Extracting audio: "
+                                            f"{' '.join(extract_cmd)}"
                                         )
-                                    except Exception:
-                                        pass
-                                except Exception as wav_error:
-                                    log.error(
-                                        "WAV extraction workaround failed: %s",
-                                        wav_error,
-                                    )
-                                    # Clean up partial WAV if it exists
-                                    try:
-                                        if os.path.exists(wav_path):
-                                            os.remove(wav_path)
-                                    except Exception:
-                                        pass
-                                    raise cpu_error  # Re-raise original error
+                                        subprocess.run(
+                                            extract_cmd,
+                                            check=True,
+                                            capture_output=True,
+                                        )
+                                        log.info(
+                                            "Audio extracted successfully to "
+                                            f"{wav_path}"
+                                        )
+
+                                        # Try transcribing the WAV file
+                                        segments_generator, info = model.transcribe(
+                                            wav_path, **whisper_params
+                                        )
+                                        transcription_successful = True
+                                        log.info("Transcription successful using WAV")
+
+                                    except Exception as wav_error:
+                                        log.error(
+                                            "WAV extraction workaround failed: %s",
+                                            wav_error,
+                                        )
+                                        # Clean up partial WAV if it exists
+                                        try:
+                                            if wav_path and os.path.exists(wav_path):
+                                                os.remove(wav_path)
+                                                wav_path = None
+                                        except Exception:
+                                            pass
+                                        raise cpu_error  # Re-raise original error
+                                else:
+                                    raise  # Not a codec error, re-raise
                             else:
-                                raise cpu_error
+                                # Already tried WAV, nothing more we can do
+                                raise
                     else:
-                        raise  # CPU transcription failed, re-raise
+                        raise  # GPU failed but not CUDA device, re-raise
 
                 if not transcription_successful:
                     raise RuntimeError("Transcription failed on all attempts")
@@ -1082,6 +1193,14 @@ def main():
                 log.info(
                     f"Faster-Whisper completed successfully, generated: {srt_path}"
                 )
+
+                # Clean up temporary WAV file if it was created
+                if wav_path and os.path.exists(wav_path):
+                    try:
+                        os.remove(wav_path)
+                        log.info(f"Cleaned up temporary WAV file: {wav_path}")
+                    except Exception as e:
+                        log.warning(f"Failed to clean up WAV file: {e}")
 
             except ImportError as e:
                 log.error(
