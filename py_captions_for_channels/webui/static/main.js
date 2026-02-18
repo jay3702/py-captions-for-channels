@@ -1705,7 +1705,8 @@ const PIPELINE_STAGES = {
   'clamp_srt': { display: 'Clamp SRT', group: 'verification', weight: 1, description: 'Clamping subtitle timestamps to media duration' },
   'ffmpeg_mux': { display: 'Mux Captions', group: 'encoding', weight: 3, description: 'Muxing subtitles into video container' },
   'verify_mux': { display: 'Verify', group: 'verification', weight: 1, description: 'Verifying output compatibility' },
-  'atomic_replace': { display: 'Finalize', group: 'finalization', weight: 1, description: 'Replacing original with captioned version' }
+  'replace_output': { display: 'Finalize', group: 'finalization', weight: 1, description: 'Replacing original with captioned version' },
+  'cleanup': { display: 'Cleanup', group: 'finalization', weight: 1, description: 'Removing temporary files' }
 };
 
 const STAGE_GROUPS = {
@@ -1770,7 +1771,14 @@ function updatePipelineStatus(pipeline) {
       completedWeight += s.meta.weight * 0.5; // 50% credit for active stage
     }
   });
-  const progressPercent = Math.round((completedWeight / totalWeight) * 100);
+  let progressPercent = Math.round((completedWeight / totalWeight) * 100);
+  
+  // Detect completion: if no current stage and all known stages are complete
+  const allCompleted = !currentStage && completedStageNames.size > 0 && 
+                       stageStatuses.every(s => s.status === 'completed' || !completedStageNames.has(s.stageName));
+  if (allCompleted) {
+    progressPercent = 100; // Force 100% when job is complete
+  }
   
   // Render progress bar UI
   let html = `
@@ -1834,13 +1842,19 @@ function updatePipelineStatus(pipeline) {
   });
   html += '</div>';
   
-  // Show current stage details
+  // Show current stage details or completion message
   if (currentStage) {
     const meta = PIPELINE_STAGES[currentStageName] || { display: currentStageName, description: 'Processing...' };
     html += `
       <div class="pipeline-current-step">
         <strong>Current:</strong> ${meta.display} — ${meta.description}
         ${currentStage.gpu_engaged ? '<strong style="color: var(--accent); margin-left: 8px;">⚡ GPU Active</strong>' : ''}
+      </div>
+    `;
+  } else if (allCompleted) {
+    html += `
+      <div class="pipeline-current-step" style="border-left-color: #43e97b;">
+        <strong style="color: #43e97b;">✓ Complete!</strong> All stages finished successfully.
       </div>
     `;
   }
