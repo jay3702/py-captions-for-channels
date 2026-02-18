@@ -186,9 +186,14 @@ async function fetchStatus() {
         execListBacklog.innerHTML = sortedBacklog.length
           ? sortedBacklog.map(exec => renderExecution(exec)).join('')
           : '<li class="muted">No queued executions</li>';
+        
+        // Update pipeline activity indicator with first running execution
+        const runningExec = activeExecutions.find(exec => exec.status === 'running');
+        updatePipelineActivityFromExecution(runningExec);
     } else {
         execListActive.innerHTML = '<li class="muted">No active executions</li>';
         execListBacklog.innerHTML = '<li class="muted">No queued executions</li>';
+        updatePipelineActivityFromExecution(null);
     }
   } catch (err) {
       document.getElementById('exec-list-active').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
@@ -1271,9 +1276,13 @@ function updateSystemMonitor() {
             width: gpuWidth,
             height: 130,
             class: 'monitor-chart',
+            cursor: {
+              show: true,
+              drag: { x: false, y: false }
+            },
             legend: {
               show: true,
-              live: false
+              live: true
             },
             scales: {
               x: { time: true },
@@ -1349,6 +1358,9 @@ function updateSystemMonitor() {
       
       // Update pipeline status
       updatePipelineStatus(pipeline);
+      
+      // Update pipeline activity indicator
+      updatePipelineActivityIndicator(pipeline);
     })
     .catch(err => console.error('Failed to fetch monitor data:', err));
 }
@@ -1608,6 +1620,26 @@ function updatePipelineStatus(pipeline) {
   
   html += '</div>';
   pipelineInfo.innerHTML = html;
+}
+
+function updatePipelineActivityFromExecution(execution) {
+  const indicator = document.getElementById('pipeline-activity-indicator');
+  if (!indicator) return;
+  
+  if (execution && execution.input_path) {
+    // Extract filename from path (handle both / and \\ separators)
+    const filename = execution.input_path.split(/[/\\]/).pop();
+    // Remove file extension
+    const displayName = filename.replace(/\.[^/.]+$/, '');
+    indicator.innerHTML = `Pipeline Activity: <strong style="color: var(--text);">${displayName}</strong>`;
+  } else {
+    indicator.textContent = 'Real-time system and pipeline monitoring';
+  }
+}
+
+function updatePipelineActivityIndicator(pipeline) {
+  // Legacy function - kept for backward compatibility
+  // Now handled by updatePipelineActivityFromExecution
 }
 
 function startSystemMonitor() {
