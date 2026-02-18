@@ -312,7 +312,7 @@ def validate_audio_decodability(path, log):
         codec = result.stdout.strip().lower()
 
         # MPEG2 files: always use WAV extraction (corruption can be anywhere)
-        if codec == "mpeg2video":
+        if "mpeg2video" in codec:
             log.warning(
                 f"MPEG2 codec detected - using WAV extraction to avoid "
                 f"potential corruption (codec: {codec})"
