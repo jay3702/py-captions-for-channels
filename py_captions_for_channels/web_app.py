@@ -307,7 +307,8 @@ def _parse_env_file(file_path: Path) -> dict:
             elif "ADVANCED CONFIGURATION" in line_upper:
                 current_category = "advanced"
 
-            # Parse setting line (active or commented) - check this BEFORE comment collection
+            # Parse setting line (active or commented)
+            # Check this BEFORE comment collection
             elif "=" in line_stripped and current_category:
                 # Skip section dividers (lines that are just equal signs)
                 stripped_no_comment = line_stripped.lstrip("#").strip()
