@@ -846,6 +846,55 @@ function renderSettingsUI(settings) {
     'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
   };
   
+  // Common IANA timezones grouped by region
+  const timezones = [
+    '(System Default)',
+    '--- Americas ---',
+    'America/New_York',
+    'America/Chicago', 
+    'America/Denver',
+    'America/Phoenix',
+    'America/Los_Angeles',
+    'America/Anchorage',
+    'America/Honolulu',
+    'America/Toronto',
+    'America/Vancouver',
+    'America/Mexico_City',
+    'America/Sao_Paulo',
+    'America/Buenos_Aires',
+    '--- Europe ---',
+    'Europe/London',
+    'Europe/Paris',
+    'Europe/Berlin',
+    'Europe/Madrid',
+    'Europe/Rome',
+    'Europe/Amsterdam',
+    'Europe/Brussels',
+    'Europe/Vienna',
+    'Europe/Stockholm',
+    'Europe/Moscow',
+    '--- Asia ---',
+    'Asia/Dubai',
+    'Asia/Kolkata',
+    'Asia/Bangkok',
+    'Asia/Singapore',
+    'Asia/Hong_Kong',
+    'Asia/Shanghai',
+    'Asia/Tokyo',
+    'Asia/Seoul',
+    '--- Pacific ---',
+    'Australia/Sydney',
+    'Australia/Melbourne',
+    'Australia/Brisbane',
+    'Australia/Perth',
+    'Pacific/Auckland',
+    '--- Other ---',
+    'UTC'
+  ];
+  
+  // Get client's local timezone
+  const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  
   const numericFields = ['POLL_INTERVAL_SECONDS', 'POLL_LIMIT', 'WEBHOOK_PORT', 
                          'PIPELINE_TIMEOUT', 'STALE_EXECUTION_SECONDS', 'API_TIMEOUT'];
   
@@ -893,6 +942,38 @@ function renderSettingsUI(settings) {
           html += `<option value="${option}" ${selected}>${option}</option>`;
         }
         html += `</select>`;
+      }
+      // SERVER_TZ timezone dropdown with client timezone preselected
+      else if (key === 'SERVER_TZ') {
+        html += `<select id="env-${key}" name="${key}" data-category="${category}" style="width:100%;">`;
+        
+        // Determine which timezone should be selected
+        // If value is empty or default, use client timezone
+        const effectiveValue = (value && value !== 'System timezone') ? value : clientTimezone;
+        
+        for (const tz of timezones) {
+          // Skip section headers (start with ---)
+          if (tz.startsWith('---')) {
+            html += `<option disabled>────────────────</option>`;
+            continue;
+          }
+          
+          // System default option
+          if (tz === '(System Default)') {
+            const selected = (!value || value === 'System timezone') ? 'selected' : '';
+            html += `<option value="" ${selected}>${tz}</option>`;
+            continue;
+          }
+          
+          // Regular timezone
+          const selected = effectiveValue === tz ? 'selected' : '';
+          html += `<option value="${tz}" ${selected}>${tz}</option>`;
+        }
+        
+        html += `</select>`;
+        html += `<p style="font-size: 11px; color: var(--muted); margin: 4px 0 0 0;">
+                  Your browser timezone: ${clientTimezone}
+                 </p>`;
       }
       // Boolean fields as checkbox
       else if (booleanFields.includes(key)) {
