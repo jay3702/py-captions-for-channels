@@ -307,19 +307,7 @@ def _parse_env_file(file_path: Path) -> dict:
             elif "ADVANCED CONFIGURATION" in line_upper:
                 current_category = "advanced"
 
-            # Collect comment lines as description
-            elif line_stripped.startswith("#") and current_category:
-                # Skip section dividers
-                if not line_stripped.startswith("# ===="):
-                    desc = line_stripped.lstrip("# ").strip()
-                    if (
-                        desc
-                        and not desc.startswith("Default:")
-                        and not desc.startswith("Note:")
-                    ):
-                        current_description.append(desc)
-
-            # Parse setting line (active or commented)
+            # Parse setting line (active or commented) - check this BEFORE comment collection
             elif "=" in line_stripped and current_category:
                 # Handle "KEY=value" and "# KEY=value" (commented optional)
                 is_commented = line_stripped.startswith("#")
@@ -343,6 +331,18 @@ def _parse_env_file(file_path: Path) -> dict:
                         "optional": is_commented,
                     }
                     current_description = []
+
+            # Collect comment lines as description (after checking for settings)
+            elif line_stripped.startswith("#") and current_category:
+                # Skip section dividers
+                if not line_stripped.startswith("# ===="):
+                    desc = line_stripped.lstrip("# ").strip()
+                    if (
+                        desc
+                        and not desc.startswith("Default:")
+                        and not desc.startswith("Note:")
+                    ):
+                        current_description.append(desc)
 
             # Empty line resets description
             elif not line_stripped:
