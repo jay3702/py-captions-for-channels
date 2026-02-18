@@ -22,6 +22,7 @@ from py_captions_for_channels.encoding_profiles import (
     get_whisper_parameters,
     get_ffmpeg_parameters,
 )
+from py_captions_for_channels.system_monitor import get_pipeline_timeline
 
 # Unique identifier for our subtitle tracks
 SUBTITLE_TRACK_NAME = "py-captions-for-channels"
@@ -175,6 +176,24 @@ def update_misc_progress(job_id, percent, message):
     try:
         progress_tracker = get_progress_tracker()
         progress_tracker.update_progress(job_id, "misc", percent, message)
+    except Exception:
+        pass
+
+
+def update_whisper_progress(job_id, percent, message):
+    """Update Whisper progress indicator in the UI."""
+    try:
+        progress_tracker = get_progress_tracker()
+        progress_tracker.update_progress(job_id, "whisper", percent, message)
+    except Exception:
+        pass
+
+
+def update_ffmpeg_progress(job_id, percent, message):
+    """Update ffmpeg progress indicator in the UI."""
+    try:
+        progress_tracker = get_progress_tracker()
+        progress_tracker.update_progress(job_id, "ffmpeg", percent, message)
     except Exception:
         pass
 
@@ -563,7 +582,7 @@ def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
                 # Report every 5% or significant progress
                 if progress >= last_progress + 5:
                     if job_id:
-                        update_misc_progress(
+                        update_ffmpeg_progress(
                             job_id,
                             progress,
                             f"{step_name}: {current_time:.0f}/{duration:.0f}s",
@@ -582,7 +601,7 @@ def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
 
         # Final progress update
         if job_id:
-            update_misc_progress(job_id, 100, f"{step_name} complete")
+            update_ffmpeg_progress(job_id, 100, f"{step_name} complete")
 
     finally:
         process.stdout.close()
@@ -680,7 +699,7 @@ def clamp_srt_to_end(srt_path, end_time, log):
 def mux_subs(av_path, srt_path, output_path, log, job_id=None):
     """Step 4: Mux subtitles into MP4 with mov_text, +faststart."""
     if job_id:
-        update_misc_progress(job_id, 0, "Muxing subtitles...")
+        update_ffmpeg_progress(job_id, 0, "Muxing subtitles...")
 
     cmd = [
         "ffmpeg",
@@ -714,7 +733,7 @@ def mux_subs(av_path, srt_path, output_path, log, job_id=None):
     try:
         subprocess.check_call(cmd)
         if job_id:
-            update_misc_progress(job_id, 100, "Muxing complete")
+            update_ffmpeg_progress(job_id, 100, "Muxing complete")
     except subprocess.CalledProcessError as e:
         log.error(f"ffmpeg mux failed: {e}")
         sys.exit(1)
@@ -778,20 +797,26 @@ def main():
     job_id = args.job_id or extract_job_id_from_path(mpg_path)
     log = get_logger("embed_captions", job_id=job_id)
     step_tracker = StepTracker(job_id, log)
+    pipeline = get_pipeline_timeline()
+    filename = os.path.basename(mpg_path)
 
     def run_step(step_name, func, input_path=None, output_path=None, misc_label=None):
         step_tracker.start(step_name, input_path=input_path, output_path=output_path)
+        pipeline.stage_start(step_name, job_id, filename)
         if misc_label:
             update_misc_progress(job_id, 0.0, misc_label)
         try:
             result = func()
             step_tracker.finish(step_name, status="completed")
+            pipeline.stage_end(step_name, job_id)
             return result
         except SystemExit:
             step_tracker.finish(step_name, status="failed")
+            pipeline.stage_end(step_name, job_id)
             raise
         except Exception:
             step_tracker.finish(step_name, status="failed")
+            pipeline.stage_end(step_name, job_id)
             raise
         finally:
             if misc_label:
@@ -822,6 +847,8 @@ def main():
     if args.skip_caption_generation:
         log.info("Skipping caption generation step (using existing SRT)")
         step_tracker.finish("whisper", status="skipped")
+        pipeline.stage_start("whisper", job_id, filename)
+        pipeline.stage_end("whisper", job_id)
     else:
         log.info(f"Generating captions with Faster-Whisper model: {args.model}")
 
@@ -1027,7 +1054,7 @@ def main():
                         if progress >= last_progress_report + 5 or (
                             progress - last_progress_report >= 1 and time.time() % 2 < 1
                         ):
-                            update_misc_progress(
+                            update_whisper_progress(
                                 args.job_id,
                                 progress,
                                 f"Transcribing: {segment.end:.0f}/"
@@ -1041,7 +1068,7 @@ def main():
                             )
 
                 # Final progress update
-                update_misc_progress(
+                update_whisper_progress(
                     args.job_id, 95, f"Transcription complete: {segment_count} segments"
                 )
                 log.info(f"Transcribed {segment_count} segments total")
@@ -1137,8 +1164,10 @@ def main():
             lambda: [os.remove(f) for f in [temp_av] if os.path.exists(f)],
             misc_label="Cleaning up",
         )
+        pipeline.job_complete(job_id)
         log.info("Caption embedding complete.")
     else:
+        pipeline.job_complete(job_id)
         log.error(
             f"Verification failed: subtitle_duration={s_dur:.3f}s > "
             f"max_av+0.050={max_av+0.050:.3f}s. Not replacing target file."
