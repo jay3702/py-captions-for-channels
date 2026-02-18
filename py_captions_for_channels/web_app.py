@@ -261,8 +261,101 @@ def get_env_file_path() -> Path:
     return Path(__file__).parent.parent / ".env"
 
 
+def _parse_env_file(file_path: Path) -> dict:
+    """Parse an env file into structured settings.
+    
+    Args:
+        file_path: Path to the env file to parse
+        
+    Returns:
+        Dict with settings grouped by category
+    """
+    settings = {
+        "channels_dvr": {},
+        "channelwatch": {},
+        "event_source": {},
+        "polling": {},
+        "webhook": {},
+        "pipeline": {},
+        "state_logging": {},
+        "advanced": {},
+    }
+
+    current_category = None
+    current_description = []
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line_stripped = line.strip()
+            line_upper = line_stripped.upper()
+
+            # Category headers (case-insensitive)
+            if "CHANNELS DVR CONFIGURATION" in line_upper:
+                current_category = "channels_dvr"
+            elif "CHANNELWATCH CONFIGURATION" in line_upper:
+                current_category = "channelwatch"
+            elif "EVENT SOURCE CONFIGURATION" in line_upper:
+                current_category = "event_source"
+            elif "POLLING SOURCE CONFIGURATION" in line_upper:
+                current_category = "polling"
+            elif "WEBHOOK SERVER CONFIGURATION" in line_upper:
+                current_category = "webhook"
+            elif "CAPTION PIPELINE CONFIGURATION" in line_upper:
+                current_category = "pipeline"
+            elif "STATE AND LOGGING CONFIGURATION" in line_upper:
+                current_category = "state_logging"
+            elif "ADVANCED CONFIGURATION" in line_upper:
+                current_category = "advanced"
+
+            # Collect comment lines as description
+            elif line_stripped.startswith("#") and current_category:
+                # Skip section dividers
+                if not line_stripped.startswith("# ===="):
+                    desc = line_stripped.lstrip("# ").strip()
+                    if (
+                        desc
+                        and not desc.startswith("Default:")
+                        and not desc.startswith("Note:")
+                    ):
+                        current_description.append(desc)
+
+            # Parse setting line (active or commented)
+            elif "=" in line_stripped and current_category:
+                # Handle "KEY=value" and "# KEY=value" (commented optional)
+                is_commented = line_stripped.startswith("#")
+                setting_line = line_stripped.lstrip("#").strip()
+
+                if "=" in setting_line:
+                    key, value = setting_line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+
+                    # Extract default from description
+                    default_value = None
+                    for desc_line in current_description:
+                        if desc_line.startswith("Default:"):
+                            default_value = desc_line.replace("Default:", "").strip()
+
+                    settings[current_category][key] = {
+                        "value": value,
+                        "description": " ".join(current_description),
+                        "default": default_value,
+                        "optional": is_commented,
+                    }
+                    current_description = []
+
+            # Empty line resets description
+            elif not line_stripped:
+                current_description = []
+
+    return settings
+
+
 def load_env_settings() -> dict:
-    """Load all settings from .env file with their structure and metadata.
+    """Load all settings from .env.example (template) merged with actual .env values.
+
+    This ensures all available settings appear in the UI, even if not in .env yet.
+    Current values come from .env, descriptions/defaults come from .env.example.
 
     Returns:
         Dict with settings grouped by category:
@@ -278,92 +371,44 @@ def load_env_settings() -> dict:
         }
     """
     env_path = get_env_file_path()
-
-    if not env_path.exists():
-        return {"error": ".env file not found"}
-
-    settings = {
-        "channels_dvr": {},
-        "channelwatch": {},
-        "event_source": {},
-        "polling": {},
-        "webhook": {},
-        "pipeline": {},
-        "state_logging": {},
-        "advanced": {},
-    }
-
-    current_category = None
-    current_description = []
+    env_example_path = Path(__file__).parent.parent / ".env.example"
 
     try:
-        with open(env_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line_stripped = line.strip()
-                line_upper = line_stripped.upper()
+        # Load template from .env.example (all available settings with descriptions)
+        if not env_example_path.exists():
+            LOG.warning(".env.example not found, falling back to .env only")
+            template = {}
+        else:
+            template = _parse_env_file(env_example_path)
 
-                # Category headers (case-insensitive)
-                if "CHANNELS DVR CONFIGURATION" in line_upper:
-                    current_category = "channels_dvr"
-                elif "CHANNELWATCH CONFIGURATION" in line_upper:
-                    current_category = "channelwatch"
-                elif "EVENT SOURCE CONFIGURATION" in line_upper:
-                    current_category = "event_source"
-                elif "POLLING SOURCE CONFIGURATION" in line_upper:
-                    current_category = "polling"
-                elif "WEBHOOK SERVER CONFIGURATION" in line_upper:
-                    current_category = "webhook"
-                elif "CAPTION PIPELINE CONFIGURATION" in line_upper:
-                    current_category = "pipeline"
-                elif "STATE AND LOGGING CONFIGURATION" in line_upper:
-                    current_category = "state_logging"
-                elif "ADVANCED CONFIGURATION" in line_upper:
-                    current_category = "advanced"
+        # Load actual values from .env
+        if not env_path.exists():
+            LOG.warning(".env file not found, using .env.example defaults only")
+            actual = {}
+        else:
+            actual = _parse_env_file(env_path)
 
-                # Collect comment lines as description
-                elif line_stripped.startswith("#") and current_category:
-                    # Skip section dividers
-                    if not line_stripped.startswith("# ===="):
-                        desc = line_stripped.lstrip("# ").strip()
-                        if (
-                            desc
-                            and not desc.startswith("Default:")
-                            and not desc.startswith("Note:")
-                        ):
-                            current_description.append(desc)
+        # Merge: start with template, override values from actual .env
+        merged = {}
+        for category in template.keys():
+            merged[category] = {}
+            # Add all settings from template
+            for key, config in template.get(category, {}).items():
+                merged[category][key] = config.copy()
+                # Override value if present in actual .env
+                if key in actual.get(category, {}):
+                    merged[category][key]["value"] = actual[category][key]["value"]
+                    # If it's set in actual .env, mark as not optional
+                    merged[category][key]["optional"] = actual[category][key][
+                        "optional"
+                    ]
 
-                # Parse setting line (active or commented)
-                elif "=" in line_stripped and current_category:
-                    # Handle "KEY=value" and "# KEY=value" (commented optional)
-                    is_commented = line_stripped.startswith("#")
-                    setting_line = line_stripped.lstrip("#").strip()
+            # Add any settings from actual .env that aren't in template
+            for key, config in actual.get(category, {}).items():
+                if key not in merged[category]:
+                    merged[category][key] = config.copy()
 
-                    if "=" in setting_line:
-                        key, value = setting_line.split("=", 1)
-                        key = key.strip()
-                        value = value.strip()
-
-                        # Extract default from description
-                        default_value = None
-                        for desc_line in current_description:
-                            if desc_line.startswith("Default:"):
-                                default_value = desc_line.replace(
-                                    "Default:", ""
-                                ).strip()
-
-                        settings[current_category][key] = {
-                            "value": value,
-                            "description": " ".join(current_description),
-                            "default": default_value,
-                            "optional": is_commented,
-                        }
-                        current_description = []
-
-                # Empty line resets description
-                elif not line_stripped:
-                    current_description = []
-
-        return settings
+        return merged
 
     except Exception as e:
         LOG.error(f"Error loading .env settings: {e}")
