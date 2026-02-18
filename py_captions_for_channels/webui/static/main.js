@@ -1693,59 +1693,156 @@ function appendChartData(chart, timestamp, values) {
   chart.setData(data);
 }
 
+// Pipeline stage definitions with metadata
+const PIPELINE_STAGES = {
+  'file_stability': { display: 'File Stability', group: 'validation', weight: 2, description: 'Waiting for recording to complete' },
+  'audio_validation': { display: 'Audio Check', group: 'validation', weight: 3, description: 'Validating audio decodability (MPEG2 detection)' },
+  'extract_wav': { display: 'WAV Extract', group: 'preparation', weight: 8, description: 'Extracting clean audio for problematic files' },
+  'whisper': { display: 'Transcription', group: 'whisper', weight: 60, description: 'Faster-Whisper AI transcription to SRT' },
+  'file_copy': { display: 'Backup', group: 'encoding', weight: 5, description: 'Preserving original as .orig' },
+  'ffmpeg_encode': { display: 'A/V Encode', group: 'encoding', weight: 15, description: 'Encoding audio/video streams to temp file' },
+  'probe_av': { display: 'Probe', group: 'verification', weight: 1, description: 'Probing encoded media duration' },
+  'clamp_srt': { display: 'Clamp SRT', group: 'verification', weight: 1, description: 'Clamping subtitle timestamps to media duration' },
+  'ffmpeg_mux': { display: 'Mux Captions', group: 'encoding', weight: 3, description: 'Muxing subtitles into video container' },
+  'verify_mux': { display: 'Verify', group: 'verification', weight: 1, description: 'Verifying output compatibility' },
+  'atomic_replace': { display: 'Finalize', group: 'finalization', weight: 1, description: 'Replacing original with captioned version' }
+};
+
+const STAGE_GROUPS = {
+  'validation': { label: 'Validation', color: 'stage-validation' },
+  'preparation': { label: 'Preparation', color: 'stage-preparation' },
+  'whisper': { label: 'Whisper AI', color: 'stage-whisper' },
+  'encoding': { label: 'Encoding', color: 'stage-encoding' },
+  'verification': { label: 'Verification', color: 'stage-verification' },
+  'finalization': { label: 'Finalization', color: 'stage-finalization' }
+};
+
 function updatePipelineStatus(pipeline) {
   const pipelineInfo = document.getElementById('pipeline-info');
   if (!pipelineInfo) return;
   
   if (!pipeline.active) {
-    pipelineInfo.innerHTML = '<div class="pipeline-idle">No active pipeline</div>';
+    pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
     return;
   }
   
-  const stage = pipeline.current_stage;
-  const stages = pipeline.stages || [];
+  const completedStages = pipeline.stages || [];
+  const currentStage = pipeline.current_stage;
   
-  let html = '<div class="pipeline-active">';
-  
-  if (stage) {
-    html += `
-      <div class="pipeline-row">
-        <div class="pipeline-label">Current Stage</div>
-        <div class="pipeline-value pipeline-stage">
-          ${stage.stage}
-          ${stage.gpu_engaged ? '<span class="gpu-engaged-badge">GPU Active</span>' : ''}
-        </div>
-      </div>
-      <div class="pipeline-row">
-        <div class="pipeline-label">File</div>
-        <div class="pipeline-value">${stage.filename}</div>
-      </div>
-      <div class="pipeline-row">
-        <div class="pipeline-label">Elapsed</div>
-        <div class="pipeline-value">${stage.elapsed.toFixed(1)}s</div>
-      </div>
-    `;
+  // Calculate total elapsed time
+  let totalElapsed = 0;
+  completedStages.forEach(s => {
+    if (s.duration) totalElapsed += s.duration;
+  });
+  if (currentStage && currentStage.elapsed) {
+    totalElapsed += currentStage.elapsed;
   }
   
-  if (stages.length > 0) {
+  // Build list of all stages with status
+  const allStageNames = Object.keys(PIPELINE_STAGES);
+  const completedStageNames = new Set(completedStages.map(s => s.stage));
+  const currentStageName = currentStage ? currentStage.stage : null;
+  
+  const stageStatuses = allStageNames.map(stageName => {
+    const meta = PIPELINE_STAGES[stageName];
+    let status = 'pending';
+    let duration = null;
+    
+    if (completedStageNames.has(stageName)) {
+      status = 'completed';
+      const completed = completedStages.find(s => s.stage === stageName);
+      duration = completed ? completed.duration : null;
+    } else if (stageName === currentStageName) {
+      status = 'active';
+      duration = currentStage.elapsed;
+    }
+    
+    return { stageName, meta, status, duration };
+  });
+  
+  // Calculate progress percentage (weighted by stage importance)
+  const totalWeight = allStageNames.reduce((sum, name) => sum + PIPELINE_STAGES[name].weight, 0);
+  let completedWeight = 0;
+  stageStatuses.forEach(s => {
+    if (s.status === 'completed') {
+      completedWeight += s.meta.weight;
+    } else if (s.status === 'active') {
+      completedWeight += s.meta.weight * 0.5; // 50% credit for active stage
+    }
+  });
+  const progressPercent = Math.round((completedWeight / totalWeight) * 100);
+  
+  // Render progress bar UI
+  let html = `
+    <div class="pipeline-progress-container">
+      <div class="pipeline-header">
+        <div class="pipeline-file-name" title="${currentStage ? currentStage.filename : ''}">${currentStage ? currentStage.filename : 'Processing...'}</div>
+        <div class="pipeline-stats">
+          <span class="pipeline-percent">${progressPercent}%</span>
+          <span class="pipeline-elapsed">${totalElapsed.toFixed(1)}s</span>
+        </div>
+      </div>
+      
+      <div class="pipeline-bar-wrapper">
+        <div class="pipeline-bar">
+  `;
+  
+  // Render progress segments
+  stageStatuses.forEach(s => {
+    const widthPercent = (s.meta.weight / totalWeight) * 100;
+    const groupColor = STAGE_GROUPS[s.meta.group].color;
     html += `
-      <div class="pipeline-row">
-        <div class="pipeline-label">Completed Stages</div>
-        <div class="pipeline-value">${stages.length}</div>
+      <div class="pipeline-segment ${groupColor} ${s.status}" 
+           style="width: ${widthPercent}%;"
+           title="${s.meta.display}: ${s.meta.description}">
+        ${s.meta.display}
       </div>
     `;
-    
-    stages.forEach(s => {
+  });
+  
+  html += `
+        </div>
+      </div>
+  `;
+  
+  // Render legend grouped by stage type
+  html += '<div class="pipeline-legend">';
+  const groupStats = {};
+  stageStatuses.forEach(s => {
+    const group = s.meta.group;
+    if (!groupStats[group]) {
+      groupStats[group] = { totalTime: 0, stages: [] };
+    }
+    if (s.duration) {
+      groupStats[group].totalTime += s.duration;
+    }
+    groupStats[group].stages.push(s);
+  });
+  
+  Object.entries(STAGE_GROUPS).forEach(([groupKey, groupMeta]) => {
+    const stats = groupStats[groupKey];
+    if (stats) {
+      const timeStr = stats.totalTime > 0 ? `${stats.totalTime.toFixed(1)}s` : '—';
       html += `
-        <div class="pipeline-row">
-          <div class="pipeline-label">${s.stage}</div>
-          <div class="pipeline-value">
-            ${s.duration ? s.duration.toFixed(1) + 's' : 'pending'}
-            ${s.gpu_engaged ? '<span class="gpu-engaged-badge">GPU</span>' : ''}
-          </div>
+        <div class="legend-item">
+          <div class="legend-color ${groupMeta.color}"></div>
+          <div class="legend-label">${groupMeta.label}</div>
+          <div class="legend-time">${timeStr}</div>
         </div>
       `;
-    });
+    }
+  });
+  html += '</div>';
+  
+  // Show current stage details
+  if (currentStage) {
+    const meta = PIPELINE_STAGES[currentStageName] || { display: currentStageName, description: 'Processing...' };
+    html += `
+      <div class="pipeline-current-step">
+        <strong>Current:</strong> ${meta.display} — ${meta.description}
+        ${currentStage.gpu_engaged ? '<strong style="color: var(--accent); margin-left: 8px;">⚡ GPU Active</strong>' : ''}
+      </div>
+    `;
   }
   
   html += '</div>';
