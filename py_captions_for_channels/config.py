@@ -57,6 +57,10 @@ LOCAL_TEST_DIR = os.getenv("LOCAL_TEST_DIR", None)
 # Caption command to run (whisper or other captioning tool)
 CAPTION_COMMAND = os.getenv("CAPTION_COMMAND", 'echo "Would process: {path}"')
 
+# Caption delay in milliseconds (0 = no delay)
+# Shifts all caption timestamps forward to create delay between audio and captions
+CAPTION_DELAY_MS = int(os.getenv("CAPTION_DELAY_MS", "0"))
+
 # Pipeline optimization mode (Whisper + ffmpeg)
 # "standard" - Use hardcoded parameters (default, proven)
 # "automatic" - Detect encoding and optimize parameters per file
