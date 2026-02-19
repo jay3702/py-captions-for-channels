@@ -1701,8 +1701,8 @@ const PIPELINE_STAGES = {
   'ffmpeg_encode': { display: 'A/V Encode', group: 'encoding', weight: 45, description: 'Encoding audio/video streams to temp file' },
   'probe_av': { display: 'Probe', group: 'verification', weight: 3, description: 'Probing encoded media duration' },
   'shift_srt': { display: 'Caption Delay', group: 'verification', weight: 3, description: 'Shifting caption timestamps (accessibility delay)' },
-  'clamp_srt': { display: 'Clamp SRT', group: 'verification', weight: 2, description: 'Clamping subtitle timestamps to media duration' },
-  'ffmpeg_mux': { display: 'Mux Captions', group: 'encoding', weight: 3, description: 'Muxing subtitles into video container' },
+  'clamp_srt': { display: 'Clamp SRT', group: 'verification', weight: 3, description: 'Clamping subtitle timestamps to media duration' },
+  'ffmpeg_mux': { display: 'Mux Captions', group: 'encoding', weight: 4, description: 'Muxing subtitles into video container' },
   'verify_mux': { display: 'Verify', group: 'verification', weight: 3, description: 'Verifying output compatibility' },
   'replace_output': { display: 'Finalize', group: 'finalization', weight: 3, description: 'Replacing original with captioned version' },
   'cleanup': { display: 'Cleanup', group: 'finalization', weight: 3, description: 'Removing temporary files' }
