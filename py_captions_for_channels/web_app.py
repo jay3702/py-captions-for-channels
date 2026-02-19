@@ -323,14 +323,18 @@ def _parse_env_file(file_path: Path) -> dict:
                     key, value = setting_line.split("=", 1)
                     key = key.strip()
                     value = value.strip()
-                    
+
                     # Skip if key doesn't look like a valid setting name
                     # (must be uppercase/underscore, not start with lowercase or be a sentence)
                     if not key or not key.replace("_", "").isupper():
                         # This is a description line with "=", not a setting
                         # Treat it as a comment instead
                         desc = line_stripped.lstrip("# ").strip()
-                        if desc and not desc.startswith("Default:") and not desc.startswith("Note:"):
+                        if (
+                            desc
+                            and not desc.startswith("Default:")
+                            and not desc.startswith("Note:")
+                        ):
                             current_description.append(desc)
                         continue
 
