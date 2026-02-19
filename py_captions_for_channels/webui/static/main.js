@@ -1596,7 +1596,7 @@ async function loadHistoricalData() {
               show: true,
               drag: { x: false, y: false }
             },
-            legend: { show: true, live: false },
+            legend: { show: true, live: true },
             scales: {
               x: { time: true },
               y: {
@@ -1803,6 +1803,31 @@ function updatePipelineStatus(pipeline) {
     progressPercent = 100;
   }
   
+  // Calculate precise pointer position within active segment
+  let pointerPercent = progressPercent;
+  if (currentStage) {
+    // Find the active segment's position
+    let leftEdgePercent = 0;
+    for (let i = 0; i < stageStatuses.length; i++) {
+      const s = stageStatuses[i];
+      const segmentWidth = (s.meta.weight / totalWeight) * 100;
+      
+      if (s.status === 'active') {
+        // Estimate progress within this segment based on elapsed time vs weight
+        // Use weight as proxy for expected duration (e.g., weight 25 ≈ 25-50 seconds)
+        const expectedDuration = s.meta.weight * 2; // Rough estimate: 2 seconds per weight unit
+        const internalProgress = Math.min(1, currentStage.elapsed / expectedDuration);
+        pointerPercent = leftEdgePercent + (segmentWidth * internalProgress);
+        break;
+      } else if (s.status === 'completed') {
+        leftEdgePercent += segmentWidth;
+      } else {
+        // Pending segment, stop here
+        break;
+      }
+    }
+  }
+  
   // Render progress bar UI
   let html = `
     <div class="pipeline-progress-container">
@@ -1835,7 +1860,7 @@ function updatePipelineStatus(pipeline) {
   
   html += `
         </div>
-        <div class="pipeline-progress-pointer" style="left: ${progressPercent}%;"></div>
+        <div class="pipeline-progress-pointer" style="left: ${pointerPercent}%;"></div>
       </div>
   `;
   
