@@ -556,6 +556,7 @@ class PipelineTimeline:
                         "stage": s.stage,
                         "duration": s.duration,
                         "gpu_engaged": s.gpu_engaged,
+                        "ended_at": s.ended_at,  # Include timestamp for frontend age calculation
                     }
                     for s in job_stages
                 ]

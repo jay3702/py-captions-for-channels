@@ -1716,10 +1716,7 @@ const STAGE_GROUPS = {
   'finalization': { label: 'Finalization', color: 'stage-finalization' }
 };
 
-// Track completed pipeline for auto-clear
-let lastCompletedJobId = null;
-let completionTimestamp = null;
-const COMPLETION_DISPLAY_DURATION = 30000; // 30 seconds
+const COMPLETION_DISPLAY_DURATION = 30; // 30 seconds
 
 function updatePipelineStatus(pipeline) {
   const pipelineInfo = document.getElementById('pipeline-info');
@@ -1728,33 +1725,26 @@ function updatePipelineStatus(pipeline) {
   const completedStages = pipeline.stages || [];
   const currentStage = pipeline.current_stage;
   
-  // Track completion for auto-clear
+  // Check if job is completed
   const allCompleted = !currentStage && (completedStages.some(s => s.stage === 'cleanup') || completedStages.some(s => s.stage === 'replace_output'));
-  if (allCompleted) {
-    if (lastCompletedJobId !== pipeline.current_job_id) {
-      // New completion detected
-      lastCompletedJobId = pipeline.current_job_id;
-      completionTimestamp = Date.now();
-    } else if (completionTimestamp && (Date.now() - completionTimestamp) > COMPLETION_DISPLAY_DURATION) {
-      // Completed pipeline has been displayed for 30+ seconds, clear it
-      pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
-      lastCompletedJobId = null;
-      completionTimestamp = null;
-      return;
-    }
-  } else {
-    // Reset if a new job starts or job is still active
-    if (currentStage && lastCompletedJobId !== null) {
-      lastCompletedJobId = null;
-      completionTimestamp = null;
+  
+  // If completed, calculate how long ago based on last stage end time
+  if (allCompleted && completedStages.length > 0) {
+    // Find the last stage (cleanup or replace_output)
+    const lastStage = completedStages[completedStages.length - 1];
+    if (lastStage.ended_at) {
+      const completionAge = Date.now() / 1000 - lastStage.ended_at; // Age in seconds
+      if (completionAge > COMPLETION_DISPLAY_DURATION) {
+        // Completed more than 30 seconds ago, clear it
+        pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
+        return;
+      }
     }
   }
   
   // Show "No active pipeline" only if nothing is active AND no completed stages
   if (!pipeline.active && completedStages.length === 0) {
     pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
-    lastCompletedJobId = null;
-    completionTimestamp = null;
     return;
   }
   
@@ -1878,7 +1868,13 @@ function updatePipelineStatus(pipeline) {
       </div>
     `;
   } else if (allCompleted) {
-    const secondsRemaining = completionTimestamp ? Math.ceil((COMPLETION_DISPLAY_DURATION - (Date.now() - completionTimestamp)) / 1000) : 30;
+    // Calculate seconds remaining until auto-clear
+    let secondsRemaining = COMPLETION_DISPLAY_DURATION;
+    const lastStage = completedStages[completedStages.length - 1];
+    if (lastStage && lastStage.ended_at) {
+      const completionAge = Date.now() / 1000 - lastStage.ended_at;
+      secondsRemaining = Math.max(0, Math.ceil(COMPLETION_DISPLAY_DURATION - completionAge));
+    }
     html += `
       <div class="pipeline-current-step" style="border-left-color: #43e97b;">
         <strong style="color: #43e97b;">✓ Complete!</strong> All stages finished successfully.
