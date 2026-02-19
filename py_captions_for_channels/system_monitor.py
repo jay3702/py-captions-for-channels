@@ -527,16 +527,10 @@ class PipelineTimeline:
             self._load_state()
 
             # Auto-clear completed jobs older than 30 seconds
-            if (
-                self.current_job_id
-                and not self.current_stage
-                and self.completed_stages
-            ):
+            if self.current_job_id and not self.current_stage and self.completed_stages:
                 # Find the last completed stage for this job
                 job_stages = [
-                    s
-                    for s in self.completed_stages
-                    if s.job_id == self.current_job_id
+                    s for s in self.completed_stages if s.job_id == self.current_job_id
                 ]
                 if job_stages:
                     last_stage = max(job_stages, key=lambda s: s.ended_at)
@@ -546,9 +540,7 @@ class PipelineTimeline:
                         old_job_id = self.current_job_id
                         self.current_job_id = None
                         self.completed_stages = [
-                            s
-                            for s in self.completed_stages
-                            if s.job_id != old_job_id
+                            s for s in self.completed_stages if s.job_id != old_job_id
                         ]
                         self._save_state()
 
