@@ -1200,7 +1200,7 @@ function initSystemMonitor() {
   // Common options for all charts
   const commonOpts = {
     width: chartWidth,
-    height: 130,
+    height: 117,
     class: 'monitor-chart',
     cursor: {
       show: true,
@@ -1404,7 +1404,7 @@ function updateSystemMonitor() {
           
           const gpuOpts = {
             width: gpuWidth,
-            height: 130,
+            height: 117,
             class: 'monitor-chart',
             cursor: {
               show: true,
@@ -1590,8 +1590,12 @@ async function loadHistoricalData() {
           
           const gpuOpts = {
             width: gpuWidth,
-            height: 130,
+            height: 117,
             class: 'monitor-chart',
+            cursor: {
+              show: true,
+              drag: { x: false, y: false }
+            },
             legend: { show: true, live: false },
             scales: {
               x: { time: true },
