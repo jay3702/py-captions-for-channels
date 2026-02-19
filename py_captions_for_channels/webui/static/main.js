@@ -1716,17 +1716,47 @@ const STAGE_GROUPS = {
   'finalization': { label: 'Finalization', color: 'stage-finalization' }
 };
 
+// Track completed pipeline for auto-clear
+let lastCompletedJobId = null;
+let completionTimestamp = null;
+const COMPLETION_DISPLAY_DURATION = 30000; // 30 seconds
+
 function updatePipelineStatus(pipeline) {
   const pipelineInfo = document.getElementById('pipeline-info');
   if (!pipelineInfo) return;
   
-  if (!pipeline.active) {
-    pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
-    return;
-  }
-  
   const completedStages = pipeline.stages || [];
   const currentStage = pipeline.current_stage;
+  
+  // Track completion for auto-clear
+  const allCompleted = !currentStage && (completedStages.some(s => s.stage === 'cleanup') || completedStages.some(s => s.stage === 'replace_output'));
+  if (allCompleted) {
+    if (lastCompletedJobId !== pipeline.current_job_id) {
+      // New completion detected
+      lastCompletedJobId = pipeline.current_job_id;
+      completionTimestamp = Date.now();
+    } else if (completionTimestamp && (Date.now() - completionTimestamp) > COMPLETION_DISPLAY_DURATION) {
+      // Completed pipeline has been displayed for 30+ seconds, clear it
+      pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
+      lastCompletedJobId = null;
+      completionTimestamp = null;
+      return;
+    }
+  } else {
+    // Reset if a new job starts or job is still active
+    if (currentStage && lastCompletedJobId !== null) {
+      lastCompletedJobId = null;
+      completionTimestamp = null;
+    }
+  }
+  
+  // Show "No active pipeline" only if nothing is active AND no completed stages
+  if (!pipeline.active && completedStages.length === 0) {
+    pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
+    lastCompletedJobId = null;
+    completionTimestamp = null;
+    return;
+  }
   
   // Calculate total elapsed time
   let totalElapsed = 0;
@@ -1771,10 +1801,9 @@ function updatePipelineStatus(pipeline) {
   });
   let progressPercent = Math.round((completedWeight / totalWeight) * 100);
   
-  // Detect completion: check if final cleanup stage completed (most reliable since some stages are conditional)
-  const allCompleted = !currentStage && (completedStageNames.has('cleanup') || completedStageNames.has('replace_output'));
+  // Force 100% when job is complete (allCompleted was detected earlier)
   if (allCompleted) {
-    progressPercent = 100; // Force 100% when job is complete
+    progressPercent = 100;
   }
   
   // Render progress bar UI
@@ -1849,9 +1878,11 @@ function updatePipelineStatus(pipeline) {
       </div>
     `;
   } else if (allCompleted) {
+    const secondsRemaining = completionTimestamp ? Math.ceil((COMPLETION_DISPLAY_DURATION - (Date.now() - completionTimestamp)) / 1000) : 30;
     html += `
       <div class="pipeline-current-step" style="border-left-color: #43e97b;">
         <strong style="color: #43e97b;">✓ Complete!</strong> All stages finished successfully.
+        <span style="color: var(--muted); margin-left: 8px; font-size: 12px;">(clearing in ${secondsRemaining}s)</span>
       </div>
     `;
   }
