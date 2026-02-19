@@ -325,7 +325,7 @@ def _parse_env_file(file_path: Path) -> dict:
                     value = value.strip()
 
                     # Skip if key doesn't look like a valid setting name
-                    # (must be uppercase/underscore, not start with lowercase or be a sentence)
+                    # (must be uppercase/underscore, not lowercase/sentence)
                     if not key or not key.replace("_", "").isupper():
                         # This is a description line with "=", not a setting
                         # Treat it as a comment instead
