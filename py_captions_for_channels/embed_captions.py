@@ -953,7 +953,7 @@ def main():
     # set_verbosity(args.verbosity)
 
     run_step(
-        "wait_stable",
+        "file_stability",
         lambda: wait_for_file_stability(mpg_path, log),
         input_path=mpg_path,
         misc_label="Waiting for file stability",

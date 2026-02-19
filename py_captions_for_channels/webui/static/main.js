@@ -1696,8 +1696,6 @@ function appendChartData(chart, timestamp, values) {
 // Pipeline stage definitions with metadata
 const PIPELINE_STAGES = {
   'file_stability': { display: 'File Stability', group: 'validation', weight: 2, description: 'Waiting for recording to complete' },
-  'audio_validation': { display: 'Audio Check', group: 'validation', weight: 3, description: 'Validating audio decodability (MPEG2 detection)' },
-  'extract_wav': { display: 'WAV Extract', group: 'preparation', weight: 8, description: 'Extracting clean audio for problematic files' },
   'whisper': { display: 'Transcription', group: 'whisper', weight: 60, description: 'Faster-Whisper AI transcription to SRT' },
   'file_copy': { display: 'Backup', group: 'encoding', weight: 5, description: 'Preserving original as .orig' },
   'ffmpeg_encode': { display: 'A/V Encode', group: 'encoding', weight: 15, description: 'Encoding audio/video streams to temp file' },
@@ -1712,7 +1710,6 @@ const PIPELINE_STAGES = {
 
 const STAGE_GROUPS = {
   'validation': { label: 'Validation', color: 'stage-validation' },
-  'preparation': { label: 'Preparation', color: 'stage-preparation' },
   'whisper': { label: 'Whisper AI', color: 'stage-whisper' },
   'encoding': { label: 'Encoding', color: 'stage-encoding' },
   'verification': { label: 'Verification', color: 'stage-verification' },
