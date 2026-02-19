@@ -1695,17 +1695,17 @@ function appendChartData(chart, timestamp, values) {
 
 // Pipeline stage definitions with metadata
 const PIPELINE_STAGES = {
-  'file_stability': { display: 'File Stability', group: 'validation', weight: 2, description: 'Waiting for recording to complete' },
-  'whisper': { display: 'Transcription', group: 'whisper', weight: 60, description: 'Faster-Whisper AI transcription to SRT' },
+  'file_stability': { display: 'File Stability', group: 'validation', weight: 3, description: 'Waiting for recording to complete' },
+  'whisper': { display: 'Transcription', group: 'whisper', weight: 25, description: 'Faster-Whisper AI transcription to SRT' },
   'file_copy': { display: 'Backup', group: 'encoding', weight: 5, description: 'Preserving original as .orig' },
-  'ffmpeg_encode': { display: 'A/V Encode', group: 'encoding', weight: 15, description: 'Encoding audio/video streams to temp file' },
-  'probe_av': { display: 'Probe', group: 'verification', weight: 1, description: 'Probing encoded media duration' },
-  'shift_srt': { display: 'Caption Delay', group: 'verification', weight: 1, description: 'Shifting caption timestamps (accessibility delay)' },
-  'clamp_srt': { display: 'Clamp SRT', group: 'verification', weight: 1, description: 'Clamping subtitle timestamps to media duration' },
-  'ffmpeg_mux': { display: 'Mux Captions', group: 'encoding', weight: 3, description: 'Muxing subtitles into video container' },
-  'verify_mux': { display: 'Verify', group: 'verification', weight: 1, description: 'Verifying output compatibility' },
-  'replace_output': { display: 'Finalize', group: 'finalization', weight: 1, description: 'Replacing original with captioned version' },
-  'cleanup': { display: 'Cleanup', group: 'finalization', weight: 1, description: 'Removing temporary files' }
+  'ffmpeg_encode': { display: 'A/V Encode', group: 'encoding', weight: 45, description: 'Encoding audio/video streams to temp file' },
+  'probe_av': { display: 'Probe', group: 'verification', weight: 2, description: 'Probing encoded media duration' },
+  'shift_srt': { display: 'Caption Delay', group: 'verification', weight: 5, description: 'Shifting caption timestamps (accessibility delay)' },
+  'clamp_srt': { display: 'Clamp SRT', group: 'verification', weight: 3, description: 'Clamping subtitle timestamps to media duration' },
+  'ffmpeg_mux': { display: 'Mux Captions', group: 'encoding', weight: 5, description: 'Muxing subtitles into video container' },
+  'verify_mux': { display: 'Verify', group: 'verification', weight: 2, description: 'Verifying output compatibility' },
+  'replace_output': { display: 'Finalize', group: 'finalization', weight: 2, description: 'Replacing original with captioned version' },
+  'cleanup': { display: 'Cleanup', group: 'finalization', weight: 2, description: 'Removing temporary files' }
 };
 
 const STAGE_GROUPS = {
