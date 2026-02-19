@@ -1213,7 +1213,7 @@ body {
 .chart-wrapper {
   flex: 1;
   min-width: 0;
-  padding-bottom: 25px;
+  padding-bottom: 30px;
   overflow: visible;
 }
 
