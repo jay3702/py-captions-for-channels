@@ -1766,17 +1766,20 @@ function updatePipelineStatus(pipeline) {
     const meta = PIPELINE_STAGES[stageName];
     let status = 'pending';
     let duration = null;
+    let gpuEngaged = false;
     
     if (completedStageNames.has(stageName)) {
       status = 'completed';
       const completed = completedStages.find(s => s.stage === stageName);
       duration = completed ? completed.duration : null;
+      gpuEngaged = completed ? completed.gpu_engaged : false;
     } else if (stageName === currentStageName) {
       status = 'active';
       duration = currentStage.elapsed;
+      gpuEngaged = currentStage.gpu_engaged || false;
     }
     
-    return { stageName, meta, status, duration };
+    return { stageName, meta, status, duration, gpuEngaged };
   });
   
   // Calculate progress percentage (weighted by stage importance)
@@ -1815,10 +1818,12 @@ function updatePipelineStatus(pipeline) {
   stageStatuses.forEach(s => {
     const widthPercent = (s.meta.weight / totalWeight) * 100;
     const groupColor = STAGE_GROUPS[s.meta.group].color;
+    const gpuIndicator = s.gpuEngaged ? ' ⚡ GPU' : '';
+    const tooltipText = `${s.meta.display}: ${s.meta.description}${gpuIndicator}`;
     html += `
       <div class="pipeline-segment ${groupColor} ${s.status}" 
            style="width: ${widthPercent}%;"
-           title="${s.meta.display}: ${s.meta.description}">
+           title="${tooltipText}">
         ${s.meta.display}
       </div>
     `;
