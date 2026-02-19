@@ -837,8 +837,8 @@ function renderSettingsUI(settings) {
   const booleanFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'TRANSCODE_FOR_FIRETV', 
                          'KEEP_ORIGINAL', 'DRY_RUN'];
   
-  // Fields to hide (replaced by other settings)
-  const hiddenFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK'];  // Replaced by DISCOVERY_MODE
+  // Fields to hide (replaced by other settings or not user-configurable)
+  const hiddenFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'CAPTION_COMMAND'];  // DISCOVERY_MODE replaces first 3, CAPTION_COMMAND is auto-detected
   
   const dropdownFields = {
     'DISCOVERY_MODE': ['polling', 'webhook', 'mock'],
@@ -896,7 +896,7 @@ function renderSettingsUI(settings) {
   const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   
   const numericFields = ['POLL_INTERVAL_SECONDS', 'POLL_LIMIT', 'WEBHOOK_PORT', 
-                         'PIPELINE_TIMEOUT', 'STALE_EXECUTION_SECONDS', 'API_TIMEOUT'];
+                         'PIPELINE_TIMEOUT', 'STALE_EXECUTION_SECONDS', 'API_TIMEOUT', 'CAPTION_DELAY_MS'];
   
   // Get discovery mode to conditionally show/hide sections
   const discoveryMode = settings.event_source?.DISCOVERY_MODE?.value || 'webhook';
@@ -1774,9 +1774,8 @@ function updatePipelineStatus(pipeline) {
   });
   let progressPercent = Math.round((completedWeight / totalWeight) * 100);
   
-  // Detect completion: if no current stage and all known stages are complete
-  const allCompleted = !currentStage && completedStageNames.size > 0 && 
-                       stageStatuses.every(s => s.status === 'completed' || !completedStageNames.has(s.stageName));
+  // Detect completion: check if final cleanup stage completed (most reliable since some stages are conditional)
+  const allCompleted = !currentStage && (completedStageNames.has('cleanup') || completedStageNames.has('replace_output'));
   if (allCompleted) {
     progressPercent = 100; // Force 100% when job is complete
   }
