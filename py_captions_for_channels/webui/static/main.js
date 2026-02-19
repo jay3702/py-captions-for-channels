@@ -1835,6 +1835,7 @@ function updatePipelineStatus(pipeline) {
   
   html += `
         </div>
+        <div class="pipeline-progress-pointer" style="left: ${progressPercent}%;"></div>
       </div>
   `;
   
