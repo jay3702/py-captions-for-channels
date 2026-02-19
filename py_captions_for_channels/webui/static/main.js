@@ -1813,10 +1813,35 @@ function updatePipelineStatus(pipeline) {
       const segmentWidth = (s.meta.weight / totalWeight) * 100;
       
       if (s.status === 'active') {
-        // Estimate progress within this segment based on elapsed time vs weight
-        // Use weight as proxy for expected duration (e.g., weight 25 ≈ 25-50 seconds)
-        const expectedDuration = s.meta.weight * 2; // Rough estimate: 2 seconds per weight unit
-        const internalProgress = Math.min(1, currentStage.elapsed / expectedDuration);
+        // Use asymptotic progress: approaches 90% of segment but never reaches end until complete
+        // This creates a "loading bar" effect that slows down as it progresses
+        const elapsed = currentStage.elapsed;
+        
+        // Stage-specific time estimates (very conservative to avoid overshooting)
+        let expectedDuration;
+        if (s.meta.weight >= 40) {
+          // Heavy stages (ffmpeg_encode): 15 seconds per weight unit
+          expectedDuration = s.meta.weight * 15;
+        } else if (s.meta.weight >= 20) {
+          // Medium-heavy stages (whisper): 10 seconds per weight unit
+          expectedDuration = s.meta.weight * 10;
+        } else if (s.meta.weight >= 5) {
+          // Light stages (file_copy, etc): 5 seconds per weight unit
+          expectedDuration = s.meta.weight * 5;
+        } else {
+          // Very light stages: 3 seconds per weight unit
+          expectedDuration = s.meta.weight * 3;
+        }
+        
+        // Asymptotic progress: 1 - e^(-elapsed/timeConstant)
+        // This naturally slows down as it approaches the target
+        const timeConstant = expectedDuration / 3; // Controls how fast it ramps up
+        const rawProgress = 1 - Math.exp(-elapsed / timeConstant);
+        
+        // Cap at 90% of segment width until stage actually completes
+        const maxProgress = 0.90;
+        const internalProgress = Math.min(rawProgress, maxProgress);
+        
         pointerPercent = leftEdgePercent + (segmentWidth * internalProgress);
         break;
       } else if (s.status === 'completed') {
