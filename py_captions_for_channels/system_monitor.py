@@ -428,6 +428,9 @@ class PipelineTimeline:
                 )
                 self.current_stage.ended_at = current.get("ended_at")
                 self.current_stage.gpu_engaged = current.get("gpu_engaged", False)
+            else:
+                # Clear in-memory current_stage when file shows null
+                self.current_stage = None
 
             # Only load completed stages that match current job
             # This prevents showing stale data from previous jobs
