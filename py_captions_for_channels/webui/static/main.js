@@ -562,8 +562,7 @@ async function showManualProcessModal() {
         <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
           <thead>
             <tr style="border-bottom: 2px solid var(--border); text-align: left;">
-              <th style="padding: 8px 4px; width: 30px;" title="Select to process">Process</th>
-              <th style="padding: 8px 4px; width: 30px;" title="Select to restore from backup">Restore</th>
+              <th style="padding: 8px 4px; width: 30px;"></th>
               <th style="padding: 8px;">Recording</th>
               <th style="padding: 8px; width: 140px;">Date</th>
               <th style="padding: 8px; width: 80px; text-align: center;">Processed</th>
@@ -601,19 +600,13 @@ async function showManualProcessModal() {
           whitelistIcon = '<span style="color: #4caf50; font-size: 18px;" title="Passes whitelist">✓</span>';
         }
         
-        // Disable process checkbox if recording is not yet completed
-        const processCheckboxDisabled = !recording.completed ? 'disabled title="Recording in progress"' : '';
-        
-        // Disable restore checkbox if no .orig file exists
-        const restoreCheckboxDisabled = !recording.has_orig ? 'disabled title="No backup file (.orig) available"' : '';
+        // Disable checkbox if recording is not yet completed
+        const checkboxDisabled = !recording.completed ? 'disabled title="Recording in progress"' : '';
         
         tableHtml += `
           <tr style="border-bottom: 1px solid var(--border);">
             <td style="padding: 8px 4px;">
-              <input type="checkbox" class="process-checkbox" name="manual-process-path" value="${escapeAttr(recording.path)}" data-idx="${idx}" ${processCheckboxDisabled}>
-            </td>
-            <td style="padding: 8px 4px;">
-              <input type="checkbox" class="restore-checkbox" name="manual-restore-path" value="${escapeAttr(recording.path)}" data-idx="${idx}" ${restoreCheckboxDisabled}>
+              <input type="checkbox" name="manual-process-path" value="${escapeAttr(recording.path)}" data-idx="${idx}" ${checkboxDisabled}>
             </td>
             <td style="padding: 8px;">
               <div style="font-weight: 500;">${escapeHtml(title)}</div>
@@ -641,79 +634,38 @@ function closeManualProcessModal() {
 }
 
 async function submitManualProcessing() {
-  const processCheckboxes = document.querySelectorAll('.process-checkbox:checked');
-  const restoreCheckboxes = document.querySelectorAll('.restore-checkbox:checked');
+  const checkboxes = document.querySelectorAll('input[name="manual-process-path"]:checked');
+  const paths = Array.from(checkboxes).map(cb => cb.value);
   
-  const processPaths = Array.from(processCheckboxes).map(cb => cb.value);
-  const restorePaths = Array.from(restoreCheckboxes).map(cb => cb.value);
-  
-  if (processPaths.length === 0 && restorePaths.length === 0) {
-    alert('Please select at least one recording to process or restore');
+  if (paths.length === 0) {
+    alert('Please select at least one recording to process');
     return;
   }
   
-  // Handle restore requests
-  if (restorePaths.length > 0) {
-    const confirmed = confirm(
-      `Restore ${restorePaths.length} recording(s) from backup?\n\n` +
-      `This will:\n` +
-      `- Delete the processed video file\n` +
-      `- Restore the original from .orig backup\n` +
-      `- Remove caption files (.srt)\n\n` +
-      `This action cannot be undone.`
-    );
-    
-    if (!confirmed) return;
-    
-    try {
-      const res = await fetch('/api/manual-process/restore', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paths: restorePaths })
-      });
-      
-      if (!res.ok) throw new Error('Failed to restore recordings');
-      const data = await res.json();
-      
-      if (data.error) {
-        alert('Error: ' + data.error);
-      } else {
-        alert(`Successfully restored ${data.restored || 0} recording(s)`);
-        closeManualProcessModal();
-        fetchStatus();
-      }
-    } catch (err) {
-      alert('Failed to restore: ' + err.message);
-      console.error(err);
-    }
-  }
+  const skipCaptionGeneration = document.getElementById('manual-process-skip-caption').checked;
+  const logVerbosity = document.getElementById('manual-process-log-verbosity').value;
   
-  // Handle process requests
-  if (processPaths.length > 0) {
-    const skipCaptionGeneration = document.getElementById('manual-process-skip-caption').checked;
-    const logVerbosity = document.getElementById('manual-process-log-verbosity').value;
+  try {
+    const res = await fetch('/api/manual-process/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        paths, 
+        skip_caption_generation: skipCaptionGeneration,
+        log_verbosity: logVerbosity
+      })
+    });
     
-    try {
-      const res = await fetch('/api/manual-process/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          paths: processPaths, 
-          skip_caption_generation: skipCaptionGeneration,
-          log_verbosity: logVerbosity
-        })
-      });
-      
-      if (!res.ok) throw new Error('Failed to add to manual process queue');
-      const data = await res.json();
-      
-      if (data.error) {
-        alert('Error: ' + data.error);
-      } else {
-        closeManualProcessModal();
-        fetchStatus(); // Refresh to update queue count
-      }
-    } catch (err) {
+    if (!res.ok) throw new Error('Failed to add to manual process queue');
+    const data = await res.json();
+    
+    if (data.error) {
+      alert('Error: ' + data.error);
+    } else {
+      closeManualProcessModal();
+      fetchStatus(); // Refresh to update queue count
+    }
+  } catch (err) {
     alert('Error adding to reprocess queue: ' + err.message);
     console.error('Reprocess submit error:', err);
   }
@@ -876,14 +828,14 @@ function renderSettingsUI(settings) {
     channelwatch: 'ChannelWatch Configuration', 
     event_source: 'Event Source Configuration',
     polling: 'Polling Source Configuration',
-    webhook: 'ChannelWatch Configuration',
+    webhook: 'Webhook Server Configuration',
     pipeline: 'Caption Pipeline Configuration',
     state_logging: 'State and Logging Configuration',
     advanced: 'Advanced Configuration'
   };
   
   const booleanFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'TRANSCODE_FOR_FIRETV', 
-                         'KEEP_ORIGINAL', 'DRY_RUN', 'ORPHAN_CLEANUP_ENABLED'];
+                         'KEEP_ORIGINAL', 'DRY_RUN'];
   
   // Fields to hide (replaced by other settings or not user-configurable)
   const hiddenFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'CAPTION_COMMAND'];  // DISCOVERY_MODE replaces first 3, CAPTION_COMMAND is auto-detected
@@ -945,8 +897,7 @@ function renderSettingsUI(settings) {
   const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   
   const numericFields = ['POLL_INTERVAL_SECONDS', 'POLL_LIMIT', 'WEBHOOK_PORT', 
-                         'PIPELINE_TIMEOUT', 'STALE_EXECUTION_SECONDS', 'API_TIMEOUT', 'CAPTION_DELAY_MS',
-                         'ORPHAN_CLEANUP_INTERVAL_HOURS', 'ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES'];
+                         'PIPELINE_TIMEOUT', 'STALE_EXECUTION_SECONDS', 'API_TIMEOUT', 'CAPTION_DELAY_MS'];
   
   // Get discovery mode to conditionally show/hide sections
   const discoveryMode = settings.event_source?.DISCOVERY_MODE?.value || 'webhook';
@@ -956,22 +907,9 @@ function renderSettingsUI(settings) {
   for (const [category, items] of Object.entries(settings)) {
     if (!items || typeof items !== 'object' || Object.keys(items).length === 0) continue;
     
-    // Conditionally hide sections based on discovery mode
-    if (discoveryMode === 'polling') {
-      // Hide ChannelWatch/webhook sections when using polling
-      if (category === 'channelwatch' || category === 'webhook') {
-        continue;
-      }
-    } else if (discoveryMode === 'webhook') {
-      // Hide polling section when using webhook
-      if (category === 'polling') {
-        continue;
-      }
-    } else if (discoveryMode === 'mock') {
-      // Hide both polling and webhook sections when using mock
-      if (category === 'polling' || category === 'channelwatch' || category === 'webhook') {
-        continue;
-      }
+    // Hide channelwatch and webhook sections when using polling
+    if (discoveryMode === 'polling' && (category === 'channelwatch' || category === 'webhook')) {
+      continue;
     }
     
     html += `<div class="settings-category" style="margin-bottom: 24px;">`;
@@ -2056,5 +1994,7 @@ window.addEventListener('DOMContentLoaded', () => {
     startSystemMonitor();
   }
 });
-}
+
+
+
 
