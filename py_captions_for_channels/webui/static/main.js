@@ -843,8 +843,13 @@ function renderSettingsUI(settings) {
   const dropdownFields = {
     'DISCOVERY_MODE': ['polling', 'webhook', 'mock'],
     'OPTIMIZATION_MODE': ['standard', 'automatic'],
-    'GPU': ['auto', 'nvidia', 'amd', 'intel', 'none'],
+    'WHISPER_DEVICE': ['auto', 'nvidia', 'amd', 'intel', 'none'],
     'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+  };
+  
+  // Custom display names for settings (overrides environment variable name)
+  const displayNames = {
+    'WHISPER_DEVICE': 'GPU'
   };
   
   // Common IANA timezones grouped by region
@@ -928,7 +933,7 @@ function renderSettingsUI(settings) {
       
       html += `<div class="settings-group" style="margin-bottom: 16px;">`;
       html += `<label for="env-${key}" style="font-weight: 600; display: block; margin-bottom: 4px;">
-                ${key}${isOptional ? ' <span style="color: var(--muted); font-weight: normal;">(optional)</span>' : ''}
+                ${displayNames[key] || key}${isOptional ? ' <span style="color: var(--muted); font-weight: normal;">(optional)</span>' : ''}
                </label>`;
       
       if (desc) {
