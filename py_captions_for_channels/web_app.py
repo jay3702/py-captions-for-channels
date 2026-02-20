@@ -1,6 +1,7 @@
 import json
 import os
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 try:
@@ -30,6 +31,9 @@ from .config import (
     USE_MOCK,
     USE_POLLING,
     DISCOVERY_MODE,
+    ORPHAN_CLEANUP_ENABLED,
+    ORPHAN_CLEANUP_INTERVAL_HOURS,
+    ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES,
 )
 from .state import StateBackend
 from .execution_tracker import build_manual_process_job_id, get_tracker
@@ -42,6 +46,7 @@ from .services.settings_service import SettingsService
 from .services.heartbeat_service import HeartbeatService
 from .shutdown_control import get_shutdown_controller
 from .system_monitor import get_system_monitor, get_pipeline_timeline
+from .orphan_cleanup import OrphanCleanupScheduler, run_cleanup
 
 BASE_DIR = Path(__file__).parent
 WEB_ROOT = BASE_DIR / "webui"
@@ -52,10 +57,16 @@ app = FastAPI(title="Py Captions Web GUI", version=VERSION)
 state_backend = StateBackend(STATE_FILE)
 logger = logging.getLogger(__name__)
 
+# Global orphan cleanup scheduler
+orphan_cleanup_scheduler = None
+cleanup_task = None
+
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and system monitor on application startup."""
+    global orphan_cleanup_scheduler, cleanup_task
+
     init_db()
     # Start system monitor
     try:
@@ -67,10 +78,60 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to start system monitor: {e}", exc_info=True)
 
+    # Start orphan cleanup scheduler if enabled
+    if ORPHAN_CLEANUP_ENABLED:
+        try:
+            orphan_cleanup_scheduler = OrphanCleanupScheduler(
+                enabled=True,
+                check_interval_hours=ORPHAN_CLEANUP_INTERVAL_HOURS,
+                idle_threshold_minutes=ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES,
+                dry_run=DRY_RUN,
+            )
+            # Start background task to check cleanup periodically
+            cleanup_task = asyncio.create_task(orphan_cleanup_background_task())
+            logger.info(
+                f"Orphan cleanup scheduler enabled: "
+                f"interval={ORPHAN_CLEANUP_INTERVAL_HOURS}h, "
+                f"idle_threshold={ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES}m"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to start orphan cleanup scheduler: {e}", exc_info=True
+            )
+    else:
+        logger.info("Orphan cleanup scheduler disabled")
+
+
+async def orphan_cleanup_background_task():
+    """Background task to periodically check and run orphan file cleanup."""
+    # Check every hour
+    while True:
+        try:
+            await asyncio.sleep(3600)  # 1 hour
+
+            if orphan_cleanup_scheduler and orphan_cleanup_scheduler.enabled:
+                result = orphan_cleanup_scheduler.run_if_needed()
+                if result:
+                    logger.info(f"Orphan cleanup completed: {result}")
+        except asyncio.CancelledError:
+            logger.info("Orphan cleanup background task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Error in orphan cleanup background task: {e}", exc_info=True)
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Stop system monitor on application shutdown."""
+    """Stop system monitor and cleanup tasks on application shutdown."""
+    # Cancel cleanup task if running
+    if cleanup_task:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+
+    # Stop system monitor
     monitor = get_system_monitor()
     monitor.stop()
 
@@ -1187,6 +1248,178 @@ async def cleanup_orphaned_processes() -> dict:
         }
 
 
+@app.post("/api/orphan-cleanup/run")
+async def run_orphan_cleanup(dry_run: bool = False) -> dict:
+    """Manually trigger orphan file cleanup.
+
+    Args:
+        dry_run: If true, only report what would be deleted without deleting
+
+    Returns:
+        Cleanup result with statistics
+    """
+    try:
+        logger.info(f"Manual orphan cleanup triggered (dry_run={dry_run})")
+        result = run_cleanup(dry_run=dry_run)
+        return result
+    except Exception as e:
+        logger.error(f"Manual orphan cleanup failed: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+
+@app.get("/api/orphan-cleanup/status")
+async def get_orphan_cleanup_status() -> dict:
+    """Get orphan cleanup scheduler status.
+
+    Returns:
+        Status information including enabled state and last cleanup time
+    """
+    if orphan_cleanup_scheduler:
+        return {
+            "enabled": orphan_cleanup_scheduler.enabled,
+            "check_interval_hours": orphan_cleanup_scheduler.check_interval_hours,
+            "idle_threshold_minutes": orphan_cleanup_scheduler.idle_threshold_minutes,
+            "last_check_time": (
+                orphan_cleanup_scheduler.last_check_time.isoformat() + "Z"
+                if orphan_cleanup_scheduler.last_check_time
+                else None
+            ),
+            "last_cleanup_time": (
+                orphan_cleanup_scheduler.last_cleanup_time.isoformat() + "Z"
+                if orphan_cleanup_scheduler.last_cleanup_time
+                else None
+            ),
+        }
+    else:
+        return {
+            "enabled": False,
+            "message": "Orphan cleanup scheduler not initialized",
+        }
+
+
+@app.get("/api/execution-history/info")
+async def get_execution_history_info() -> dict:
+    """Get information about execution history for cleanup decisions.
+
+    Returns:
+        Dict with execution count, oldest date, and cleanup history
+    """
+    try:
+        from py_captions_for_channels.models import OrphanCleanupHistory
+
+        tracker = get_tracker()
+        executions = tracker.get_executions(limit=10000)
+
+        oldest_date = None
+        newest_date = None
+        if executions:
+            # Find oldest and newest
+            dates = [e.get("started_at") for e in executions if e.get("started_at")]
+            if dates:
+                oldest_date = min(dates)
+                newest_date = max(dates)
+
+        # Get orphan cleanup history
+        db = next(get_db())
+        cleanup_records = (
+            db.query(OrphanCleanupHistory)
+            .order_by(OrphanCleanupHistory.cleanup_timestamp.desc())
+            .limit(10)
+            .all()
+        )
+
+        cleanup_history = []
+        for record in cleanup_records:
+            cleanup_history.append(
+                {
+                    "timestamp": record.cleanup_timestamp.isoformat() + "Z",
+                    "orig_files_deleted": record.orig_files_deleted,
+                    "srt_files_deleted": record.srt_files_deleted,
+                }
+            )
+
+        oldest_cleanup = (
+            db.query(OrphanCleanupHistory)
+            .order_by(OrphanCleanupHistory.cleanup_timestamp.asc())
+            .first()
+        )
+
+        return {
+            "total_executions": len(executions),
+            "oldest_execution": oldest_date,
+            "newest_execution": newest_date,
+            "cleanup_history": cleanup_history,
+            "oldest_cleanup_date": (
+                oldest_cleanup.cleanup_timestamp.isoformat() + "Z"
+                if oldest_cleanup
+                else None
+            ),
+        }
+    except Exception as e:
+        logger.error(f"Failed to get execution history info: {e}", exc_info=True)
+        return {"error": str(e)}
+
+
+@app.post("/api/execution-history/cleanup")
+async def cleanup_execution_history(cutoff_date: str = None) -> dict:
+    """Clean up execution history older than a specified date.
+
+    Args:
+        cutoff_date: ISO format date string (optional). If not provided,
+            uses oldest cleanup date.
+
+    Returns:
+        Cleanup result with number of executions removed
+    """
+    try:
+        from py_captions_for_channels.models import OrphanCleanupHistory
+
+        tracker = get_tracker()
+
+        if cutoff_date:
+            # Parse user-provided date
+            cutoff = datetime.fromisoformat(cutoff_date.replace("Z", "+00:00"))
+            logger.info(
+                f"Manual execution history cleanup requested with cutoff: {cutoff}"
+            )
+        else:
+            # Use oldest cleanup date
+            db = next(get_db())
+            oldest_cleanup = (
+                db.query(OrphanCleanupHistory)
+                .order_by(OrphanCleanupHistory.cleanup_timestamp.asc())
+                .first()
+            )
+
+            if oldest_cleanup:
+                cutoff = oldest_cleanup.cleanup_timestamp
+                logger.info(f"Using oldest cleanup date as cutoff: {cutoff}")
+            else:
+                # Fallback to 30 days ago
+                cutoff = datetime.utcnow() - timedelta(days=30)
+                logger.info(f"No cleanup history found, using 30-day default: {cutoff}")
+
+        removed = tracker.clear_executions_before_date(cutoff)
+
+        return {
+            "success": True,
+            "executions_removed": removed,
+            "cutoff_date": cutoff.isoformat() + "Z",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+    except Exception as e:
+        logger.error(f"Failed to clean execution history: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+
 def get_job_logs_from_file(job_id: str, max_lines: int = 500) -> list:
     """Extract log lines for a specific job from the main log file.
 
@@ -1356,6 +1589,11 @@ async def get_recordings() -> dict:
                         "success" if processed_exec.get("success") else "failed"
                     )
 
+            # Check if .orig backup file exists
+            from pathlib import Path as FilePath
+
+            has_orig = FilePath(str(path) + ".orig").exists()
+
             formatted_recordings.append(
                 {
                     "path": path,
@@ -1370,6 +1608,7 @@ async def get_recordings() -> dict:
                     "completed": rec.get("completed", False),
                     "passes_whitelist": passes_whitelist,
                     "processed": processed_status,  # None, 'success', or 'failed'
+                    "has_orig": has_orig,  # Whether .orig backup file exists
                 }
             )
 
@@ -1482,6 +1721,87 @@ async def add_to_manual_process_queue(request: Request) -> dict:
         }
     except Exception as e:
         return {"error": str(e), "added": 0}
+
+
+@app.post("/api/manual-process/restore")
+async def restore_recordings_from_backup(request: Request) -> dict:
+    """Restore recordings from .orig backup files.
+
+    This will:
+    - Delete the processed video file (.mpg)
+    - Rename the .orig file to .mpg (restore original)
+    - Delete the caption file (.srt)
+
+    Args:
+        request: Contains paths array of recordings to restore
+
+    Returns:
+        Dict with restore statistics
+    """
+    try:
+        data = await request.json()
+        paths = data.get("paths", [])
+
+        if not paths:
+            return {"error": "No paths provided", "restored": 0}
+
+        restored_count = 0
+        errors = []
+
+        for path in paths:
+            try:
+                from pathlib import Path as FilePath
+
+                video_path = FilePath(path)
+                orig_path = FilePath(str(path) + ".orig")
+                srt_path = video_path.with_suffix(".srt")
+
+                # Check if .orig exists
+                if not orig_path.exists():
+                    errors.append(f"{path}: No backup file found")
+                    continue
+
+                # Delete the processed video file
+                if video_path.exists():
+                    video_path.unlink()
+                    logger.info(f"Deleted processed file: {video_path}")
+
+                # Restore .orig to .mpg
+                orig_path.rename(video_path)
+                logger.info(f"Restored backup {orig_path} to {video_path}")
+
+                # Delete .srt file if it exists
+                if srt_path.exists():
+                    srt_path.unlink()
+                    logger.info(f"Deleted caption file: {srt_path}")
+
+                restored_count += 1
+
+            except Exception as e:
+                error_msg = f"{path}: {str(e)}"
+                errors.append(error_msg)
+                logger.error(f"Failed to restore {path}: {e}", exc_info=True)
+
+        result = {
+            "restored": restored_count,
+            "total": len(paths),
+            "errors": errors,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        if errors:
+            result["message"] = (
+                f"Restored {restored_count}/{len(paths)} recordings "
+                f"with {len(errors)} errors"
+            )
+        else:
+            result["message"] = f"Successfully restored {restored_count} recording(s)"
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Restore recordings failed: {e}", exc_info=True)
+        return {"error": str(e), "restored": 0}
 
 
 @app.post("/api/manual-process/remove")

@@ -402,6 +402,21 @@ class ExecutionTracker:
             if removed > 0:
                 LOG.info("Removed %d old execution(s)", removed)
 
+    def clear_executions_before_date(self, cutoff_date: datetime) -> int:
+        """Remove executions older than a specific date.
+
+        Args:
+            cutoff_date: Delete executions with started_at before this date
+
+        Returns:
+            Number of executions removed
+        """
+        with self._get_service() as service:
+            removed = service.clear_executions_before_date(cutoff_date)
+            if removed > 0:
+                LOG.info("Removed %d execution(s) older than %s", removed, cutoff_date)
+            return removed
+
 
 # Global instance
 _tracker: Optional[ExecutionTracker] = None

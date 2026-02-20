@@ -989,31 +989,59 @@ def main():
 
             try:
                 from faster_whisper import WhisperModel
+                from py_captions_for_channels.config import WHISPER_DEVICE
 
-                # Initialize model with GPU if available
-                device = "cuda"
-                compute_type = "float16"  # Use float16 for better GPU performance
-
-                log.info(
-                    f"Loading Faster-Whisper model: {args.model} "
-                    f"(device={device}, compute_type={compute_type})"
-                )
-
-                try:
-                    model = WhisperModel(
-                        args.model, device=device, compute_type=compute_type
-                    )
-                    log.info("Faster-Whisper model loaded successfully with GPU")
-                except Exception as e:
-                    log.warning(
-                        f"Failed to load model with GPU: {e}, falling back to CPU"
-                    )
+                # Determine device based on configuration
+                if WHISPER_DEVICE == "cpu":
                     device = "cpu"
                     compute_type = "int8"  # Use int8 for CPU efficiency
+                    log.info(
+                        f"Loading Faster-Whisper model: {args.model} "
+                        f"(device={device}, compute_type={compute_type}) - "
+                        f"CPU forced by config"
+                    )
                     model = WhisperModel(
                         args.model, device=device, compute_type=compute_type
                     )
-                    log.info("Faster-Whisper model loaded with CPU fallback")
+                    log.info("Faster-Whisper model loaded with CPU (forced)")
+                elif WHISPER_DEVICE == "cuda":
+                    device = "cuda"
+                    compute_type = "float16"  # Use float16 for better GPU performance
+                    log.info(
+                        f"Loading Faster-Whisper model: {args.model} "
+                        f"(device={device}, compute_type={compute_type}) - "
+                        f"GPU forced by config"
+                    )
+                    model = WhisperModel(
+                        args.model, device=device, compute_type=compute_type
+                    )
+                    log.info("Faster-Whisper model loaded with GPU (forced)")
+                else:  # auto mode
+                    # Initialize model with GPU if available, fallback to CPU
+                    device = "cuda"
+                    compute_type = "float16"  # Use float16 for better GPU performance
+
+                    log.info(
+                        f"Loading Faster-Whisper model: {args.model} "
+                        f"(device={device}, compute_type={compute_type}) - "
+                        f"auto-detect mode"
+                    )
+
+                    try:
+                        model = WhisperModel(
+                            args.model, device=device, compute_type=compute_type
+                        )
+                        log.info("Faster-Whisper model loaded successfully with GPU")
+                    except Exception as e:
+                        log.warning(
+                            f"Failed to load model with GPU: {e}, falling back to CPU"
+                        )
+                        device = "cpu"
+                        compute_type = "int8"  # Use int8 for CPU efficiency
+                        model = WhisperModel(
+                            args.model, device=device, compute_type=compute_type
+                        )
+                        log.info("Faster-Whisper model loaded with CPU fallback")
 
                 # Transcribe with progress tracking
                 log.info(f"Transcribing audio from: {mpg_path}")

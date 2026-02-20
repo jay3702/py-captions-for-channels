@@ -477,6 +477,47 @@ class ExecutionService:
                 raise
         return removed
 
+    def clear_executions_before_date(self, cutoff_date: datetime) -> int:
+        """Remove executions older than a specific date.
+
+        Args:
+            cutoff_date: Delete executions with started_at before this date
+
+        Returns:
+            Number of executions removed
+        """
+        # Ensure cutoff_date is timezone-aware
+        if cutoff_date.tzinfo is None:
+            cutoff_date = cutoff_date.replace(tzinfo=timezone.utc)
+
+        # Find all executions before cutoff
+        old_execs = (
+            self.db.query(Execution).filter(Execution.started_at < cutoff_date).all()
+        )
+
+        if not old_execs:
+            return 0
+
+        removed = len(old_execs)
+        for execution in old_execs:
+            self.db.delete(execution)
+
+        try:
+            self.db.commit()
+            LOG.info(f"Deleted {removed} executions older than {cutoff_date}")
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" in error_msg:
+                pass
+            else:
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+                raise
+
+        return removed
+
     # ExecutionStep methods
 
     def add_step(

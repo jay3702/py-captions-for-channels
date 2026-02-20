@@ -206,6 +206,31 @@ class Progress(Base):
         )
 
 
+class OrphanCleanupHistory(Base):
+    """Track orphan cleanup runs for execution history retention.
+
+    Stores the last successful orphan cleanup run date.
+    Used to determine safe cutoff date for execution history cleanup.
+    """
+
+    __tablename__ = "orphan_cleanup_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cleanup_timestamp = Column(DateTime, nullable=False)
+    orig_files_deleted = Column(Integer, default=0)
+    srt_files_deleted = Column(Integer, default=0)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    def __repr__(self):
+        return (
+            f"<OrphanCleanupHistory(id={self.id}, "
+            f"cleanup_timestamp={self.cleanup_timestamp}, "
+            f"deleted={self.orig_files_deleted + self.srt_files_deleted})>"
+        )
+
+
 class PollingCache(Base):
     """Polling source yielded cache (persistent).
 

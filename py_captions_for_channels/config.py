@@ -47,8 +47,19 @@ load_dotenv()
 # ChannelWatch WebSocket endpoint (usually not needed - webhooks preferred)
 CHANNELWATCH_URL = os.getenv("CHANNELWATCH_URL", "ws://localhost:8501/events")
 
-# Channels DVR API endpoint
-CHANNELS_API_URL = os.getenv("CHANNELS_API_URL", "http://localhost:8089")
+# Channels DVR server base URL
+CHANNELS_DVR_URL = os.getenv("CHANNELS_DVR_URL", "http://localhost:8089")
+
+# Channels DVR API base path (future-proof if they change API structure)
+CHANNELS_API_BASE_PATH = os.getenv("CHANNELS_API_BASE_PATH", "/api/v1")
+
+# Full API URL (constructed from base + path, or override directly)
+CHANNELS_API_URL = os.getenv(
+    "CHANNELS_API_URL", f"{CHANNELS_DVR_URL.rstrip('/')}{CHANNELS_API_BASE_PATH}"
+)
+
+# DVR recordings storage path (root directory where recordings are stored)
+DVR_RECORDINGS_PATH = os.getenv("DVR_RECORDINGS_PATH", "/recordings")
 
 # Local test directory (for development - overrides network DVR path)
 # When set, uses local sample files instead of network repository
@@ -67,6 +78,12 @@ CAPTION_DELAY_MS = int(os.getenv("CAPTION_DELAY_MS", "0"))
 OPTIMIZATION_MODE = os.getenv(
     "OPTIMIZATION_MODE", os.getenv("WHISPER_MODE", "standard")
 )
+
+# Whisper device selection
+# "auto" - Automatically detect and use GPU if available, fallback to CPU
+# "cuda" - Force GPU usage (will fail if GPU not available)
+# "cpu" - Force CPU-only processing (useful for testing or when GPU is busy)
+WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto").lower()
 
 # State file for tracking last processed timestamp
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
@@ -137,3 +154,10 @@ if LOG_VERBOSITY.upper() not in ("MINIMAL", "NORMAL", "VERBOSE"):
     raise ValueError(
         f"Invalid LOG_VERBOSITY: {LOG_VERBOSITY}. Must be MINIMAL, NORMAL, or VERBOSE"
     )
+
+# Orphan file cleanup configuration
+ORPHAN_CLEANUP_ENABLED = get_env_bool("ORPHAN_CLEANUP_ENABLED", False)
+ORPHAN_CLEANUP_INTERVAL_HOURS = get_env_int("ORPHAN_CLEANUP_INTERVAL_HOURS", 24)
+ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES = get_env_int(
+    "ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES", 15
+)
