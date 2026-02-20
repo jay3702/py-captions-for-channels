@@ -2056,7 +2056,5 @@ window.addEventListener('DOMContentLoaded', () => {
     startSystemMonitor();
   }
 });
-
-
-
+}
 
