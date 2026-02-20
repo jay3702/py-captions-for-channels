@@ -891,7 +891,7 @@ function renderSettingsUI(settings) {
   const dropdownFields = {
     'DISCOVERY_MODE': ['polling', 'webhook', 'mock'],
     'OPTIMIZATION_MODE': ['standard', 'automatic'],
-    'GPU': ['auto', 'nvidia', 'amd', 'intel', 'none'],
+    'WHISPER_DEVICE': ['auto', 'nvidia', 'amd', 'intel', 'none'],
     'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
   };
   

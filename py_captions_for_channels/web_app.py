@@ -504,6 +504,37 @@ def load_env_settings() -> dict:
                 if key not in merged[category]:
                     merged[category][key] = config.copy()
 
+        # Inject runtime values for settings with placeholders
+        # This ensures UI shows actual values being used by the system
+        from py_captions_for_channels import config
+
+        runtime_values = {
+            "CHANNELS_DVR_URL": config.CHANNELS_DVR_URL,
+            "CHANNELS_API_URL": config.CHANNELS_API_URL,
+            "CHANNELWATCH_URL": config.CHANNELWATCH_URL,
+            "DVR_RECORDINGS_PATH": config.DVR_RECORDINGS_PATH,
+            "WHISPER_DEVICE": config.WHISPER_DEVICE,
+        }
+
+        # Replace placeholder values with runtime values
+        for category in merged:
+            for key in merged[category]:
+                if key in runtime_values:
+                    value = merged[category][key].get("value", "")
+                    # If value contains placeholder text or is empty, use runtime value
+                    if (
+                        not value
+                        or "<" in value
+                        or ">" in value
+                        or value == runtime_values[key]
+                    ):
+                        # Only update if runtime value differs from default
+                        runtime_val = runtime_values[key]
+                        if runtime_val and runtime_val != merged[category][key].get(
+                            "default", ""
+                        ):
+                            merged[category][key]["value"] = runtime_val
+
         LOG.info(
             f"Loaded settings: {sum(len(v) for v in merged.values())} "
             f"settings across {len(merged)} categories"
