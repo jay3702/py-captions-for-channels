@@ -50,12 +50,9 @@ CHANNELWATCH_URL = os.getenv("CHANNELWATCH_URL", "ws://localhost:8501/events")
 # Channels DVR server base URL
 CHANNELS_DVR_URL = os.getenv("CHANNELS_DVR_URL", "http://localhost:8089")
 
-# Channels DVR API base path (future-proof if they change API structure)
-CHANNELS_API_BASE_PATH = os.getenv("CHANNELS_API_BASE_PATH", "/api/v1")
-
-# Full API URL (constructed from base + path, or override directly)
+# Full Channels DVR API URL (defaults to DVR URL + /api/v1)
 CHANNELS_API_URL = os.getenv(
-    "CHANNELS_API_URL", f"{CHANNELS_DVR_URL.rstrip('/')}{CHANNELS_API_BASE_PATH}"
+    "CHANNELS_API_URL", f"{CHANNELS_DVR_URL.rstrip('/')}/api/v1"
 )
 
 # DVR recordings storage path (root directory where recordings are stored)
@@ -83,7 +80,7 @@ OPTIMIZATION_MODE = os.getenv(
 # "auto" - Automatically detect and use GPU if available, fallback to CPU
 # "cuda" - Force GPU usage (will fail if GPU not available)
 # "cpu" - Force CPU-only processing (useful for testing or when GPU is busy)
-WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto").lower()
+GPU = os.getenv("GPU", "auto").lower()
 
 # State file for tracking last processed timestamp
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")

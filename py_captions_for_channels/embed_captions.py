@@ -989,10 +989,10 @@ def main():
 
             try:
                 from faster_whisper import WhisperModel
-                from py_captions_for_channels.config import WHISPER_DEVICE
+                from py_captions_for_channels.config import GPU
 
                 # Determine device based on configuration
-                if WHISPER_DEVICE == "cpu":
+                if GPU == "none":
                     device = "cpu"
                     compute_type = "int8"  # Use int8 for CPU efficiency
                     log.info(
@@ -1003,8 +1003,8 @@ def main():
                     model = WhisperModel(
                         args.model, device=device, compute_type=compute_type
                     )
-                    log.info("Faster-Whisper model loaded with CPU (forced)")
-                elif WHISPER_DEVICE == "cuda":
+                    log.info("Faster-Whisper model loaded with CPU (GPU disabled)")
+                elif GPU == "nvidia":
                     device = "cuda"
                     compute_type = "float16"  # Use float16 for better GPU performance
                     log.info(
@@ -1015,7 +1015,33 @@ def main():
                     model = WhisperModel(
                         args.model, device=device, compute_type=compute_type
                     )
-                    log.info("Faster-Whisper model loaded with GPU (forced)")
+                    log.info("Faster-Whisper model loaded with NVIDIA GPU (forced)")
+                elif GPU in ["amd", "intel"]:
+                    # AMD/Intel GPU support - for now behaves like auto
+                    # Future: implement ROCm for AMD, OpenVINO for Intel
+                    device = "cuda"
+                    compute_type = "float16"
+                    log.info(
+                        f"Loading Faster-Whisper model: {args.model} "
+                        f"(device={device}, compute_type={compute_type}) - "
+                        f"{GPU.upper()} GPU mode (currently using CUDA fallback)"
+                    )
+                    try:
+                        model = WhisperModel(
+                            args.model, device=device, compute_type=compute_type
+                        )
+                        log.info(f"{GPU.upper()} GPU mode activated (CUDA fallback)")
+                    except Exception as e:
+                        log.warning(
+                            f"{GPU.upper()} GPU initialization failed: {e}, "
+                            f"falling back to CPU"
+                        )
+                        device = "cpu"
+                        compute_type = "int8"
+                        model = WhisperModel(
+                            args.model, device=device, compute_type=compute_type
+                        )
+                        log.info("Faster-Whisper model loaded with CPU (fallback)")
                 else:  # auto mode
                     # Initialize model with GPU if available, fallback to CPU
                     device = "cuda"
