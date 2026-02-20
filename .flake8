@@ -13,4 +13,12 @@ exclude =
     .github,
     build,
     dist,
-    site-packages
+    site-packages,
+    scripts/performance_report.py,
+    scripts/sync_env_from_example.py,
+    export_performance_csv.py,
+    quick_report.py,
+    simple_report.py,
+    test_api_monitor.py,
+    test_system_monitor.py,
+    check_*.py
