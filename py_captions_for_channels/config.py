@@ -80,7 +80,7 @@ OPTIMIZATION_MODE = os.getenv(
 # "auto" - Automatically detect and use GPU if available, fallback to CPU
 # "cuda" - Force GPU usage (will fail if GPU not available)
 # "cpu" - Force CPU-only processing (useful for testing or when GPU is busy)
-GPU = os.getenv("GPU", "auto").lower()
+WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto").lower()
 
 # State file for tracking last processed timestamp
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")

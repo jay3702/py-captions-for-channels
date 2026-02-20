@@ -114,7 +114,7 @@ def main():
 
     print(f"\n✅ New .env file created at {env_path}")
     print("\nNew settings added:")
-    print("  - GPU=auto (Whisper GPU/CPU selection)")
+    print("  - WHISPER_DEVICE=auto (GPU/CPU selection)")
     print("  - ORPHAN_CLEANUP_ENABLED=false")
     print("  - ORPHAN_CLEANUP_INTERVAL_HOURS=24")
     print("  - ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES=15")
