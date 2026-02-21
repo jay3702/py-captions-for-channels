@@ -140,8 +140,9 @@ async function fetchStatus() {
         let mostRecentAge = Infinity;
         
         // Check all heartbeats and determine which one to show
+        // Use 6-second window to reliably catch updates (frontend polls every 5s)
         for (const [name, hb] of Object.entries(data.heartbeat)) {
-          if (hb.alive && hb.age_seconds < 0.5) {
+          if (hb.alive && hb.age_seconds < 6) {
             const priority = name === 'polling' ? 1 : (name === 'manual' ? 2 : 999);
             if (priority < (mostRecentPriority || 999)) {
               mostRecentPriority = priority;
@@ -152,17 +153,17 @@ async function fetchStatus() {
         
         // Apply appropriate pulse animation based on poll type
         if (mostRecentPriority === 1) {
-          // API polling (frequent) - green pulse (250ms)
-          pollingIndicator.classList.remove('pulse-blue', 'pulse-green', 'pulse-yellow');
-          void pollingIndicator.offsetWidth; // Force reflow
-          pollingIndicator.classList.add('pulse-green');
-          setTimeout(() => pollingIndicator.classList.remove('pulse-green'), 250);
-        } else if (mostRecentPriority === 2) {
-          // Manual queue (less frequent) - blue pulse (500ms)
+          // API polling (less frequent) - blue pulse (500ms) to match service indicator
           pollingIndicator.classList.remove('pulse-blue', 'pulse-green', 'pulse-yellow');
           void pollingIndicator.offsetWidth; // Force reflow
           pollingIndicator.classList.add('pulse-blue');
           setTimeout(() => pollingIndicator.classList.remove('pulse-blue'), 500);
+        } else if (mostRecentPriority === 2) {
+          // Manual queue (more frequent) - green pulse (250ms)
+          pollingIndicator.classList.remove('pulse-blue', 'pulse-green', 'pulse-yellow');
+          void pollingIndicator.offsetWidth; // Force reflow
+          pollingIndicator.classList.add('pulse-green');
+          setTimeout(() => pollingIndicator.classList.remove('pulse-green'), 250);
         } else if (!mostRecentPriority) {
           // No recent activity - check if any are alive
           let anyAlive = false;
