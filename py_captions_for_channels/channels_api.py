@@ -201,6 +201,44 @@ class ChannelsAPI:
             LOG.error("Failed to parse API response: %s", e)
             raise RuntimeError(f"Invalid API response: {e}")
 
+    def get_channel_by_path(self, recording_path: str) -> Optional[str]:
+        """Look up channel number for a recording by its file path.
+
+        Args:
+            recording_path: Full path to recording file
+
+        Returns:
+            Channel number (e.g., "11.1", "6030") or None if not found
+        """
+        try:
+            # Normalize path for comparison
+            recording_path = str(Path(recording_path).resolve())
+
+            resp = requests.get(
+                f"{self.base_url}/api/v1/all",
+                params={"source": "recordings"},
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            recordings = resp.json()
+
+            for rec in recordings:
+                rec_path = rec.get("path", "")
+                if rec_path and Path(rec_path).resolve() == Path(recording_path):
+                    channel = rec.get("channel")
+                    if channel:
+                        LOG.debug(
+                            f"Found channel {channel} for {Path(recording_path).name}"
+                        )
+                        return str(channel)
+
+            LOG.debug(f"No channel found for {Path(recording_path).name}")
+            return None
+
+        except Exception as e:
+            LOG.warning(f"Failed to look up channel for {recording_path}: {e}")
+            return None
+
     def get_recording_info(self, file_id: str) -> Optional[dict]:
         """Get detailed information about a recording.
 

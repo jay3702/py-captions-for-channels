@@ -35,11 +35,14 @@ def extract_channel_number(video_path):
     Looks for patterns like:
     - Directory names: "4.1 KRON", "11.3 KNTV", "6030 CNN"
     - Path components with channel info
+    - Falls back to Channels DVR API lookup if not found in path
 
     Returns:
         str or None: Channel number (e.g., "4.1", "6030") or None if not found
     """
     import re
+    from py_captions_for_channels.channels_api import ChannelsAPI
+    from py_captions_for_channels.config import CHANNELS_API_URL
 
     # Normalize path separators to forward slashes for consistent regex
     path_str = str(video_path).replace("\\", "/")
@@ -66,6 +69,15 @@ def extract_channel_number(video_path):
     filename_tve = re.search(r"[-_](\d{4,})[-_]", filename)
     if filename_tve:
         return filename_tve.group(1)
+
+    # Pattern 4: Fall back to Channels DVR API lookup
+    try:
+        api = ChannelsAPI(CHANNELS_API_URL)
+        channel = api.get_channel_by_path(str(video_path))
+        if channel:
+            return channel
+    except Exception:
+        pass  # API lookup failed, return None
 
     # Could not determine channel number
     return None
