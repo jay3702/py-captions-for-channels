@@ -1742,8 +1742,8 @@ async def get_recordings() -> dict:
 
         # Debug: Log field names only
         if recordings and len(recordings) > 0:
-            LOG.info(f"Received {len(recordings)} recordings from Channels DVR")
-            LOG.info(f"First recording keys: {list(recordings[0].keys())}")
+            LOG.debug(f"Received {len(recordings)} recordings from Channels DVR")
+            LOG.debug(f"First recording keys: {list(recordings[0].keys())}")
 
         # Load whitelist from database for checking
         db = next(get_db())
@@ -1816,7 +1816,7 @@ async def get_recordings() -> dict:
                 }
             )
 
-        LOG.info(f"Formatted {len(formatted_recordings)} recordings for UI")
+        LOG.debug(f"Formatted {len(formatted_recordings)} recordings for UI")
 
         return {
             "recordings": formatted_recordings,
