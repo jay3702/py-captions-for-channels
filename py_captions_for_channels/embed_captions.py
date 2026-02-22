@@ -547,12 +547,17 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
 
     # Determine encoder presets based on OPTIMIZATION_MODE
     channel_number = extract_channel_number(mpg_orig)
+    print(f"[OPTIMIZATION] ffmpeg channel detected: {channel_number}")
     if OPTIMIZATION_MODE == "automatic":
         ffmpeg_params = get_ffmpeg_parameters(mpg_orig, channel_number)
         nvenc_preset = ffmpeg_params["nvenc_preset"]
         x264_preset = ffmpeg_params["x264_preset"]
         log.info(
             f"Using automatic ffmpeg presets (channel={channel_number}): "
+            f"nvenc={nvenc_preset}, x264={x264_preset}"
+        )
+        print(
+            f"[OPTIMIZATION] Using automatic ffmpeg: "
             f"nvenc={nvenc_preset}, x264={x264_preset}"
         )
     else:
@@ -1107,6 +1112,7 @@ def main():
 
                 # Determine Whisper parameters based on OPTIMIZATION_MODE
                 channel_number = extract_channel_number(mpg_path)
+                print(f"[OPTIMIZATION] Channel detected: {channel_number}")
                 if OPTIMIZATION_MODE == "automatic":
                     whisper_params = get_whisper_parameters(mpg_path, channel_number)
                     beam_size = whisper_params.get("beam_size")
@@ -1116,6 +1122,10 @@ def main():
                     log.info(
                         f"Using automatic Whisper parameters "
                         f"(channel={channel_number}): "
+                        f"beam_size={beam_size}, vad_min_silence_ms={vad_ms}"
+                    )
+                    print(
+                        f"[OPTIMIZATION] Using automatic Whisper: "
                         f"beam_size={beam_size}, vad_min_silence_ms={vad_ms}"
                     )
                 else:
