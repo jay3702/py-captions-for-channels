@@ -37,7 +37,6 @@ from .config import (
     POLL_MAX_AGE_HOURS,
     POLL_MAX_QUEUE_SIZE,
     DRY_RUN,
-    WHITELIST_FILE,
     STALE_EXECUTION_SECONDS,
     LOG_VERBOSITY_FILE,
     MANUAL_PROCESS_POLL_SECONDS,
@@ -701,8 +700,14 @@ async def main():
             len(orphaned_executions),
         )
 
-        # Load whitelist for filtering
-        whitelist = Whitelist(WHITELIST_FILE)
+        # Load whitelist from database for filtering
+        db = next(get_db())
+        try:
+            settings_service = SettingsService(db)
+            whitelist_content = settings_service.get("whitelist", "")
+            whitelist = Whitelist(content=whitelist_content)
+        finally:
+            db.close()
 
         @dataclass
         class PartialProcessingEvent:
@@ -922,7 +927,15 @@ async def main():
             print("Auto-detected: whisper (TRANSCODE_FOR_FIRETV=false)")
 
     pipeline = Pipeline(caption_cmd, dry_run=DRY_RUN)
-    whitelist = Whitelist(WHITELIST_FILE)
+
+    # Load whitelist from database
+    db = next(get_db())
+    try:
+        settings_service = SettingsService(db)
+        whitelist_content = settings_service.get("whitelist", "")
+        whitelist = Whitelist(content=whitelist_content)
+    finally:
+        db.close()
 
     # Clean up stale manual process executions from previous runs
     # Only clear 'running' items (interrupted by restart)

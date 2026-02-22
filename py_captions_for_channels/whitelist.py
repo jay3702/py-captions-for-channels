@@ -109,16 +109,21 @@ class WhitelistRule:
 class Whitelist:
     """Manages whitelist rules for recording filtering."""
 
-    def __init__(self, whitelist_file: Optional[str] = None):
-        """Initialize whitelist from file.
+    def __init__(
+        self, whitelist_file: Optional[str] = None, content: Optional[str] = None
+    ):
+        """Initialize whitelist from file or content string.
 
         Args:
-            whitelist_file: Path to whitelist file (one rule per line)
+            whitelist_file: Path to whitelist file (one rule per line) - deprecated
+            content: Whitelist content as string (one rule per line)
         """
         self.rules: List[WhitelistRule] = []
         self.enabled = False
 
-        if whitelist_file and Path(whitelist_file).exists():
+        if content is not None:
+            self.load_from_content(content)
+        elif whitelist_file and Path(whitelist_file).exists():
             self.load(whitelist_file)
 
     def load(self, filepath: str):
@@ -141,6 +146,27 @@ class Whitelist:
 
         self.enabled = len(self.rules) > 0
         LOG.info("Loaded %d whitelist rules", len(self.rules))
+
+    def load_from_content(self, content: str):
+        """Load whitelist rules from string content.
+
+        Args:
+            content: Whitelist content (one rule per line)
+        """
+        LOG.info("Loading whitelist from content string")
+        self.rules = []
+
+        for line in content.split("\n"):
+            line = line.strip()
+            if line and not line.startswith("#"):
+                try:
+                    rule = WhitelistRule(line)
+                    self.rules.append(rule)
+                except Exception as e:
+                    LOG.warning("Invalid whitelist rule '%s': %s", line, e)
+
+        self.enabled = len(self.rules) > 0
+        LOG.info("Loaded %d whitelist rules from content", len(self.rules))
 
     def is_allowed(self, title: str, recording_time: Optional[datetime] = None) -> bool:
         """Check if a recording is allowed by the whitelist.

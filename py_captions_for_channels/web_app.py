@@ -268,13 +268,23 @@ def load_settings(db: Session = None) -> dict:
             # Refresh after migration
             all_settings = settings_service.get_all()
 
-        # Always read whitelist from file (not stored in DB)
-        whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
-        try:
-            with open(whitelist_path, "r", encoding="utf-8") as f:
-                all_settings["whitelist"] = f.read()
-        except Exception:
-            all_settings["whitelist"] = ""
+        # Get whitelist from database (or migrate from file if needed)
+        whitelist_content = settings_service.get("whitelist", "")
+
+        # If whitelist is empty in DB, try to migrate from file
+        if not whitelist_content:
+            whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
+            try:
+                if whitelist_path.exists():
+                    with open(whitelist_path, "r", encoding="utf-8") as f:
+                        whitelist_content = f.read()
+                    # Save to database for future use
+                    settings_service.set("whitelist", whitelist_content)
+                    LOG.info("Migrated whitelist from file to database")
+            except Exception as e:
+                LOG.warning("Failed to migrate whitelist from file: %s", e)
+
+        all_settings["whitelist"] = whitelist_content
 
         return all_settings
     finally:
@@ -294,17 +304,15 @@ def save_settings(settings: dict, db: Session = None):
     try:
         settings_service = SettingsService(db)
 
-        # Extract whitelist before saving (stored separately in file)
+        # Extract whitelist to save separately
         whitelist_content = settings.pop("whitelist", None)
 
         # Save non-whitelist settings to database
         settings_service.set_many(settings)
 
-        # Save whitelist to file
+        # Save whitelist to database
         if whitelist_content is not None:
-            whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
-            with open(whitelist_path, "w", encoding="utf-8") as f:
-                f.write(whitelist_content)
+            settings_service.set("whitelist", whitelist_content)
 
         LOG.info("Settings saved to database")
     finally:
@@ -1580,9 +1588,14 @@ async def get_recordings() -> dict:
             LOG.info(f"Received {len(recordings)} recordings from Channels DVR")
             LOG.info(f"First recording keys: {list(recordings[0].keys())}")
 
-        # Load whitelist for checking
-        whitelist_path = Path(__file__).parent.parent / "whitelist.txt"
-        whitelist = Whitelist(str(whitelist_path) if whitelist_path.exists() else None)
+        # Load whitelist from database for checking
+        db = next(get_db())
+        try:
+            settings_service = SettingsService(db)
+            whitelist_content = settings_service.get("whitelist", "")
+            whitelist = Whitelist(content=whitelist_content)
+        finally:
+            db.close()
 
         # Get execution tracker to check processed status
         tracker = get_tracker()

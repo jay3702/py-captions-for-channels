@@ -801,10 +801,22 @@ function stopLogPolling() {
 // --- Pipeline Settings UI ---
 async function loadSettings() {
   try {
-    const res = await fetch('/api/env-settings');
-    if (!res.ok) throw new Error('Failed to load settings');
-    const data = await res.json();
-    renderSettingsUI(data);
+    // Load both env settings and whitelist from database
+    const [envRes, settingsRes] = await Promise.all([
+      fetch('/api/env-settings'),
+      fetch('/api/settings')
+    ]);
+    
+    if (!envRes.ok) throw new Error('Failed to load env settings');
+    const envData = await envRes.json();
+    
+    let whitelist = '';
+    if (settingsRes.ok) {
+      const settingsData = await settingsRes.json();
+      whitelist = settingsData.whitelist || '';
+    }
+    
+    renderSettingsUI(envData, whitelist);
   } catch (err) {
     console.error('Failed to load settings:', err);
     const container = document.getElementById('settings-container');
@@ -814,7 +826,7 @@ async function loadSettings() {
   }
 }
 
-function renderSettingsUI(settings) {
+function renderSettingsUI(settings, whitelist) {
   const container = document.getElementById('settings-container');
   if (!container) return;
   
@@ -1000,6 +1012,18 @@ function renderSettingsUI(settings) {
     html += `</div>`;
   }
   
+  // Add whitelist editor section after all env categories
+  html += `<div class="settings-category" style="margin-bottom: 24px;">`;
+  html += `<h3 style="margin: 0 0 16px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">
+            Recording Whitelist
+           </h3>`;
+  html += `<div class="settings-group" style="margin-bottom: 16px;">`;
+  html += `<label for="whitelist-editor" style="font-weight: 600; display: block; margin-bottom: 4px;">Whitelist Rules</label>`;
+  html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 8px 0;">One rule per line. Supports wildcards (* and ?) and regex patterns. Empty = process all recordings.</p>`;
+  html += `<textarea id="whitelist-editor" rows="10" style="width:100%; font-family: monospace; font-size: 12px;">${whitelist || ''}</textarea>`;
+  html += `</div>`;
+  html += `</div>`;
+  
   if (html.length === 0) {
     container.innerHTML = '<p style="color: orange;">No settings found in response.</p>';
   } else {
@@ -1036,18 +1060,34 @@ async function saveEnvSettings(event) {
   });
   
   try {
-    const res = await fetch('/api/env-settings', {
+    // Save env settings to .env file
+    const envRes = await fetch('/api/env-settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
     });
-    const data = await res.json();
+    const envData = await envRes.json();
     
-    if (!res.ok || data.error) {
-      throw new Error(data.error || 'Failed to save settings');
+    if (!envRes.ok || envData.error) {
+      throw new Error(envData.error || 'Failed to save settings');
     }
     
-    alert('✓ Settings saved to .env file!\n\nPlease restart the application for changes to take effect.');
+    // Save whitelist to database
+    const whitelistEditor = document.getElementById('whitelist-editor');
+    if (whitelistEditor) {
+      const whitelistRes = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ whitelist: whitelistEditor.value })
+      });
+      
+      if (!whitelistRes.ok) {
+        const whitelistData = await whitelistRes.json();
+        throw new Error(whitelistData.error || 'Failed to save whitelist');
+      }
+    }
+    
+    alert('✓ Settings saved!\n\n.env changes require restart.\nWhitelist changes are active immediately.');
     closeSettingsModal();
   } catch (err) {
     alert('✗ Failed to save settings: ' + err.message);
