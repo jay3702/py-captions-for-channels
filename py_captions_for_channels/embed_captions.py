@@ -993,7 +993,8 @@ def main():
         pipeline.stage_start("whisper", job_id, filename)
         pipeline.stage_end("whisper", job_id)
     else:
-        log.info(f"Generating captions with Faster-Whisper model: {args.model}")
+        log.info(f"Preparing Faster-Whisper model: {args.model}")
+        step_tracker.start("whisper", input_path=mpg_path, output_path=srt_path)
 
         def _run_whisper():
             def format_srt_timestamp(seconds):
@@ -1196,6 +1197,10 @@ def main():
                                 pass
                         raise
 
+                # Start the pipeline stage right before actual transcription
+                log.info("Starting transcription...")
+                pipeline.stage_start("whisper", job_id, filename)
+
                 # Try GPU transcription first, fall back to CPU if GPU libraries fail
                 transcription_successful = False
                 try:
@@ -1367,22 +1372,30 @@ def main():
                     except Exception as e:
                         log.warning(f"Failed to clean up WAV file: {e}")
 
+                # End pipeline stage after successful transcription
+                pipeline.stage_end("whisper", job_id)
+
             except ImportError as e:
                 log.error(
                     f"faster-whisper not installed: {e}. "
                     f"Install with: pip install faster-whisper"
                 )
+                pipeline.stage_end("whisper", job_id)
                 sys.exit(1)
             except Exception as e:
                 log.error(f"Faster-Whisper transcription failed: {e}")
+                pipeline.stage_end("whisper", job_id)
                 sys.exit(1)
 
-        run_step(
-            "whisper",
-            _run_whisper,
-            input_path=mpg_path,
-            output_path=srt_path,
-        )
+        try:
+            _run_whisper()
+            step_tracker.finish("whisper", status="completed")
+        except SystemExit:
+            step_tracker.finish("whisper", status="failed")
+            raise
+        except Exception:
+            step_tracker.finish("whisper", status="failed")
+            raise
 
     # Now preserve the original AFTER caption generation
     run_step(
