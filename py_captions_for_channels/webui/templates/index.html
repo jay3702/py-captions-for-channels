@@ -71,6 +71,7 @@
           <button class="tab-btn active" onclick="switchTab('executions')">Executions</button>
           <button class="tab-btn" onclick="switchTab('glances')">System Monitor</button>
           <button class="tab-btn" onclick="switchTab('logs')">Full Logs</button>
+          <button class="tab-btn" onclick="switchTab('quarantine')">Quarantine</button>
         </div>
       </div>
       
@@ -147,6 +148,44 @@
         
         <div id="gpu-unavailable" class="monitor-panel" style="margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; text-align: center; color: #888;">
           Checking GPU availability...
+        </div>
+      </div>
+
+      <div id="quarantine-tab" class="tab-content">
+        <div class="tab-header">
+          <small class="muted" id="quarantine-stats">(loading)</small>
+          <div style="margin-left:auto; display:flex; gap:8px;">
+            <button class="btn-small" onclick="restoreSelected()">Restore Selected</button>
+            <button class="btn-small btn-danger" onclick="deleteSelected()">Delete Selected</button>
+          </div>
+        </div>
+        <div class="quarantine-info" style="padding: 10px; margin-bottom: 10px; background: #2a2a2a; border-radius: 4px;">
+          <p style="margin: 0; color: #888; font-size: 0.9em;">
+            Files are quarantined instead of being immediately deleted. They can be restored if deleted by mistake.
+            Files expire after 30 days and are permanently deleted.
+          </p>
+        </div>
+        <div class="table-container">
+          <table class="quarantine-table">
+            <thead>
+              <tr>
+                <th style="width: 40px;">
+                  <input type="checkbox" id="quarantine-select-all" onchange="toggleSelectAll(this)">
+                </th>
+                <th>File</th>
+                <th>Type</th>
+                <th>Size</th>
+                <th>Quarantined</th>
+                <th>Expires</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="quarantine-list">
+              <tr>
+                <td colspan="7" style="text-align: center; color: #888;">Loading quarantined files...</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>

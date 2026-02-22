@@ -14,6 +14,15 @@ removes .orig and .srt files for recordings that:
 
 This prevents accidental deletion of files from unprocessed recordings or
 recordings that failed processing.
+
+TODO: Future enhancement - Detect and quarantine files orphaned by Channels DVR
+      Currently we only detect orphans created by our own processing pipeline.
+      Channels DVR may also leave orphaned files when recordings are deleted or moved.
+      Future version should:
+      - Scan for .orig and .srt files without corresponding video files
+      - Identify which were created by Channels DVR vs our pipeline
+      - Add them to quarantine with appropriate metadata
+      - Use same restore/delete workflow for all orphaned files
 """
 
 import logging
@@ -161,47 +170,84 @@ def find_orphaned_files(recordings_path: str) -> Tuple[List[Path], List[Path]]:
     return (orphaned_orig, orphaned_srt)
 
 
-def delete_orphaned_files(
+def quarantine_orphaned_files(
     orig_files: List[Path], srt_files: List[Path], dry_run: bool = False
 ) -> Tuple[int, int]:
-    """Delete orphaned .orig and .srt files.
+    """Quarantine orphaned .orig and .srt files instead of deleting them.
+
+    Files are moved to quarantine with an expiration date, allowing restore if needed.
 
     Args:
-        orig_files: List of orphaned .orig files to delete
-        srt_files: List of orphaned .srt files to delete
-        dry_run: If True, only log what would be deleted without deleting
+        orig_files: List of orphaned .orig files to quarantine
+        srt_files: List of orphaned .srt files to quarantine
+        dry_run: If True, only log what would be quarantined without moving files
 
     Returns:
-        Tuple of (orig_deleted_count, srt_deleted_count)
+        Tuple of (orig_quarantined_count, srt_quarantined_count)
     """
-    orig_deleted = 0
-    srt_deleted = 0
+    from py_captions_for_channels.config import (
+        QUARANTINE_DIR,
+        QUARANTINE_EXPIRATION_DAYS,
+    )
+    from py_captions_for_channels.database import get_db
+    from py_captions_for_channels.services.quarantine_service import QuarantineService
 
-    # Delete .orig files
+    orig_quarantined = 0
+    srt_quarantined = 0
+
+    if not dry_run:
+        db = next(get_db())
+        service = QuarantineService(db, QUARANTINE_DIR)
+
+    # Quarantine .orig files
     for orig_file in orig_files:
         try:
             if dry_run:
-                LOG.info(f"[DRY RUN] Would delete orphaned .orig: {orig_file}")
+                LOG.info(f"[DRY RUN] Would quarantine orphaned .orig: {orig_file}")
             else:
-                orig_file.unlink()
-                LOG.info(f"Deleted orphaned .orig: {orig_file}")
-            orig_deleted += 1
-        except Exception as e:
-            LOG.error(f"Failed to delete {orig_file}: {e}")
+                # Try to find associated recording path
+                recording_path = None
+                if orig_file.parent.parent.is_dir():
+                    # Parent dir is likely the recording directory
+                    recording_path = str(orig_file.parent)
 
-    # Delete .srt files
+                service.quarantine_file(
+                    original_path=str(orig_file),
+                    file_type="orig",
+                    recording_path=recording_path,
+                    reason="orphaned_by_pipeline",
+                    expiration_days=QUARANTINE_EXPIRATION_DAYS,
+                )
+                LOG.info(f"Quarantined orphaned .orig: {orig_file}")
+            orig_quarantined += 1
+        except Exception as e:
+            LOG.error(f"Failed to quarantine {orig_file}: {e}")
+
+    # Quarantine .srt files
     for srt_file in srt_files:
         try:
             if dry_run:
-                LOG.info(f"[DRY RUN] Would delete orphaned .srt: {srt_file}")
+                LOG.info(f"[DRY RUN] Would quarantine orphaned .srt: {srt_file}")
             else:
-                srt_file.unlink()
-                LOG.info(f"Deleted orphaned .srt: {srt_file}")
-            srt_deleted += 1
-        except Exception as e:
-            LOG.error(f"Failed to delete {srt_file}: {e}")
+                # Try to find associated recording path
+                recording_path = None
+                if srt_file.parent.is_dir():
+                    # Parent dir is the recording directory
+                    recording_path = str(srt_file.parent)
 
-    return (orig_deleted, srt_deleted)
+                service.quarantine_file(
+                    original_path=str(srt_file),
+                    file_type="srt",
+                    recording_path=recording_path,
+                    reason="orphaned_by_pipeline",
+                    expiration_days=QUARANTINE_EXPIRATION_DAYS,
+                )
+                LOG.info(f"Quarantined orphaned .srt: {srt_file}")
+            srt_quarantined += 1
+        except Exception as e:
+            LOG.error(f"Failed to quarantine {srt_file}: {e}")
+
+    return (orig_quarantined, srt_quarantined)
 
 
 def is_system_idle(threshold_minutes: int = 15) -> bool:
@@ -275,8 +321,8 @@ def run_cleanup(dry_run: bool = False, cleanup_history: bool = True) -> dict:
         # Find orphaned files
         orig_files, srt_files = find_orphaned_files(DVR_RECORDINGS_PATH)
 
-        # Delete them
-        orig_deleted, srt_deleted = delete_orphaned_files(
+        # Quarantine them (move to quarantine instead of immediate deletion)
+        orig_quarantined, srt_quarantined = quarantine_orphaned_files(
             orig_files, srt_files, dry_run=dry_run
         )
 
@@ -287,21 +333,24 @@ def run_cleanup(dry_run: bool = False, cleanup_history: bool = True) -> dict:
             "success": True,
             "orig_found": len(orig_files),
             "srt_found": len(srt_files),
-            "orig_deleted": orig_deleted,
-            "srt_deleted": srt_deleted,
+            "orig_quarantined": orig_quarantined,
+            "srt_quarantined": srt_quarantined,
+            # Legacy fields for compatibility
+            "orig_deleted": orig_quarantined,
+            "srt_deleted": srt_quarantined,
             "elapsed_seconds": round(elapsed, 2),
             "dry_run": dry_run,
             "timestamp": cleanup_timestamp.isoformat() + "Z",
         }
 
         # Record successful cleanup in database (unless dry run)
-        if not dry_run and (orig_deleted > 0 or srt_deleted > 0):
+        if not dry_run and (orig_quarantined > 0 or srt_quarantined > 0):
             try:
                 db = next(get_db())
                 cleanup_record = OrphanCleanupHistory(
                     cleanup_timestamp=cleanup_timestamp,
-                    orig_files_deleted=orig_deleted,
-                    srt_files_deleted=srt_deleted,
+                    orig_files_deleted=orig_quarantined,
+                    srt_files_deleted=srt_quarantined,
                 )
                 db.add(cleanup_record)
                 db.commit()
@@ -351,7 +400,7 @@ def run_cleanup(dry_run: bool = False, cleanup_history: bool = True) -> dict:
 
         LOG.info(
             f"Cleanup completed in {elapsed:.1f}s: "
-            f"deleted {orig_deleted} .orig and {srt_deleted} .srt files"
+            f"quarantined {orig_quarantined} .orig and {srt_quarantined} .srt files"
             + (" (DRY RUN)" if dry_run else "")
         )
 
@@ -403,16 +452,19 @@ def run_manual_cleanup(dry_run: bool = True) -> dict:
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
-        # If not dry run, actually delete the files
+        # If not dry run, actually quarantine the files
         if not dry_run:
-            orig_deleted, srt_deleted = delete_orphaned_files(
+            orig_quarantined, srt_quarantined = quarantine_orphaned_files(
                 orig_files, srt_files, dry_run=False
             )
-            result["orig_deleted"] = orig_deleted
-            result["srt_deleted"] = srt_deleted
+            result["orig_quarantined"] = orig_quarantined
+            result["srt_quarantined"] = srt_quarantined
+            # Legacy fields for compatibility
+            result["orig_deleted"] = orig_quarantined
+            result["srt_deleted"] = srt_quarantined
             LOG.info(
-                f"Manual cleanup deleted {orig_deleted} .orig "
-                f"and {srt_deleted} .srt files"
+                f"Manual cleanup quarantined {orig_quarantined} .orig "
+                f"and {srt_quarantined} .srt files"
             )
         else:
             LOG.info(

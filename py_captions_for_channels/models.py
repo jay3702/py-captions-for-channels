@@ -249,3 +249,40 @@ class PollingCache(Base):
             f"<PollingCache(rec_id='{self.rec_id}', "
             f"yielded_at='{self.yielded_at}')>"
         )
+
+
+class QuarantineItem(Base):
+    """Quarantine tracking for orphaned files pending deletion.
+
+    Files are moved to quarantine instead of immediate deletion,
+    allowing restore if deleted in error.
+    """
+
+    __tablename__ = "quarantine_items"
+    __table_args__ = (
+        Index("idx_quarantine_status", "status"),
+        Index("idx_quarantine_expires_at", "expires_at"),
+        Index("idx_quarantine_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    original_path = Column(String(1000), nullable=False)
+    quarantine_path = Column(String(1000), nullable=False)
+    file_type = Column(String(20), nullable=False)  # 'orig', 'srt'
+    recording_path = Column(String(1000), nullable=True)  # Associated recording
+    file_size_bytes = Column(Integer, nullable=True)
+    reason = Column(String(200), nullable=False)  # e.g., 'orphaned_by_pipeline'
+    status = Column(String(50), nullable=False)  # 'quarantined', 'restored', 'deleted'
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    expires_at = Column(DateTime, nullable=False)  # Auto-delete after this date
+    restored_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return (
+            f"<QuarantineItem(id={self.id}, "
+            f"original_path='{self.original_path}', "
+            f"status='{self.status}')>"
+        )
