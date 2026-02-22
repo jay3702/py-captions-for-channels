@@ -1340,6 +1340,163 @@ async def get_orphan_cleanup_status() -> dict:
         }
 
 
+@app.get("/api/quarantine")
+async def get_quarantined_files() -> dict:
+    """Get list of all files in quarantine.
+
+    Returns:
+        List of quarantined files with metadata
+    """
+    try:
+        from py_captions_for_channels.config import QUARANTINE_DIR
+        from py_captions_for_channels.services.quarantine_service import (
+            QuarantineService,
+        )
+
+        db = next(get_db())
+        service = QuarantineService(db, QUARANTINE_DIR)
+        items = service.get_quarantined_files()
+        stats = service.get_quarantine_stats()
+
+        return {
+            "items": [
+                {
+                    "id": item.id,
+                    "original_path": item.original_path,
+                    "quarantine_path": item.quarantine_path,
+                    "file_type": item.file_type,
+                    "recording_path": item.recording_path,
+                    "file_size_bytes": item.file_size_bytes,
+                    "reason": item.reason,
+                    "status": item.status,
+                    "created_at": item.created_at.isoformat() + "Z",
+                    "expires_at": item.expires_at.isoformat() + "Z",
+                    "is_expired": item.expires_at <= datetime.now(timezone.utc),
+                }
+                for item in items
+            ],
+            "stats": stats,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get quarantined files: {e}", exc_info=True)
+        return {"error": str(e), "items": [], "stats": {}}
+
+
+@app.post("/api/quarantine/restore")
+async def restore_quarantined_files(item_ids: list[int]) -> dict:
+    """Restore selected files from quarantine to their original locations.
+
+    Args:
+        item_ids: List of QuarantineItem IDs to restore
+
+    Returns:
+        Result with counts of restored and failed items
+    """
+    try:
+        from py_captions_for_channels.config import QUARANTINE_DIR
+        from py_captions_for_channels.services.quarantine_service import (
+            QuarantineService,
+        )
+
+        db = next(get_db())
+        service = QuarantineService(db, QUARANTINE_DIR)
+
+        restored = 0
+        failed = 0
+        errors = []
+
+        for item_id in item_ids:
+            try:
+                if service.restore_file(item_id):
+                    restored += 1
+                else:
+                    failed += 1
+                    errors.append(f"Failed to restore item {item_id}")
+            except Exception as e:
+                failed += 1
+                errors.append(f"Item {item_id}: {str(e)}")
+
+        logger.info(f"Restored {restored} items from quarantine, {failed} failed")
+
+        return {
+            "success": True,
+            "restored": restored,
+            "failed": failed,
+            "errors": errors if errors else None,
+        }
+    except Exception as e:
+        logger.error(f"Failed to restore quarantined files: {e}", exc_info=True)
+        return {"success": False, "error": str(e), "restored": 0, "failed": 0}
+
+
+@app.post("/api/quarantine/delete")
+async def delete_quarantined_files(item_ids: list[int]) -> dict:
+    """Permanently delete selected files from quarantine.
+
+    Args:
+        item_ids: List of QuarantineItem IDs to delete
+
+    Returns:
+        Result with counts of deleted and failed items
+    """
+    try:
+        from py_captions_for_channels.config import QUARANTINE_DIR
+        from py_captions_for_channels.services.quarantine_service import (
+            QuarantineService,
+        )
+
+        db = next(get_db())
+        service = QuarantineService(db, QUARANTINE_DIR)
+
+        deleted = 0
+        failed = 0
+        errors = []
+
+        for item_id in item_ids:
+            try:
+                if service.delete_file(item_id):
+                    deleted += 1
+                else:
+                    failed += 1
+                    errors.append(f"Failed to delete item {item_id}")
+            except Exception as e:
+                failed += 1
+                errors.append(f"Item {item_id}: {str(e)}")
+
+        logger.info(f"Deleted {deleted} items from quarantine, {failed} failed")
+
+        return {
+            "success": True,
+            "deleted": deleted,
+            "failed": failed,
+            "errors": errors if errors else None,
+        }
+    except Exception as e:
+        logger.error(f"Failed to delete quarantined files: {e}", exc_info=True)
+        return {"success": False, "error": str(e), "deleted": 0, "failed": 0}
+
+
+@app.get("/api/quarantine/stats")
+async def get_quarantine_stats() -> dict:
+    """Get quarantine statistics.
+
+    Returns:
+        Statistics about quarantined files
+    """
+    try:
+        from py_captions_for_channels.config import QUARANTINE_DIR
+        from py_captions_for_channels.services.quarantine_service import (
+            QuarantineService,
+        )
+
+        db = next(get_db())
+        service = QuarantineService(db, QUARANTINE_DIR)
+        return service.get_quarantine_stats()
+    except Exception as e:
+        logger.error(f"Failed to get quarantine stats: {e}", exc_info=True)
+        return {"error": str(e)}
+
+
 @app.get("/api/execution-history/info")
 async def get_execution_history_info() -> dict:
     """Get information about execution history for cleanup decisions.

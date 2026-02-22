@@ -1443,3 +1443,64 @@ body {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* Quarantine Table */
+.table-container {
+  overflow-x: auto;
+  margin-top: 10px;
+}
+
+.quarantine-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card-bg);
+}
+
+.quarantine-table th,
+.quarantine-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.quarantine-table th {
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 600;
+  color: var(--text);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.quarantine-table tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.quarantine-table input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.status-active {
+  color: #5ce1e6;
+  font-weight: 500;
+}
+
+.status-expired {
+  color: #f88;
+  font-weight: 500;
+}
+
+.btn-danger {
+  background: #c44;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #d55;
+}
+
+.quarantine-info {
+  font-size: 0.9em;
+}

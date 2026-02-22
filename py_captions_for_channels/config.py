@@ -158,3 +158,7 @@ ORPHAN_CLEANUP_INTERVAL_HOURS = get_env_int("ORPHAN_CLEANUP_INTERVAL_HOURS", 24)
 ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES = get_env_int(
     "ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES", 15
 )
+
+# Quarantine directory for orphaned files (before permanent deletion)
+QUARANTINE_DIR = os.getenv("QUARANTINE_DIR", "./data/quarantine")
+QUARANTINE_EXPIRATION_DAYS = get_env_int("QUARANTINE_EXPIRATION_DAYS", 30)

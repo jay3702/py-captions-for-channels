@@ -754,7 +754,7 @@ function switchTab(tabName) {
   // Find and activate the button for this tab
   const buttons = document.querySelectorAll('.tab-btn');
   buttons.forEach((btn, index) => {
-    const expectedTabs = ['executions', 'logs', 'glances'];
+    const expectedTabs = ['executions', 'glances', 'logs', 'quarantine'];
     if (expectedTabs[index] === tabName) {
       btn.classList.add('active');
     }
@@ -780,6 +780,11 @@ function switchTab(tabName) {
     startSystemMonitor();
   } else {
     stopSystemMonitor();
+  }
+  
+  // Handle quarantine - load when tab is active
+  if (tabName === 'quarantine') {
+    loadQuarantineFiles();
   }
 }
 
@@ -2034,6 +2039,141 @@ window.addEventListener('DOMContentLoaded', () => {
     startSystemMonitor();
   }
 });
+
+// =========================================
+// Quarantine Management
+// =========================================
+
+async function loadQuarantineFiles() {
+  try {
+    const response = await fetch('/api/quarantine');
+    const data = await response.json();
+    
+    const tbody = document.getElementById('quarantine-list');
+    const statsEl = document.getElementById('quarantine-stats');
+    
+    if (data.error) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #f55;">Error: ${data.error}</td></tr>`;
+      return;
+    }
+    
+    // Update stats
+    const stats = data.stats || {};
+    statsEl.textContent = `${stats.total_quarantined || 0} items (${stats.total_size_mb || 0} MB) | ${stats.total_expired || 0} expired`;
+    
+    // Render table
+    if (!data.items || data.items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #888;">No quarantined files</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = data.items.map(item => {
+      const filename = item.original_path.split('/').pop();
+      const sizeKB = item.file_size_bytes ? (item.file_size_bytes / 1024).toFixed(1) : '?';
+      const createdDate = new Date(item.created_at).toLocaleString();
+      const expiresDate = new Date(item.expires_at).toLocaleString();
+      const isExpired = item.is_expired;
+      const statusClass = isExpired ? 'status-expired' : 'status-active';
+      const statusText = isExpired ? 'Expired' : 'Active';
+      
+      return `
+        <tr>
+          <td>
+            <input type="checkbox" class="quarantine-checkbox" value="${item.id}">
+          </td>
+          <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.original_path}">
+            ${filename}
+          </td>
+          <td>${item.file_type}</td>
+          <td>${sizeKB} KB</td>
+          <td>${createdDate}</td>
+          <td>${expiresDate}</td>
+          <td><span class="${statusClass}">${statusText}</span></td>
+        </tr>
+      `;
+    }).join('');
+    
+  } catch (error) {
+    console.error('Failed to load quarantine files:', error);
+    document.getElementById('quarantine-list').innerHTML = 
+      `<tr><td colspan="7" style="text-align: center; color: #f55;">Failed to load: ${error.message}</td></tr>`;
+  }
+}
+
+function toggleSelectAll(checkbox) {
+  const checkboxes = document.querySelectorAll('.quarantine-checkbox');
+  checkboxes.forEach(cb => {
+    cb.checked = checkbox.checked;
+  });
+}
+
+async function restoreSelected() {
+  const checkboxes = document.querySelectorAll('.quarantine-checkbox:checked');
+  const itemIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+  
+  if (itemIds.length === 0) {
+    alert('No items selected');
+    return;
+  }
+  
+  if (!confirm(`Restore ${itemIds.length} file(s) to their original locations?`)) {
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/quarantine/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(itemIds)
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      alert(`Restored: ${result.restored}, Failed: ${result.failed}`);
+      loadQuarantineFiles(); // Reload list
+    } else {
+      alert(`Error: ${result.error}`);
+    }
+  } catch (error) {
+    console.error('Failed to restore files:', error);
+    alert(`Failed to restore: ${error.message}`);
+  }
+}
+
+async function deleteSelected() {
+  const checkboxes = document.querySelectorAll('.quarantine-checkbox:checked');
+  const itemIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+  
+  if (itemIds.length === 0) {
+    alert('No items selected');
+    return;
+  }
+  
+  if (!confirm(`Permanently delete ${itemIds.length} file(s)? This cannot be undone!`)) {
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/quarantine/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(itemIds)
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      alert(`Deleted: ${result.deleted}, Failed: ${result.failed}`);
+      loadQuarantineFiles(); // Reload list
+    } else {
+      alert(`Error: ${result.error}`);
+    }
+  } catch (error) {
+    console.error('Failed to delete files:', error);
+    alert(`Failed to delete: ${error.message}`);
+  }
+}
 
 
 
