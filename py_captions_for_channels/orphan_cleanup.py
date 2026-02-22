@@ -98,7 +98,7 @@ def find_orphaned_files(recordings_path: str) -> Tuple[List[Path], List[Path]]:
         Tuple of (orphaned_orig_files, orphaned_srt_files)
     """
     # Import here to avoid circular dependency
-    from py_captions_for_channels.state import state_backend
+    from py_captions_for_channels.web_app import state_backend
 
     if not recordings_path or not os.path.exists(recordings_path):
         LOG.warning(f"Recordings path not found: {recordings_path}")
@@ -214,7 +214,7 @@ def is_system_idle(threshold_minutes: int = 15) -> bool:
         True if system is idle, False otherwise
     """
     # Import here to avoid circular dependency
-    from py_captions_for_channels.state import state_backend
+    from py_captions_for_channels.web_app import state_backend
 
     try:
         # Check if there are any active executions
