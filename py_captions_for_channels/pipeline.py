@@ -612,11 +612,16 @@ class Pipeline:
                     )
                 else:
                     log.info("Caption pipeline completed for %s", event.path)
-                    # Log whisper's output for debugging
+                    # Log beginning and end of output to capture optimization
                     if stdout:
                         log.debug("stdout: %s", stdout[-1000:])
                     if stderr:
-                        log.info("whisper output: %s", stderr[-500:])
+                        # Show beginning (optimization logs) and end (ffmpeg results)
+                        if len(stderr) > 3000:
+                            log.info("whisper output (beginning): %s", stderr[:2000])
+                            log.info("whisper output (end): %s", stderr[-1000:])
+                        else:
+                            log.info("whisper output: %s", stderr)
 
                     # Collect output file statistics
                     elapsed = time.time() - start_time
