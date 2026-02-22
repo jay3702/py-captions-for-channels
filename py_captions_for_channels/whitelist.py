@@ -153,7 +153,7 @@ class Whitelist:
         Args:
             content: Whitelist content (one rule per line)
         """
-        LOG.info("Loading whitelist from content string")
+        LOG.debug("Loading whitelist from content string")
         self.rules = []
 
         for line in content.split("\n"):
@@ -166,7 +166,7 @@ class Whitelist:
                     LOG.warning("Invalid whitelist rule '%s': %s", line, e)
 
         self.enabled = len(self.rules) > 0
-        LOG.info("Loaded %d whitelist rules from content", len(self.rules))
+        LOG.debug("Loaded %d whitelist rules from content", len(self.rules))
 
     def is_allowed(self, title: str, recording_time: Optional[datetime] = None) -> bool:
         """Check if a recording is allowed by the whitelist.
