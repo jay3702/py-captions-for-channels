@@ -13,11 +13,12 @@ from typing import AsyncIterator, Optional
 import requests
 
 from .channels_api import ChannelsAPI
-from .config import LOCAL_TEST_DIR, WHITELIST_FILE
+from .config import LOCAL_TEST_DIR
 from .execution_tracker import get_tracker
 from .database import get_db
 from .services.polling_cache_service import PollingCacheService
 from .services.heartbeat_service import HeartbeatService
+from .services.settings_service import SettingsService
 from .whitelist import Whitelist
 
 LOG = logging.getLogger(__name__)
@@ -76,8 +77,18 @@ class ChannelsPollingSource:
         self._use_local_mock = LOCAL_TEST_DIR is not None
         # Migration: Load old in-memory cache on first run
         self._migrated = False
-        # Load whitelist for filtering
-        self._whitelist = Whitelist(WHITELIST_FILE)
+        # Initialize empty whitelist (will be loaded from database on each check)
+        self._whitelist = Whitelist(content="")
+
+    def _reload_whitelist(self):
+        """Reload whitelist from database to pick up changes immediately."""
+        db = next(get_db())
+        try:
+            settings_service = SettingsService(db)
+            whitelist_content = settings_service.get("whitelist", "")
+            self._whitelist = Whitelist(content=whitelist_content)
+        finally:
+            db.close()
 
     def _get_smart_interval(self) -> int:
         """Calculate smart polling interval based on current time.
@@ -436,6 +447,9 @@ class ChannelsPollingSource:
                                 # If failed or cancelled, allow retry (fall through)
                         except Exception as e:
                             LOG.warning("Error checking execution tracker: %s", e)
+
+                    # Reload whitelist from database to pick up changes immediately
+                    self._reload_whitelist()
 
                     # Check whitelist before creating discovered execution
                     if not self._whitelist.is_allowed(title, start_time):
