@@ -201,7 +201,7 @@ async function fetchStatus() {
     
       const executions = execData.executions || [];
       
-      // Get active (not completed) recordings
+      // Get active (not completed) recordings that pass whitelist
       let activeRecordings = [];
       if (recordingsRes.ok) {
         const recordingsData = await recordingsRes.json();
@@ -209,18 +209,13 @@ async function fetchStatus() {
           .filter(rec => {
             // Only show recordings that are:
             // 1. Not completed
-            // 2. Actually in progress (inprogress=true) - if field exists
-            // 3. Pass whitelist
+            // 2. Pass whitelist
+            // Note: We don't check inprogress field because Channels DVR API
+            // doesn't reliably set it to true for actively recording items
             const notCompleted = !rec.completed;
-            const isInProgress = rec.inprogress === true;
             const passesWhitelist = rec.passes_whitelist === true;
             
-            // If inprogress field doesn't exist (backend not rebuilt), fall back to just checking completed and whitelist
-            if (rec.inprogress === undefined) {
-              return notCompleted && passesWhitelist;
-            }
-            
-            return notCompleted && isInProgress && passesWhitelist;
+            return notCompleted && passesWhitelist;
           })
           .slice(0, 20); // Limit to avoid overwhelming UI
       }
