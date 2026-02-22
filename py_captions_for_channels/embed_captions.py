@@ -1112,7 +1112,7 @@ def main():
 
                 # Determine Whisper parameters based on OPTIMIZATION_MODE
                 channel_number = extract_channel_number(mpg_path)
-                print(f"[OPTIMIZATION] Channel detected: {channel_number}")
+                print(f"[OPTIMIZATION] Channel detected: {channel_number}", flush=True)
                 if OPTIMIZATION_MODE == "automatic":
                     whisper_params = get_whisper_parameters(mpg_path, channel_number)
                     beam_size = whisper_params.get("beam_size")
@@ -1126,7 +1126,8 @@ def main():
                     )
                     print(
                         f"[OPTIMIZATION] Using automatic Whisper: "
-                        f"beam_size={beam_size}, vad_min_silence_ms={vad_ms}"
+                        f"beam_size={beam_size}, vad_min_silence_ms={vad_ms}",
+                        flush=True,
                     )
                 else:
                     # Standard mode: use hardcoded parameters (proven, reliable)

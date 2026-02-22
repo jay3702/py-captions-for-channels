@@ -616,9 +616,19 @@ class Pipeline:
                     if stdout:
                         log.debug("stdout: %s", stdout[-1000:])
                     if stderr:
-                        # Show beginning (optimization logs) and end (ffmpeg results)
-                        if len(stderr) > 3000:
+                        # Show beginning, optimization, and end
+                        if len(stderr) > 5000:
                             log.info("whisper output (beginning): %s", stderr[:2000])
+                            # Extract optimization logs specifically
+                            opt_lines = [
+                                line
+                                for line in stderr.split("\n")
+                                if "[OPTIMIZATION]" in line
+                            ]
+                            if opt_lines:
+                                log.info(
+                                    "optimization params: %s", "\n".join(opt_lines)
+                                )
                             log.info("whisper output (end): %s", stderr[-1000:])
                         else:
                             log.info("whisper output: %s", stderr)
