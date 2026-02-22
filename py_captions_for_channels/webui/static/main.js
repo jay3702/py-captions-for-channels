@@ -186,51 +186,111 @@ async function fetchStatus() {
 
   async function fetchExecutions() {
   try {
-      const res = await fetch(`/api/executions?limit=50&ts=${Date.now()}`, { cache: 'no-store' });
-      if (!res.ok) throw new Error('Failed to fetch executions');
-    const data = await res.json();
-    
-      const execListActive = document.getElementById('exec-list-active');
-      const execListBacklog = document.getElementById('exec-list-backlog');
+      // Fetch both executions and active recordings
+      const [execRes, recordingsRes] = await Promise.all([
+        fetch(`/api/executions?limit=50&ts=${Date.now()}`, { cache: 'no-store' }),
+        fetch('/api/recordings')
+      ]);
+      
+      if (!execRes.ok) throw new Error('Failed to fetch executions');
+      const execData = await execRes.json();
+      
+      const execListQueue = document.getElementById('exec-list-queue');
+      const execListHistory = document.getElementById('exec-list-history');
       const execCount = document.getElementById('exec-count');
     
-      execCount.textContent = `(${data.count} items)`;
-    
-      if (data.executions && data.executions.length > 0) {
-        const activeStatuses = new Set(['running', 'pending']);
-        const activeExecutions = data.executions.filter(exec => activeStatuses.has(exec.status));
-        const backlogExecutions = data.executions.filter(exec => !activeStatuses.has(exec.status));
-
-        const sortedActive = [...activeExecutions].sort(compareActiveExecutions);
-        const sortedBacklog = [...backlogExecutions].sort(compareBacklogExecutions);
-
-        execListActive.innerHTML = sortedActive.length
-          ? sortedActive.map(exec => renderExecution(exec)).join('')
-          : '<li class="muted">No active executions</li>';
-
-        execListBacklog.innerHTML = sortedBacklog.length
-          ? sortedBacklog.map(exec => renderExecution(exec)).join('')
-          : '<li class="muted">No queued executions</li>';
-        
-        // Update pipeline activity indicator with first running execution
-        const runningExec = activeExecutions.find(exec => exec.status === 'running');
-        updatePipelineActivityFromExecution(runningExec);
-    } else {
-        execListActive.innerHTML = '<li class="muted">No active executions</li>';
-        execListBacklog.innerHTML = '<li class="muted">No queued executions</li>';
-        updatePipelineActivityFromExecution(null);
-    }
+      const executions = execData.executions || [];
+      
+      // Get active (not completed) recordings
+      let activeRecordings = [];
+      if (recordingsRes.ok) {
+        const recordingsData = await recordingsRes.json();
+        activeRecordings = (recordingsData.recordings || [])
+          .filter(rec => !rec.completed)
+          .slice(0, 20); // Limit to avoid overwhelming UI
+      }
+      
+      // Queue: active recordings + running/pending/discovered executions
+      const queueStatuses = new Set(['running', 'pending', 'discovered']);
+      const queueExecutions = executions.filter(exec => queueStatuses.has(exec.status));
+      
+      // History: completed, failed, cancelled executions
+      const historyStatuses = new Set(['completed', 'failed', 'cancelled']);
+      const historyExecutions = executions.filter(exec => historyStatuses.has(exec.status));
+      
+      // Sort queue items (recordings first, then by status/time)
+      const sortedQueue = [...queueExecutions].sort(compareQueueExecutions);
+      const sortedHistory = [...historyExecutions].sort(compareHistoryExecutions);
+      
+      // Update count to include recordings
+      const totalQueueItems = activeRecordings.length + queueExecutions.length;
+      execCount.textContent = `(${totalQueueItems} queue, ${historyExecutions.length} history)`;
+      
+      // Render Queue section
+      let queueHtml = '';
+      
+      // Add active recordings first
+      if (activeRecordings.length > 0) {
+        queueHtml += activeRecordings.map(rec => renderRecording(rec)).join('');
+      }
+      
+      // Then add execution items
+      if (sortedQueue.length > 0) {
+        queueHtml += sortedQueue.map(exec => renderExecution(exec)).join('');
+      }
+      
+      execListQueue.innerHTML = queueHtml || '<li class="muted">No active items</li>';
+      
+      // Render History section
+      execListHistory.innerHTML = sortedHistory.length
+        ? sortedHistory.map(exec => renderExecution(exec)).join('')
+        : '<li class="muted">No completed jobs</li>';
+      
+      // Update pipeline activity indicator with first running execution
+      const runningExec = queueExecutions.find(exec => exec.status === 'running');
+      updatePipelineActivityFromExecution(runningExec);
+      
   } catch (err) {
-      document.getElementById('exec-list-active').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
-      document.getElementById('exec-list-backlog').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
+      document.getElementById('exec-list-queue').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
+      document.getElementById('exec-list-history').innerHTML = `<li class="muted">Error: ${escapeHtml(err.message)}</li>`;
       console.error('Executions fetch error:', err);
   }
 }
 
-function compareActiveExecutions(a, b) {
+function renderRecording(recording) {
+  const title = recording.episode_title 
+    ? `${recording.title} - ${recording.episode_title}` 
+    : recording.title;
+  
+  // Format date
+  let timeStr = '';
+  if (recording.created_at) {
+    const date = new Date(recording.created_at);
+    if (!isNaN(date.getTime())) {
+      timeStr = date.toLocaleTimeString();
+    }
+  }
+  
+  // Recording in progress indicator
+  return `
+    <li class="exec-item exec-status-recording">
+      <span class="exec-time">${timeStr}</span>
+      <span class="exec-job-number">—</span>
+      <span class="exec-title">${escapeHtml(title)}</span>
+      <span class="exec-status-combined">
+        <span class="exec-status-icon">⏺</span>
+        <span class="exec-status-text">Recording</span>
+      </span>
+      <span class="exec-elapsed">—</span>
+    </li>
+  `;
+}
+
+function compareQueueExecutions(a, b) {
   const statusRank = {
     running: 0,
     pending: 1,
+    discovered: 2,
   };
 
   const rankA = statusRank[a.status] ?? 99;
@@ -250,18 +310,15 @@ function compareActiveExecutions(a, b) {
   return startedB - startedA;
 }
 
-function compareBacklogExecutions(a, b) {
-  const backlogRank = {
-    discovered: 0,
-  };
-
-  const rankA = backlogRank[a.status] ?? 99;
-  const rankB = backlogRank[b.status] ?? 99;
-  if (rankA !== rankB) {
-    return rankA - rankB;
+function compareHistoryExecutions(a, b) {
+  // Sort history by completion time descending (most recent first)
+  const completedA = a.completed_at ? Date.parse(a.completed_at) : 0;
+  const completedB = b.completed_at ? Date.parse(b.completed_at) : 0;
+  if (completedA !== completedB) {
+    return completedB - completedA;
   }
-
-  // Sort by start time descending (most recent first)
+  
+  // Fallback to start time
   const startedA = a.started_at ? Date.parse(a.started_at) : 0;
   const startedB = b.started_at ? Date.parse(b.started_at) : 0;
   return startedB - startedA;
@@ -2000,7 +2057,7 @@ function updatePipelineActivityFromExecution(execution) {
   if (execution && execution.path) {
     // Show full file path
     const displayPath = execution.path;
-    indicator.innerHTML = `Pipeline Activity: <strong style="color: var(--text);">${displayPath}</strong>`;
+    indicator.innerHTML = `Job Activity: <strong style="color: var(--text);">${displayPath}</strong>`;
   } else {
     indicator.textContent = 'Real-time system and pipeline monitoring';
   }

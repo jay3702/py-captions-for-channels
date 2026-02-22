@@ -66,9 +66,9 @@
   <main class="main-content">
     <section class="card">
       <div class="card-head">
-        <h2>Pipeline Activity</h2>
+        <h2>Job Activity</h2>
         <div class="tabs">
-          <button class="tab-btn active" onclick="switchTab('executions')">Executions</button>
+          <button class="tab-btn active" onclick="switchTab('executions')">Jobs</button>
           <button class="tab-btn" onclick="switchTab('glances')">System Monitor</button>
           <button class="tab-btn" onclick="switchTab('logs')">Full Logs</button>
           <button class="tab-btn" onclick="switchTab('quarantine')">Quarantine</button>
@@ -84,15 +84,15 @@
           </div>
         </div>
         <div class="exec-section">
-          <div class="exec-section-title">Active</div>
-          <ul class="exec-list exec-list-compact" id="exec-list-active">
-            <li class="muted">Loading executions...</li>
+          <div class="exec-section-title">Queue</div>
+          <ul class="exec-list exec-list-compact" id="exec-list-queue">
+            <li class="muted">Loading...</li>
           </ul>
         </div>
         <div class="exec-section">
-          <div class="exec-section-title">Queue</div>
-          <ul class="exec-list" id="exec-list-backlog">
-            <li class="muted">Loading executions...</li>
+          <div class="exec-section-title">History</div>
+          <ul class="exec-list" id="exec-list-history">
+            <li class="muted">Loading...</li>
           </ul>
         </div>
       </div>
