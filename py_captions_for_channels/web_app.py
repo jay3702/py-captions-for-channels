@@ -1807,6 +1807,9 @@ async def get_recordings() -> dict:
                     "original_air_date": rec.get("original_air_date", ""),
                     "duration": rec.get("duration", 0),
                     "completed": rec.get("completed", False),
+                    "inprogress": rec.get(
+                        "inprogress", False
+                    ),  # Only true for actively recording
                     "passes_whitelist": passes_whitelist,
                     "processed": processed_status,  # None, 'success', or 'failed'
                     "has_orig": has_orig,  # Whether .orig backup file exists
