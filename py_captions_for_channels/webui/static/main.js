@@ -209,11 +209,18 @@ async function fetchStatus() {
           .filter(rec => {
             // Only show recordings that are:
             // 1. Not completed
-            // 2. Actually in progress (inprogress=true)
+            // 2. Actually in progress (inprogress=true) - if field exists
             // 3. Pass whitelist
-            return !rec.completed && 
-                   rec.inprogress === true && 
-                   rec.passes_whitelist === true;
+            const notCompleted = !rec.completed;
+            const isInProgress = rec.inprogress === true;
+            const passesWhitelist = rec.passes_whitelist === true;
+            
+            // If inprogress field doesn't exist (backend not rebuilt), fall back to just checking completed and whitelist
+            if (rec.inprogress === undefined) {
+              return notCompleted && passesWhitelist;
+            }
+            
+            return notCompleted && isInProgress && passesWhitelist;
           })
           .slice(0, 20); // Limit to avoid overwhelming UI
       }
