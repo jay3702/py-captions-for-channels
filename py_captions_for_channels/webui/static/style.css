@@ -750,18 +750,29 @@ body {
     color: var(--accent-2);
   }
 
+  /* Queue items - pale green background for active items */
   .exec-status-recording {
-    background: rgba(255, 107, 107, 0.1) !important;
-    border-color: rgba(255, 107, 107, 0.3) !important;
+    background: rgba(129, 199, 132, 0.15) !important;
+    border-color: rgba(129, 199, 132, 0.3) !important;
   }
 
   .exec-status-recording .exec-status-icon {
-    color: #ff6b6b;
+    color: #66bb6a;
   }
 
   .exec-status-recording .exec-status-text {
-    color: #ff6b6b;
+    color: #66bb6a;
     font-weight: 600;
+  }
+
+  .exec-running {
+    background: rgba(129, 199, 132, 0.15) !important;
+    border-color: rgba(129, 199, 132, 0.3) !important;
+  }
+
+  .exec-pending {
+    background: rgba(129, 199, 132, 0.15) !important;
+    border-color: rgba(129, 199, 132, 0.3) !important;
   }
 
   .reprocess-controls {
