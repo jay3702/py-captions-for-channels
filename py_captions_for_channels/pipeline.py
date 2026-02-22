@@ -535,6 +535,21 @@ class Pipeline:
             # Visual divider at job start (configurable)
             if LOG_STATS_ENABLED:
                 log.info("\n" + (LOG_DIVIDER_CHAR * LOG_DIVIDER_LENGTH))
+
+            # Get job number for markers
+            job_number = None
+            try:
+                tracker = get_tracker()
+                execution = tracker.get_execution(job_id)
+                if execution and execution.get("job_number"):
+                    job_number = execution.get("job_number")
+            except Exception:
+                pass  # Continue without job number if unavailable
+
+            job_marker = f"Job #{job_number}" if job_number else f"Job {job_id[:8]}"
+            log.info("=" * 80)
+            log.info(f"START {job_marker}: {event.title}")
+            log.info("=" * 80)
             log.info("Running caption pipeline: %s", cmd)
 
             # Get input duration for progress tracking
@@ -566,15 +581,18 @@ class Pipeline:
                     progress_tracker.clear_progress(job_id)
 
                 except subprocess.TimeoutExpired as e:
+                    elapsed = time.time() - start_time
                     log.error(
                         "Caption pipeline timed out for %s after %d seconds",
                         event.path,
                         PIPELINE_TIMEOUT,
                     )
-                    elapsed = time.time() - start_time
                     # Clear progress
                     progress_tracker = get_progress_tracker()
                     progress_tracker.clear_progress(job_id)
+                    log.info("=" * 80)
+                    log.info(f"END {job_marker}: TIMEOUT after {elapsed:.1f}s")
+                    log.info("=" * 80)
                     return PipelineResult(
                         success=False,
                         returncode=-1,
@@ -601,6 +619,13 @@ class Pipeline:
                         )
                     if stderr:
                         log.error("stderr: %s", stderr[:500])
+                    log.info("=" * 80)
+                    end_msg = (
+                        f"END {job_marker}: FAILED "
+                        f"(exit {returncode}) after {elapsed:.1f}s"
+                    )
+                    log.info(end_msg)
+                    log.info("=" * 80)
                     return PipelineResult(
                         success=False,
                         returncode=returncode,
@@ -646,6 +671,10 @@ class Pipeline:
                     except Exception:
                         input_size = 0
 
+                    log.info("=" * 80)
+                    log.info(f"END {job_marker}: SUCCESS in {elapsed:.1f}s")
+                    log.info("=" * 80)
+
                     return PipelineResult(
                         success=True,
                         returncode=0,
@@ -690,6 +719,10 @@ class Pipeline:
                     log.error(
                         "Error clearing progress after exception: %s", progress_err
                     )
+
+                log.info("=" * 80)
+                log.info(f"END {job_marker}: EXCEPTION after {elapsed:.1f}s")
+                log.info("=" * 80)
 
                 return PipelineResult(
                     success=False,

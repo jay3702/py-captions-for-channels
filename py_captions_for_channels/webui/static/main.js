@@ -391,6 +391,38 @@ function compareHistoryExecutions(a, b) {
     `;
   }
 
+  function filterJobLogs(logText, jobNumber) {
+    if (!logText) return logText;
+    
+    // Build regex patterns for START and END markers
+    // Format: "START Job #123:" or "START Job abc12345:" (for jobs without number)
+    const jobMarker = jobNumber ? `Job #${jobNumber}` : `Job [a-zA-Z0-9]{8}`;
+    const startPattern = new RegExp(`={80}\\s*START ${jobMarker}[^\\n]*\\n={80}`, 'i');
+    const endPattern = new RegExp(`={80}\\s*END ${jobMarker}[^\\n]*\\n={80}`, 'i');
+    
+    const startMatch = logText.match(startPattern);
+    const endMatch = logText.match(endPattern);
+    
+    // If we found both markers, extract content between them
+    if (startMatch && endMatch) {
+      const startIdx = startMatch.index + startMatch[0].length;
+      const endIdx = endMatch.index;
+      
+      if (endIdx > startIdx) {
+        // Include the START and END markers themselves for visual clarity
+        return logText.substring(startMatch.index, endMatch.index + endMatch[0].length);
+      }
+    }
+    
+    // If we only found START marker but not END (job still running or crashed)
+    if (startMatch && !endMatch) {
+      return logText.substring(startMatch.index);
+    }
+    
+    // No markers found, return full log (backward compatibility for old logs)
+    return logText;
+  }
+
   async function showExecutionDetail(jobId) {
     try {
       const res = await fetch(`/api/executions/${encodeURIComponent(jobId)}`);
@@ -410,11 +442,15 @@ function compareHistoryExecutions(a, b) {
       title.textContent = exec.title || 'Execution Details';
     
       // Format logs: use server-prepared text if available
-      const logLinesRaw = (exec.logs_text && exec.logs_text.trim().length > 0)
+      let logLinesRaw = (exec.logs_text && exec.logs_text.trim().length > 0)
         ? exec.logs_text
         : (exec.logs && exec.logs.length > 0
             ? exec.logs.map(l => typeof l === 'string' ? l : (l.message || '')).join('\n')
             : 'No logs captured for this execution');
+      
+      // Filter logs to show only content between START and END job markers
+      logLinesRaw = filterJobLogs(logLinesRaw, exec.job_number);
+      
       const logLines = logLinesRaw && logLinesRaw.trim().length > 0 ? logLinesRaw : 'No logs captured for this execution';
     
       const startedDisplay = exec.started_local || (exec.started_at ? new Date(exec.started_at).toLocaleString() : '—');
