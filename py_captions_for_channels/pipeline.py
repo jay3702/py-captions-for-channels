@@ -637,13 +637,32 @@ class Pipeline:
                     )
                 else:
                     log.info("Caption pipeline completed for %s", event.path)
-                    # Log beginning and end of output to capture optimization
+                    # Log output to capture optimization markers and processing details
+                    # stdout contains optimization markers and whisper progress
                     if stdout:
-                        log.debug("stdout: %s", stdout[-1000:])
+                        # Show beginning, optimization, and end
+                        if len(stdout) > 5000:
+                            log.info(
+                                "caption generation (beginning): %s", stdout[:2000]
+                            )
+                            # Extract optimization logs specifically
+                            opt_lines = [
+                                line
+                                for line in stdout.split("\n")
+                                if "[OPTIMIZATION]" in line
+                            ]
+                            if opt_lines:
+                                log.info(
+                                    "optimization params: %s", "\n".join(opt_lines)
+                                )
+                            log.info("caption generation (end): %s", stdout[-1000:])
+                        else:
+                            log.info("caption generation output: %s", stdout)
+                    # stderr contains ffmpeg encoding output
                     if stderr:
                         # Show beginning, optimization, and end
                         if len(stderr) > 5000:
-                            log.info("whisper output (beginning): %s", stderr[:2000])
+                            log.info("ffmpeg output (beginning): %s", stderr[:2000])
                             # Extract optimization logs specifically
                             opt_lines = [
                                 line
@@ -654,9 +673,9 @@ class Pipeline:
                                 log.info(
                                     "optimization params: %s", "\n".join(opt_lines)
                                 )
-                            log.info("whisper output (end): %s", stderr[-1000:])
+                            log.info("ffmpeg output (end): %s", stderr[-1000:])
                         else:
-                            log.info("whisper output: %s", stderr)
+                            log.info("ffmpeg output: %s", stderr)
 
                     # Collect output file statistics
                     elapsed = time.time() - start_time
