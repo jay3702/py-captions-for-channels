@@ -206,7 +206,15 @@ async function fetchStatus() {
       if (recordingsRes.ok) {
         const recordingsData = await recordingsRes.json();
         activeRecordings = (recordingsData.recordings || [])
-          .filter(rec => !rec.completed)
+          .filter(rec => {
+            // Only show recordings that are:
+            // 1. Not completed
+            // 2. Actually in progress (inprogress=true)
+            // 3. Pass whitelist
+            return !rec.completed && 
+                   rec.inprogress === true && 
+                   rec.passes_whitelist === true;
+          })
           .slice(0, 20); // Limit to avoid overwhelming UI
       }
       
