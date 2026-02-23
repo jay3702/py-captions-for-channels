@@ -110,11 +110,31 @@ WHISPER_MODE=automatic  # "standard" (default) or "automatic" (optimized per sou
 3. Enable "Custom URL"
 4. Set URL: `json://YOUR_HOST_IP:9000`
 
+## Tools
+
+### FFmpeg Test Suite
+
+Benchmark harness for testing different ffmpeg encoding strategies:
+
+```bash
+python -m tools.ffmpeg_test_suite \
+    --input-video /path/to/test.mpg \
+    --input-srt /path/to/test.srt \
+    --out-dir ./test-results \
+    --report-json report.json \
+    --report-csv report.csv
+```
+
+Tests multiple variants (NVENC, CUVID, container formats) and generates performance/compatibility reports. Use this to optimize encoding for problematic recordings.
+
+**See [docs/ffmpeg_test_suite.md](docs/ffmpeg_test_suite.md) for full documentation.**
+
 ## Documentation
 
 - **[SETUP.md](SETUP.md)** - Quick setup guide with examples
 - **[DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)** - Complete deployment documentation  
 - **[.env.example](.env.example)** - All configuration options
+- **[docs/ffmpeg_test_suite.md](docs/ffmpeg_test_suite.md)** - FFmpeg test suite for encoding optimization
 - `docs/copilot/` - Design artifacts and session notes
 
 ## Architecture
