@@ -82,6 +82,17 @@ OPTIMIZATION_MODE = os.getenv(
 # "cpu" - Force CPU-only processing (useful for testing or when GPU is busy)
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto").lower()
 
+# Language selection for audio/subtitle processing
+# PRIMARY FEATURE: Only process audio and subtitle tracks in the specified language
+# Audio language: ISO 639-2/3 language code (eng, spa, fra, deu, etc.)
+AUDIO_LANGUAGE = os.getenv("AUDIO_LANGUAGE", "eng")
+# Subtitle language: ISO code, "same" (use audio language), or "none" (no subtitles)
+SUBTITLE_LANGUAGE = os.getenv("SUBTITLE_LANGUAGE", "same")
+# Language fallback: What to do when preferred language not found
+# "first" - Use first available stream
+# "skip" - Skip processing this recording
+LANGUAGE_FALLBACK = os.getenv("LANGUAGE_FALLBACK", "first")
+
 # State file for tracking last processed timestamp
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
 
