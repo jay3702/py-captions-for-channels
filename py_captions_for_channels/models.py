@@ -302,33 +302,33 @@ class LearnedProfile(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    
+
     # Unique signature identifying this source type
     signature_hash = Column(String(64), unique=True, nullable=False)
-    
+
     # Human-readable signature components (JSON)
     # {video_codec, audio_codec, width, height, fps, field_order,
     #  audio_channels, channel_number, est_bitrate}
     signature_data = Column(Text, nullable=False)
-    
+
     # Selected profile and variant
     profile_name = Column(String(100), nullable=False)  # e.g., "ota_hd_60fps_5.1"
     variant_name = Column(String(100), nullable=False)  # Test suite variant name
-    
+
     # Performance metrics (JSON)
     # {elapsed_seconds, file_size_bytes, real_time_factor, exit_code}
     performance_data = Column(Text, nullable=True)
-    
+
     # Ffmpeg command used (for reference)
     ffmpeg_command = Column(Text, nullable=True)
-    
+
     # Usage tracking
     times_used = Column(Integer, default=0, nullable=False)
     created_at = Column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     last_used_at = Column(DateTime, nullable=True)
-    
+
     # Notes from user
     notes = Column(Text, nullable=True)
 
@@ -339,4 +339,3 @@ class LearnedProfile(Base):
             f"profile='{self.profile_name}', "
             f"variant='{self.variant_name}')>"
         )
-

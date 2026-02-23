@@ -550,9 +550,7 @@ def validate_and_trim_srt(srt_path, max_end_time, log):
     log.info(f"Trimmed SRT to {max_end_time:.2f}s for Android compatibility.")
 
 
-def encode_av_only(
-    mpg_orig, temp_av, log, job_id=None, source_path=None, audio_stream_index=None
-):
+def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
     """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs.
 
     Args:
@@ -610,12 +608,8 @@ def encode_av_only(
     if is_vfr:
         cmd_nvenc.extend(["-vsync", "vfr"])
 
-    # Map selected audio stream if specified, otherwise map all audio streams
-    if audio_stream_index is not None:
-        audio_map = ["-map", "0:v", "-map", f"0:a:{audio_stream_index}"]
-        log.info(f"Mapping only audio stream {audio_stream_index} (language selection)")
-    else:
-        audio_map = ["-map", "0:v", "-map", "0:a?"]
+    # Map all audio streams (language selection affects only Whisper, not output)
+    audio_map = ["-map", "0:v", "-map", "0:a?"]
 
     cmd_nvenc.extend(
         [
@@ -657,11 +651,8 @@ def encode_av_only(
     if is_vfr:
         cmd_cpu.extend(["-vsync", "vfr"])
 
-    # Map selected audio stream if specified, otherwise map all audio streams
-    if audio_stream_index is not None:
-        audio_map = ["-map", "0:v", "-map", f"0:a:{audio_stream_index}"]
-    else:
-        audio_map = ["-map", "0:v", "-map", "0:a?"]
+    # Map all audio streams (language selection affects only Whisper, not output)
+    audio_map = ["-map", "0:v", "-map", "0:a?"]
 
     cmd_cpu.extend(
         [
@@ -1520,7 +1511,7 @@ def main():
     orig_path = mpg_path + ".orig"
     temp_av = mpg_path + ".av.mp4"
     temp_muxed = mpg_path + ".muxed.mp4"
-    # Step 1: Encode A/V only
+    # Step 1: Encode A/V only (copies all audio tracks)
     run_step(
         "ffmpeg_encode",
         lambda: encode_av_only(
@@ -1529,7 +1520,6 @@ def main():
             log,
             args.job_id,
             source_path=mpg_path,
-            audio_stream_index=selected_audio_index,  # Pass selected audio stream
         ),
         input_path=orig_path,
         output_path=temp_av,
