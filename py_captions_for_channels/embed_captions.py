@@ -44,8 +44,14 @@ def extract_channel_number(video_path):
     from py_captions_for_channels.channels_api import ChannelsAPI
     from py_captions_for_channels.config import CHANNELS_API_URL
 
-    # Normalize path separators to forward slashes for consistent regex
+    # Normalize path: strip temporary/backup extensions (.orig, .tmp, .av.mp4, etc.)
+    # to ensure we look up the original recording path
     path_str = str(video_path).replace("\\", "/")
+    # Remove common processing suffixes
+    for suffix in [".orig", ".tmp", ".av.mp4", ".muxed.mp4", ".temp.wav"]:
+        if path_str.endswith(suffix):
+            path_str = path_str[: -len(suffix)]
+            break
 
     # Pattern 1: OTA channels (X.Y format) in directory name
     # e.g., "/recordings/TV/4.1 KRON/..." or "/4.1 - KRON/..."
@@ -566,18 +572,26 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
         x264_preset = "fast"
         log.info("Using standard ffmpeg presets (OPTIMIZATION_MODE=standard)")
 
-    # Build base command for NVENC
+    # Build base command for NVENC (GPU encoding)
     cmd_nvenc = [
         "ffmpeg",
         "-y",
         "-progress",
         "pipe:2",  # Enable progress reporting to stderr
+        "-hwaccel",
+        "cuda",  # Use CUDA hardware acceleration for decoding
+        "-hwaccel_output_format",
+        "cuda",  # Keep decoded frames on GPU
         "-i",
         mpg_orig,
         "-c:v",
         "h264_nvenc",
         "-preset",
         nvenc_preset,
+        "-rc:v",
+        "vbr",  # Variable bitrate for better quality
+        "-cq:v",
+        "23",  # Constant quality target (lower = better, 23 is good balance)
     ]
 
     # Add VFR handling if needed (critical for Chrome-captured content)
