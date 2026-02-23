@@ -6,10 +6,10 @@ The language selection feature allows you to specify which audio and subtitle tr
 
 ## Benefits
 
-1. **Performance**: 30-50% faster processing for multi-language recordings (only transcribe one track)
-2. **File Size**: Smaller output files (no unused audio tracks)
-3. **Accuracy**: Better Whisper transcription accuracy when targeting specific language model
-4. **User Experience**: Cleaner playback (no accidental language switches in client apps)
+1. **Performance**: 30-50% faster processing for multi-language recordings (Whisper transcribes only one track)
+2. **Accuracy**: Better Whisper transcription accuracy when targeting specific language model
+3. **Preservation**: All original audio tracks preserved in output (no data loss)
+4. **User Experience**: Generated captions match viewer's selected audio track
 
 ## Configuration
 
@@ -63,8 +63,8 @@ When preferred language is not found in recording:
 
 1. **Stream Detection**: Probes all audio and subtitle streams in recording
 2. **Language Matching**: Selects streams matching your language preference
-3. **Whisper Transcription**: Transcribes only the selected audio track
-4. **FFmpeg Encoding**: Maps only the selected audio track to output
+3. **Whisper Transcription**: Extracts and transcribes only the selected audio track (performance gain)
+4. **FFmpeg Encoding**: Copies all original audio tracks to output (preservation)
 
 ## Example Scenarios
 
@@ -77,7 +77,9 @@ LANGUAGE_FALLBACK=first
 ```
 
 **Result**: 
-- Transcribes English audio only
+- Whisper transcribes only the English audio (faster processing)
+- Output file contains all original audio tracks (English + Spanish)
+- Generated captions match English audio
 - Includes English subtitles if present
 - Falls back to first audio track if no English found
 
@@ -90,7 +92,8 @@ LANGUAGE_FALLBACK=skip
 ```
 
 **Result**:
-- Transcribes Spanish audio only
+- Whisper transcribes only Spanish audio (faster processing)
+- Output file contains all original audio tracks
 - No native subtitles (generated captions only)
 - Skips recording if no Spanish audio found
 
@@ -103,7 +106,8 @@ LANGUAGE_FALLBACK=first
 ```
 
 **Result**:
-- Transcribes French audio
+- Whisper transcribes French audio only
+- Output file contains all original audio tracks
 - Includes English subtitles if present
 - Falls back to first audio if no French found
 
@@ -121,8 +125,9 @@ Key functions:
 ### Integration Points
 
 1. **embed_captions.py**:
-   - Detects streams early in pipeline
-   - Passes language to Whisper transcription
+   - Extracts only selected audio track for Whisper (performance optimization)
+   - Passes selected language to Whisper transcription
+   - Copies all audio tracks to output (preservation)
    - Maps selected audio stream in ffmpeg encoding
 
 2. **config.py**:
