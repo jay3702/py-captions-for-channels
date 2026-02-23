@@ -582,17 +582,13 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
         log.info("Using standard ffmpeg presets (OPTIMIZATION_MODE=standard)")
 
     # Build base command for NVENC (GPU encoding)
-    # Note: Removed -rc:v vbr and -cq:v settings that caused bitrate explosion
+    # Note: Hardware decode removed - adds overhead for MPEG-2 without benefit
     # NVENC preset alone provides appropriate quality/speed tradeoff
     cmd_nvenc = [
         "ffmpeg",
         "-y",
         "-progress",
         "pipe:2",  # Enable progress reporting to stderr
-        "-hwaccel",
-        "cuda",  # Use CUDA hardware acceleration for decoding
-        "-hwaccel_output_format",
-        "cuda",  # Keep decoded frames on GPU
         "-i",
         mpg_orig,
         "-c:v",
