@@ -543,8 +543,16 @@ def validate_and_trim_srt(srt_path, max_end_time, log):
     log.info(f"Trimmed SRT to {max_end_time:.2f}s for Android compatibility.")
 
 
-def encode_av_only(mpg_orig, temp_av, log, job_id=None):
-    """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs."""
+def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
+    """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs.
+
+    Args:
+        mpg_orig: Path to .orig file to encode
+        temp_av: Output path for encoded video
+        log: Logger instance
+        job_id: Optional job ID for progress tracking
+        source_path: Original .mpg path (without .orig) for channel extraction
+    """
     # Get video duration for progress tracking
     video_duration = probe_duration(mpg_orig, log)
 
@@ -552,7 +560,8 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
     is_vfr = detect_variable_frame_rate(mpg_orig, log)
 
     # Determine encoder presets based on OPTIMIZATION_MODE
-    channel_number = extract_channel_number(mpg_orig)
+    # Use source_path for channel extraction (API knows about .mpg, not .orig)
+    channel_number = extract_channel_number(source_path or mpg_orig)
     print(f"[OPTIMIZATION] ffmpeg channel detected: {channel_number}")
     if OPTIMIZATION_MODE == "automatic":
         ffmpeg_params = get_ffmpeg_parameters(mpg_orig, channel_number)
@@ -573,6 +582,8 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
         log.info("Using standard ffmpeg presets (OPTIMIZATION_MODE=standard)")
 
     # Build base command for NVENC (GPU encoding)
+    # Note: Removed -rc:v vbr and -cq:v settings that caused bitrate explosion
+    # NVENC preset alone provides appropriate quality/speed tradeoff
     cmd_nvenc = [
         "ffmpeg",
         "-y",
@@ -588,10 +599,6 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None):
         "h264_nvenc",
         "-preset",
         nvenc_preset,
-        "-rc:v",
-        "vbr",  # Variable bitrate for better quality
-        "-cq:v",
-        "23",  # Constant quality target (lower = better, 23 is good balance)
     ]
 
     # Add VFR handling if needed (critical for Chrome-captured content)
@@ -1429,7 +1436,9 @@ def main():
     # Step 1: Encode A/V only
     run_step(
         "ffmpeg_encode",
-        lambda: encode_av_only(orig_path, temp_av, log, args.job_id),
+        lambda: encode_av_only(
+            orig_path, temp_av, log, args.job_id, source_path=mpg_path
+        ),
         input_path=orig_path,
         output_path=temp_av,
     )
