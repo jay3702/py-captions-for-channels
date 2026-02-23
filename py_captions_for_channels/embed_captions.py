@@ -23,6 +23,7 @@ from py_captions_for_channels.config import (
     AUDIO_LANGUAGE,
     SUBTITLE_LANGUAGE,
     LANGUAGE_FALLBACK,
+    PRESERVE_ALL_AUDIO_TRACKS,
 )
 from py_captions_for_channels.encoding_profiles import (
     get_whisper_parameters,
@@ -550,7 +551,9 @@ def validate_and_trim_srt(srt_path, max_end_time, log):
     log.info(f"Trimmed SRT to {max_end_time:.2f}s for Android compatibility.")
 
 
-def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
+def encode_av_only(
+    mpg_orig, temp_av, log, job_id=None, source_path=None, audio_stream_index=None
+):
     """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs.
 
     Args:
@@ -559,6 +562,7 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
         log: Logger instance
         job_id: Optional job ID for progress tracking
         source_path: Original .mpg path (without .orig) for channel extraction
+        audio_stream_index: Optional audio stream index to filter (when not preserving all tracks)
     """
     # Get video duration for progress tracking
     video_duration = probe_duration(mpg_orig, log)
@@ -608,8 +612,19 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
     if is_vfr:
         cmd_nvenc.extend(["-vsync", "vfr"])
 
-    # Map all audio streams (language selection affects only Whisper, not output)
-    audio_map = ["-map", "0:v", "-map", "0:a?"]
+    # Determine audio stream mapping based on configuration
+    if PRESERVE_ALL_AUDIO_TRACKS or audio_stream_index is None:
+        # Default: preserve all audio tracks for language options
+        audio_map = ["-map", "0:v", "-map", "0:a?"]
+        if not PRESERVE_ALL_AUDIO_TRACKS and audio_stream_index is not None:
+            log.info("Preserving all audio tracks (PRESERVE_ALL_AUDIO_TRACKS=true)")
+    else:
+        # Performance mode: filter to only selected language track
+        audio_map = ["-map", "0:v", "-map", f"0:a:{audio_stream_index}"]
+        log.info(
+            f"Filtering to audio stream {audio_stream_index} "
+            f"(PRESERVE_ALL_AUDIO_TRACKS=false, faster encoding)"
+        )
 
     cmd_nvenc.extend(
         [
@@ -651,8 +666,11 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
     if is_vfr:
         cmd_cpu.extend(["-vsync", "vfr"])
 
-    # Map all audio streams (language selection affects only Whisper, not output)
-    audio_map = ["-map", "0:v", "-map", "0:a?"]
+    # Determine audio stream mapping (same logic as NVENC path)
+    if PRESERVE_ALL_AUDIO_TRACKS or audio_stream_index is None:
+        audio_map = ["-map", "0:v", "-map", "0:a?"]
+    else:
+        audio_map = ["-map", "0:v", "-map", f"0:a:{audio_stream_index}"]
 
     cmd_cpu.extend(
         [
@@ -1511,7 +1529,7 @@ def main():
     orig_path = mpg_path + ".orig"
     temp_av = mpg_path + ".av.mp4"
     temp_muxed = mpg_path + ".muxed.mp4"
-    # Step 1: Encode A/V only (copies all audio tracks)
+    # Step 1: Encode A/V only (behavior controlled by PRESERVE_ALL_AUDIO_TRACKS)
     run_step(
         "ffmpeg_encode",
         lambda: encode_av_only(
@@ -1520,6 +1538,7 @@ def main():
             log,
             args.job_id,
             source_path=mpg_path,
+            audio_stream_index=selected_audio_index,
         ),
         input_path=orig_path,
         output_path=temp_av,
