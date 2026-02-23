@@ -17,12 +17,19 @@ from py_captions_for_channels.logging.structured_logger import get_logger
 from py_captions_for_channels.database import get_db
 from py_captions_for_channels.progress_tracker import get_progress_tracker
 from py_captions_for_channels.services.execution_service import ExecutionService
-from py_captions_for_channels.config import OPTIMIZATION_MODE, CAPTION_DELAY_MS
+from py_captions_for_channels.config import (
+    OPTIMIZATION_MODE,
+    CAPTION_DELAY_MS,
+    AUDIO_LANGUAGE,
+    SUBTITLE_LANGUAGE,
+    LANGUAGE_FALLBACK,
+)
 from py_captions_for_channels.encoding_profiles import (
     get_whisper_parameters,
     get_ffmpeg_parameters,
 )
 from py_captions_for_channels.system_monitor import get_pipeline_timeline
+from py_captions_for_channels.stream_detector import select_streams
 
 # Unique identifier for our subtitle tracks
 SUBTITLE_TRACK_NAME = "py-captions-for-channels"
@@ -543,7 +550,9 @@ def validate_and_trim_srt(srt_path, max_end_time, log):
     log.info(f"Trimmed SRT to {max_end_time:.2f}s for Android compatibility.")
 
 
-def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
+def encode_av_only(
+    mpg_orig, temp_av, log, job_id=None, source_path=None, audio_stream_index=None
+):
     """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs.
 
     Args:
@@ -601,6 +610,13 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
     if is_vfr:
         cmd_nvenc.extend(["-vsync", "vfr"])
 
+    # Map selected audio stream if specified, otherwise map all audio streams
+    if audio_stream_index is not None:
+        audio_map = ["-map", "0:v", "-map", f"0:a:{audio_stream_index}"]
+        log.info(f"Mapping only audio stream {audio_stream_index} (language selection)")
+    else:
+        audio_map = ["-map", "0:v", "-map", "0:a?"]
+
     cmd_nvenc.extend(
         [
             "-c:a",
@@ -611,12 +627,9 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
             "2147483647",
             "-probesize",
             "2147483647",
-            "-map",
-            "0:v",
-            "-map",
-            "0:a?",
-            temp_av,
         ]
+        + audio_map
+        + [temp_av]
     )
     log.info(f"Trying NVENC encode: {' '.join(cmd_nvenc)}")
     try:
@@ -644,6 +657,12 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
     if is_vfr:
         cmd_cpu.extend(["-vsync", "vfr"])
 
+    # Map selected audio stream if specified, otherwise map all audio streams
+    if audio_stream_index is not None:
+        audio_map = ["-map", "0:v", "-map", f"0:a:{audio_stream_index}"]
+    else:
+        audio_map = ["-map", "0:v", "-map", "0:a?"]
+
     cmd_cpu.extend(
         [
             "-c:a",
@@ -654,12 +673,9 @@ def encode_av_only(mpg_orig, temp_av, log, job_id=None, source_path=None):
             "2147483647",
             "-probesize",
             "2147483647",
-            "-map",
-            "0:v",
-            "-map",
-            "0:a?",
-            temp_av,
         ]
+        + audio_map
+        + [temp_av]
     )
     log.info(f"Trying CPU encode: {' '.join(cmd_cpu)}")
     try:
@@ -993,6 +1009,56 @@ def main():
         misc_label="Waiting for file stability",
     )
 
+    # Detect and select audio/subtitle streams based on language preference
+    log.info(
+        f"Detecting streams with language preference: "
+        f"audio={AUDIO_LANGUAGE}, subtitle={SUBTITLE_LANGUAGE}"
+    )
+    try:
+        # Resolve subtitle language ("same" means use audio language)
+        subtitle_lang = (
+            AUDIO_LANGUAGE if SUBTITLE_LANGUAGE == "same" else SUBTITLE_LANGUAGE
+        )
+
+        stream_selection = select_streams(
+            mpg_path,
+            audio_language=AUDIO_LANGUAGE,
+            subtitle_language=subtitle_lang,
+            fallback=LANGUAGE_FALLBACK,
+        )
+
+        log.info(f"Stream selection: {stream_selection}")
+        log.info(f"  Selected audio: {stream_selection.audio_stream}")
+        if stream_selection.subtitle_stream:
+            log.info(f"  Selected subtitle: {stream_selection.subtitle_stream}")
+        else:
+            log.info("  No subtitle stream selected")
+
+        # Extract language code for Whisper (convert ISO 639-2/3 to 2-letter code)
+        audio_lang_code = stream_selection.audio_stream.language or "en"
+        # Whisper prefers 2-letter codes (en, es, fr, etc.)
+        selected_language = (
+            audio_lang_code[:2] if len(audio_lang_code) > 2 else audio_lang_code
+        )
+
+        # Store stream index for later use in encoding
+        selected_audio_index = stream_selection.audio_index
+
+        log.info(
+            f"Will transcribe audio stream {selected_audio_index} "
+            f"with Whisper language={selected_language}"
+        )
+
+    except Exception as e:
+        log.error(f"Stream detection failed: {e}")
+        if LANGUAGE_FALLBACK == "skip":
+            log.error("LANGUAGE_FALLBACK=skip, aborting processing")
+            sys.exit(1)
+        else:
+            log.warning("Falling back to processing all streams (legacy behavior)")
+            selected_language = "en"  # Default to English
+            selected_audio_index = None  # Process all audio streams
+
     # Check if file already has our subtitle track
     if has_our_subtitles(mpg_path, log):
         log.warning(
@@ -1149,14 +1215,16 @@ def main():
                     )
                 else:
                     # Standard mode: use hardcoded parameters (proven, reliable)
+                    # Language determined by stream selection (passed via closure)
                     whisper_params = {
-                        "language": "en",
+                        "language": selected_language,
                         "beam_size": 5,
                         "vad_filter": True,
                         "vad_parameters": {"min_silence_duration_ms": 500},
                     }
                     log.info(
-                        "Using standard Whisper parameters (OPTIMIZATION_MODE=standard)"
+                        f"Using standard Whisper parameters "
+                        f"(OPTIMIZATION_MODE=standard, language={selected_language})"
                     )
 
                 # Check if file can be safely decoded - if not, extract audio first
@@ -1170,22 +1238,33 @@ def main():
                     )
                     wav_path = f"{mpg_path}.temp.wav"
                     try:
-                        extract_cmd = [
-                            "ffmpeg",
-                            "-y",
-                            "-err_detect",
-                            "ignore_err",  # Ignore decoding errors
-                            "-i",
-                            mpg_path,
-                            "-vn",  # No video
-                            "-acodec",
-                            "pcm_s16le",  # PCM audio
-                            "-ar",
-                            "16000",  # 16kHz sample rate (Whisper standard)
-                            "-ac",
-                            "1",  # Mono
-                            wav_path,
-                        ]
+                        # Map specific audio stream for language-aware processing
+                        audio_map = (
+                            ["-map", f"0:a:{selected_audio_index}"]
+                            if selected_audio_index is not None
+                            else []
+                        )
+                        extract_cmd = (
+                            [
+                                "ffmpeg",
+                                "-y",
+                                "-err_detect",
+                                "ignore_err",  # Ignore decoding errors
+                                "-i",
+                                mpg_path,
+                            ]
+                            + audio_map
+                            + [
+                                "-vn",  # No video
+                                "-acodec",
+                                "pcm_s16le",  # PCM audio
+                                "-ar",
+                                "16000",  # 16kHz sample rate (Whisper standard)
+                                "-ac",
+                                "1",  # Mono
+                                wav_path,
+                            ]
+                        )
                         log.info(f"Extracting audio: {' '.join(extract_cmd)}")
                         result = subprocess.run(
                             extract_cmd,
@@ -1262,22 +1341,34 @@ def main():
                                     )
                                     wav_path = f"{mpg_path}.temp.wav"
                                     try:
-                                        extract_cmd = [
-                                            "ffmpeg",
-                                            "-y",
-                                            "-err_detect",
-                                            "ignore_err",
-                                            "-i",
-                                            mpg_path,
-                                            "-vn",  # No video
-                                            "-acodec",
-                                            "pcm_s16le",  # PCM audio
-                                            "-ar",
-                                            "16000",  # 16kHz sample rate
-                                            "-ac",
-                                            "1",  # Mono
-                                            wav_path,
-                                        ]
+                                        # Map specific audio stream
+                                        # for language-aware processing
+                                        audio_map = (
+                                            ["-map", f"0:a:{selected_audio_index}"]
+                                            if selected_audio_index is not None
+                                            else []
+                                        )
+                                        extract_cmd = (
+                                            [
+                                                "ffmpeg",
+                                                "-y",
+                                                "-err_detect",
+                                                "ignore_err",
+                                                "-i",
+                                                mpg_path,
+                                            ]
+                                            + audio_map
+                                            + [
+                                                "-vn",  # No video
+                                                "-acodec",
+                                                "pcm_s16le",  # PCM audio
+                                                "-ar",
+                                                "16000",  # 16kHz sample rate
+                                                "-ac",
+                                                "1",  # Mono
+                                                wav_path,
+                                            ]
+                                        )
                                         log.info(
                                             f"Extracting audio: "
                                             f"{' '.join(extract_cmd)}"
@@ -1433,7 +1524,12 @@ def main():
     run_step(
         "ffmpeg_encode",
         lambda: encode_av_only(
-            orig_path, temp_av, log, args.job_id, source_path=mpg_path
+            orig_path,
+            temp_av,
+            log,
+            args.job_id,
+            source_path=mpg_path,
+            audio_stream_index=selected_audio_index,  # Pass selected audio stream
         ),
         input_path=orig_path,
         output_path=temp_av,
