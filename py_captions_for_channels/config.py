@@ -103,6 +103,19 @@ PRESERVE_ALL_AUDIO_TRACKS = os.getenv("PRESERVE_ALL_AUDIO_TRACKS", "1").lower() 
     "yes",
 )
 
+# Video encoding quality settings
+# NVENC_CQ: Constant Quality for NVIDIA GPU encoding (0-51, lower=better)
+#   18 = Near-transparent (high quality, default)
+#   23 = Good quality/size balance
+#   28 = Acceptable quality (faster encoding)
+NVENC_CQ = get_env_int("NVENC_CQ", 18)
+
+# X264_CRF: Constant Rate Factor for CPU encoding (0-51, lower=better)
+#   18 = Near-transparent (high quality, default)
+#   23 = Default x264 (good quality/size balance)
+#   28 = Acceptable quality (faster encoding)
+X264_CRF = get_env_int("X264_CRF", 18)
+
 # State file for tracking last processed timestamp
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
 
