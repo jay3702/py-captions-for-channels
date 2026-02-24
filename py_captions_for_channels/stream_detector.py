@@ -85,8 +85,6 @@ def probe_streams(video_path: str) -> Dict[str, List]:
         "-print_format",
         "json",
         "-show_streams",
-        "-select_streams",
-        "a:s",  # Audio and subtitle streams only
         video_path,
     ]
 
