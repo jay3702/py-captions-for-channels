@@ -24,6 +24,8 @@ from py_captions_for_channels.config import (
     SUBTITLE_LANGUAGE,
     LANGUAGE_FALLBACK,
     PRESERVE_ALL_AUDIO_TRACKS,
+    NVENC_CQ,
+    X264_CRF,
 )
 from py_captions_for_channels.encoding_profiles import (
     get_whisper_parameters,
@@ -595,7 +597,7 @@ def encode_av_only(
 
     # Build base command for NVENC (GPU encoding)
     # Note: Hardware decode removed - adds overhead for MPEG-2 without benefit
-    # NVENC preset alone provides appropriate quality/speed tradeoff
+    # Use VBR high quality mode with constant quality parameter for best results
     cmd_nvenc = [
         "ffmpeg",
         "-y",
@@ -607,6 +609,10 @@ def encode_av_only(
         "h264_nvenc",
         "-preset",
         nvenc_preset,
+        "-rc",
+        "vbr_hq",
+        "-cq",
+        str(NVENC_CQ),
     ]
 
     # Add VFR handling if needed (critical for Chrome-captured content)
@@ -663,6 +669,8 @@ def encode_av_only(
         "libx264",
         "-preset",
         x264_preset,
+        "-crf",
+        str(X264_CRF),
     ]
 
     if is_vfr:
