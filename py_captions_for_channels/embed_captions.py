@@ -711,6 +711,10 @@ def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
     """Run ffmpeg and parse progress from stderr output."""
     import re
 
+    # Report initial progress immediately so UI shows status
+    if job_id:
+        update_ffmpeg_progress(job_id, 0, f"{step_name}: starting...")
+
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -1319,6 +1323,10 @@ def main():
                 log.debug("Starting transcription...")
                 pipeline.stage_start("whisper", job_id, filename)
 
+                # Report initial progress immediately so UI shows status
+                if args.job_id:
+                    update_whisper_progress(args.job_id, 0, "Transcription starting...")
+
                 # Try GPU transcription first, fall back to CPU if GPU libraries fail
                 transcription_successful = False
                 try:
@@ -1569,12 +1577,14 @@ def main():
             "shift_srt",
             lambda: shift_srt_timestamps(srt_path, CAPTION_DELAY_MS, log),
             input_path=srt_path,
+            misc_label="Adjusting captions",
         )
     # Step 4: Clamp SRT
     run_step(
         "clamp_srt",
         lambda: clamp_srt_to_end(srt_path, end_time, log),
         input_path=srt_path,
+        misc_label="Finalizing captions",
     )
     # Step 5: Mux subtitles
     run_step(

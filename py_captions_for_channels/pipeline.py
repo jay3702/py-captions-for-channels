@@ -655,6 +655,23 @@ class Pipeline:
                                 log.info(
                                     "optimization params: %s", "\n".join(opt_lines)
                                 )
+                            # Extract encoding-related logs (NVENC, GPU, CPU fallback)
+                            encoding_lines = [
+                                line
+                                for line in stdout.split("\n")
+                                if any(
+                                    keyword in line
+                                    for keyword in [
+                                        "Trying NVENC",
+                                        "NVENC failed",
+                                        "falling back",
+                                        "Encoding (GPU)",
+                                        "Encoding (CPU)",
+                                    ]
+                                )
+                            ]
+                            if encoding_lines:
+                                log.info("encoding logs: %s", "\n".join(encoding_lines))
                             log.info("caption generation (end): %s", stdout[-1000:])
                         else:
                             log.info("caption generation output: %s", stdout)
