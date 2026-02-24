@@ -76,24 +76,28 @@
       </div>
       
       <div id="executions-tab" class="tab-content active">
-        <div class="tab-header">
-          <small class="muted" id="exec-count">(loading)</small>
-          <div style="margin-left:auto; display:flex; gap:8px;">
-            <button class="btn-small" onclick="clearList()">Clear List</button>
-            <button class="btn-small" onclick="clearPollingCache()" title="Clear polling cache to allow reprocessing recordings">Reset Cache</button>
+        <div class="tab-fixed-top">
+          <div class="tab-header">
+            <small class="muted" id="exec-count">(loading)</small>
+            <div style="margin-left:auto; display:flex; gap:8px;">
+              <button class="btn-small" onclick="clearList()">Clear List</button>
+              <button class="btn-small" onclick="clearPollingCache()" title="Clear polling cache to allow reprocessing recordings">Reset Cache</button>
+            </div>
+          </div>
+          <div class="exec-section">
+            <div class="exec-section-title">Queue</div>
+            <ul class="exec-list exec-list-compact" id="exec-list-queue">
+              <li class="muted">Loading...</li>
+            </ul>
           </div>
         </div>
-        <div class="exec-section">
-          <div class="exec-section-title">Queue</div>
-          <ul class="exec-list exec-list-compact" id="exec-list-queue">
-            <li class="muted">Loading...</li>
-          </ul>
-        </div>
-        <div class="exec-section">
-          <div class="exec-section-title">History</div>
-          <ul class="exec-list" id="exec-list-history">
-            <li class="muted">Loading...</li>
-          </ul>
+        <div class="tab-scrollable">
+          <div class="exec-section">
+            <div class="exec-section-title">History</div>
+            <ul class="exec-list" id="exec-list-history">
+              <li class="muted">Loading...</li>
+            </ul>
+          </div>
         </div>
       </div>
       
@@ -107,19 +111,22 @@
       </div>
 
       <div id="glances-tab" class="tab-content">
-        <div class="tab-header">
-          <small class="muted" id="pipeline-activity-indicator" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">Real-time system and pipeline monitoring</small>
-        </div>
-        
-        <!-- Pipeline Flow Visualization -->
-        <div id="pipeline-status" class="monitor-panel pipeline-panel" style="margin-bottom: 10px;">
-          <div id="pipeline-info" class="pipeline-flow">
-            <div class="pipeline-info-text">No active pipeline</div>
+        <div class="tab-fixed-top">
+          <div class="tab-header">
+            <small class="muted" id="pipeline-activity-indicator" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">Real-time system and pipeline monitoring</small>
+          </div>
+          
+          <!-- Pipeline Flow Visualization -->
+          <div id="pipeline-status" class="monitor-panel pipeline-panel" style="margin-bottom: 10px;">
+            <div id="pipeline-info" class="pipeline-flow">
+              <div class="pipeline-info-text">No active pipeline</div>
+            </div>
           </div>
         </div>
 
         <!-- System Metrics Charts -->
-        <div class="charts-grid">
+        <div class="tab-scrollable">
+          <div class="charts-grid">
           <div class="chart-container">
             <div class="chart-title">CPU Usage</div>
             <div class="chart-wrapper">
@@ -144,10 +151,11 @@
               <div id="chart-network" class="chart"></div>
             </div>
           </div>
-        </div>
-        
-        <div id="gpu-unavailable" class="monitor-panel" style="margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; text-align: center; color: #888;">
-          Checking GPU availability...
+          </div>
+          
+          <div id="gpu-unavailable" class="monitor-panel" style="margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; text-align: center; color: #888;">
+            Checking GPU availability...
+          </div>
         </div>
       </div>
 
