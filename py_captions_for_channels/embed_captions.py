@@ -562,7 +562,8 @@ def encode_av_only(
         log: Logger instance
         job_id: Optional job ID for progress tracking
         source_path: Original .mpg path (without .orig) for channel extraction
-        audio_stream_index: Optional audio stream index to filter (when not preserving all tracks)
+        audio_stream_index: Optional audio stream index
+            (for filtering tracks)
     """
     # Get video duration for progress tracking
     video_duration = probe_duration(mpg_orig, log)

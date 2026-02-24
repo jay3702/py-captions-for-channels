@@ -94,10 +94,10 @@ SUBTITLE_LANGUAGE = os.getenv("SUBTITLE_LANGUAGE", "same")
 LANGUAGE_FALLBACK = os.getenv("LANGUAGE_FALLBACK", "first")
 
 # Preserve all audio tracks in output (default: true)
-# true - Copy all audio tracks to output (slower encoding, preserves language options)
-# false - Filter to only selected language track (faster encoding, loses alternates)
-# Set to false to speed up processing of multi-language recordings at cost of losing tracks
-PRESERVE_ALL_AUDIO_TRACKS = os.getenv("PRESERVE_ALL_AUDIO_TRACKS", "true").lower() in (
+# true - Copy all audio tracks (slower encoding, preserves language options)
+# false - Filter to selected track (faster encoding, loses alternates)
+# Set to false to speed up multi-language recordings at cost of losing tracks
+PRESERVE_ALL_AUDIO_TRACKS = os.getenv("PRESERVE_ALL_AUDIO_TRACKS", "1").lower() in (
     "true",
     "1",
     "yes",
