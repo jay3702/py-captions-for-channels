@@ -597,7 +597,7 @@ def encode_av_only(
 
     # Build base command for NVENC (GPU encoding)
     # Note: Hardware decode removed - adds overhead for MPEG-2 without benefit
-    # Use VBR high quality mode with constant quality parameter for best results
+    # Use VBR mode with constant quality parameter for best results
     cmd_nvenc = [
         "ffmpeg",
         "-y",
@@ -610,7 +610,7 @@ def encode_av_only(
         "-preset",
         nvenc_preset,
         "-rc",
-        "vbr_hq",
+        "vbr",
         "-cq",
         str(NVENC_CQ),
     ]
