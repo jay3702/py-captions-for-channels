@@ -621,7 +621,8 @@ def encode_av_only(
             log.info("Preserving all audio tracks (PRESERVE_ALL_AUDIO_TRACKS=true)")
     else:
         # Performance mode: filter to only selected language track
-        audio_map = ["-map", "0:v", "-map", f"0:a:{audio_stream_index}"]
+        # Use absolute stream index (not relative within audio streams)
+        audio_map = ["-map", "0:v", "-map", f"0:{audio_stream_index}"]
         log.info(
             f"Filtering to audio stream {audio_stream_index} "
             f"(PRESERVE_ALL_AUDIO_TRACKS=false, faster encoding)"
@@ -671,7 +672,8 @@ def encode_av_only(
     if PRESERVE_ALL_AUDIO_TRACKS or audio_stream_index is None:
         audio_map = ["-map", "0:v", "-map", "0:a?"]
     else:
-        audio_map = ["-map", "0:v", "-map", f"0:a:{audio_stream_index}"]
+        # Use absolute stream index (not relative within audio streams)
+        audio_map = ["-map", "0:v", "-map", f"0:{audio_stream_index}"]
 
     cmd_cpu.extend(
         [
