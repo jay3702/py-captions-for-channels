@@ -292,10 +292,10 @@ def wait_for_file_stability(
         except Exception as e:
             log.warning(f"File not found or inaccessible: {e}")
             size = None
-        log.info(f"Check at {elapsed}s: size={size}")
+        log.debug(f"Check at {elapsed}s: size={size}")
         if size is not None and size == last_size:
             stable_count += 1
-            log.info(f"Stable count: {stable_count}/{consecutive}")
+            log.debug(f"Stable count: {stable_count}/{consecutive}")
             if stable_count >= consecutive:
                 log.info(f"File size stable at {size} bytes for {consecutive} checks.")
                 break
@@ -383,7 +383,7 @@ def validate_audio_decodability(path, log):
                 log.warning(f"Audio decodability test failed: {result.stderr[:200]}")
                 return False
 
-        log.info("Audio decodability test passed - file can be decoded directly")
+        log.debug("Audio decodability test passed - file can be decoded directly")
         return True
 
     except subprocess.TimeoutExpired:
@@ -482,11 +482,11 @@ def detect_subtitle_streams(video_path, log):
         result = subprocess.check_output(cmd, text=True)
         data = json.loads(result)
         streams = data.get("streams", [])
-        log.info(f"Found {len(streams)} subtitle stream(s) in {video_path}")
+        log.debug(f"Found {len(streams)} subtitle stream(s) in {video_path}")
         for i, s in enumerate(streams):
             tags = s.get("tags", {})
             title = tags.get("title", tags.get("handler_name", "Unknown"))
-            log.info(f"  Stream {i}: {s.get('codec_name')} - {title}")
+            log.debug(f"  Stream {i}: {s.get('codec_name')} - {title}")
         return streams
     except Exception as e:
         log.warning(f"Failed to detect subtitle streams: {e}")
@@ -952,7 +952,7 @@ def atomic_replace(src, dst, log):
         return
     try:
         os.rename(src, dst)
-        log.info(f"Replaced {dst} atomically using os.rename.")
+        log.debug(f"Replaced {dst} atomically using os.rename.")
     except Exception as e:
         log.error(f"Atomic replacement failed: {e}")
 
@@ -1030,7 +1030,7 @@ def main():
     )
 
     # Detect and select audio/subtitle streams based on language preference
-    log.info(
+    log.debug(
         f"Detecting streams with language preference: "
         f"audio={AUDIO_LANGUAGE}, subtitle={SUBTITLE_LANGUAGE}"
     )
@@ -1047,12 +1047,12 @@ def main():
             fallback=LANGUAGE_FALLBACK,
         )
 
-        log.info(f"Stream selection: {stream_selection}")
-        log.info(f"  Selected audio: {stream_selection.audio_stream}")
+        log.debug(f"Stream selection: {stream_selection}")
+        log.debug(f"  Selected audio: {stream_selection.audio_stream}")
         if stream_selection.subtitle_stream:
-            log.info(f"  Selected subtitle: {stream_selection.subtitle_stream}")
+            log.debug(f"  Selected subtitle: {stream_selection.subtitle_stream}")
         else:
-            log.info("  No subtitle stream selected")
+            log.debug("  No subtitle stream selected")
 
         # Extract language code for Whisper (convert ISO 639-2/3 to 2-letter code)
         audio_lang_code = stream_selection.audio_stream.language or "en"
@@ -1064,7 +1064,7 @@ def main():
         # Store stream index for later use in encoding
         selected_audio_index = stream_selection.audio_index
 
-        log.info(
+        log.debug(
             f"Will transcribe audio stream {selected_audio_index} "
             f"with Whisper language={selected_language}"
         )
@@ -1087,7 +1087,7 @@ def main():
             "Processing will continue but may result in duplicate captions."
         )
     else:
-        log.info("No existing subtitle track detected - proceeding with processing")
+        log.debug("No existing subtitle track detected - proceeding with processing")
 
     # Generate captions with Whisper if needed (BEFORE preserving original)
     if args.skip_caption_generation:
@@ -1096,7 +1096,7 @@ def main():
         pipeline.stage_start("whisper", job_id, filename)
         pipeline.stage_end("whisper", job_id)
     else:
-        log.info(f"Preparing Faster-Whisper model: {args.model}")
+        log.debug(f"Preparing Faster-Whisper model: {args.model}")
         step_tracker.start("whisper", input_path=mpg_path, output_path=srt_path)
 
         def _run_whisper():
@@ -1116,7 +1116,7 @@ def main():
                 if WHISPER_DEVICE == "none":
                     device = "cpu"
                     compute_type = "int8"  # Use int8 for CPU efficiency
-                    log.info(
+                    log.debug(
                         f"Loading Faster-Whisper model: {args.model} "
                         f"(device={device}, compute_type={compute_type}) - "
                         f"CPU forced by config"
@@ -1129,7 +1129,7 @@ def main():
                     # Force NVIDIA GPU even if detection fails
                     device = "cuda"
                     compute_type = "float16"
-                    log.info(
+                    log.debug(
                         f"Loading Faster-Whisper model: {args.model} "
                         f"(device={device}, compute_type={compute_type}) - "
                         f"NVIDIA GPU forced"
@@ -1142,7 +1142,7 @@ def main():
                     # AMD/Intel GPU support - try GPU first, fallback to auto behavior
                     device = "cuda"
                     compute_type = "float16"
-                    log.info(
+                    log.debug(
                         f"Loading Faster-Whisper model: {args.model} "
                         f"(device={device}, compute_type={compute_type}) - "
                         f"{WHISPER_DEVICE.upper()} GPU requested "
@@ -1185,7 +1185,7 @@ def main():
                     device = "cuda"
                     compute_type = "float16"  # Use float16 for better GPU performance
 
-                    log.info(
+                    log.debug(
                         f"Loading Faster-Whisper model: {args.model} "
                         f"(device={device}, compute_type={compute_type}) - "
                         f"auto-detect mode"
@@ -1195,7 +1195,7 @@ def main():
                         model = WhisperModel(
                             args.model, device=device, compute_type=compute_type
                         )
-                        log.info("Faster-Whisper model loaded successfully with GPU")
+                        log.debug("Faster-Whisper model loaded successfully with GPU")
                     except Exception as e:
                         log.warning(
                             f"Failed to load model with GPU: {e}, falling back to CPU"
@@ -1208,11 +1208,13 @@ def main():
                         log.info("Faster-Whisper model loaded with CPU fallback")
 
                 # Transcribe with progress tracking
-                log.info(f"Transcribing audio from: {mpg_path}")
+                log.debug(f"Transcribing audio from: {mpg_path}")
 
                 # Get video duration for progress calculation
                 video_duration = probe_duration(mpg_path, log)
-                log.info(f"Video duration: {video_duration:.1f}s for progress tracking")
+                log.debug(
+                    f"Video duration: {video_duration:.1f}s for progress tracking"
+                )
 
                 # Determine Whisper parameters based on OPTIMIZATION_MODE
                 channel_number = extract_channel_number(mpg_path)
@@ -1223,7 +1225,7 @@ def main():
                     vad_ms = whisper_params.get("vad_parameters", {}).get(
                         "min_silence_duration_ms"
                     )
-                    log.info(
+                    log.debug(
                         f"Using automatic Whisper parameters "
                         f"(channel={channel_number}): "
                         f"beam_size={beam_size}, vad_min_silence_ms={vad_ms}"
@@ -1314,7 +1316,7 @@ def main():
                         raise
 
                 # Start the pipeline stage right before actual transcription
-                log.info("Starting transcription...")
+                log.debug("Starting transcription...")
                 pipeline.stage_start("whisper", job_id, filename)
 
                 # Try GPU transcription first, fall back to CPU if GPU libraries fail
@@ -1434,7 +1436,7 @@ def main():
                 if not transcription_successful:
                     raise RuntimeError("Transcription failed on all attempts")
 
-                log.info(
+                log.debug(
                     f"Detected language: {info.language} "
                     f"(probability: {info.language_probability:.2f})"
                 )
@@ -1471,7 +1473,7 @@ def main():
                                 f"({segment_count} segments)",
                             )
                             last_progress_report = progress
-                            log.info(
+                            log.debug(
                                 f"Whisper progress: {progress}% "
                                 f"({segment.end:.1f}/{video_duration:.1f}s)"
                             )
@@ -1604,7 +1606,7 @@ def main():
             misc_label="Cleaning up",
         )
         pipeline.job_complete(job_id)
-        log.info("Caption embedding complete.")
+        log.debug("Caption embedding complete.")
     else:
         pipeline.job_complete(job_id)
         log.error(
