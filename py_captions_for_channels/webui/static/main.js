@@ -2277,39 +2277,114 @@ async function deepScanForOrphans() {
   const statusEl = document.getElementById('quarantine-scan-status');
   const originalText = statusEl ? statusEl.textContent : '';
   
+  // Progress UI elements
+  const progressEl = document.getElementById('deep-scan-progress');
+  const statusLabelEl = document.getElementById('deep-scan-status');
+  const counterEl = document.getElementById('deep-scan-counter');
+  const barEl = document.getElementById('deep-scan-bar');
+  const folderEl = document.getElementById('deep-scan-folder');
+  const orphansEl = document.getElementById('deep-scan-orphans');
+  
   try {
     if (statusEl) {
-      statusEl.innerHTML = '<strong>🔍 Deep scanning filesystem paths...</strong> This may take a while for large libraries.';
+      statusEl.innerHTML = '<strong>🔍 Deep scanning filesystem paths...</strong>';
       statusEl.style.color = '#4a9eff';
     }
     
-    const response = await fetch('/api/orphan-cleanup/scan-filesystem', { method: 'POST' });
-    const data = await response.json();
+    // Show progress panel
+    if (progressEl) {
+      progressEl.style.display = 'block';
+      statusLabelEl.textContent = 'Enumerating folders...';
+      counterEl.textContent = '0 / 0';
+      barEl.style.width = '0%';
+      folderEl.textContent = '—';
+      folderEl.title = '';
+      orphansEl.textContent = 'Orphans found: 0';
+    }
     
-    if (data.success) {
-      const origCount = data.orig_quarantined || 0;
-      const srtCount = data.srt_quarantined || 0;
+    const response = await fetch('/api/orphan-cleanup/scan-filesystem/stream');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult = null;
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      
+      // Parse SSE events from buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';  // keep incomplete line
+      
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        
+        try {
+          const data = JSON.parse(line.slice(6));
+          
+          if (data.phase === 'enumerating') {
+            if (statusLabelEl) statusLabelEl.textContent = data.message;
+            if (counterEl) counterEl.textContent = `0 / ${data.total}`;
+          } else if (data.phase === 'scanning') {
+            const pct = data.total > 0 ? (data.current / data.total * 100) : 0;
+            if (statusLabelEl) statusLabelEl.textContent = `Scanning: ${data.scan_path_label || data.scan_path}`;
+            if (counterEl) counterEl.textContent = `${data.current} / ${data.total}`;
+            if (barEl) barEl.style.width = `${pct.toFixed(1)}%`;
+            if (folderEl) {
+              folderEl.textContent = data.folder;
+              folderEl.title = data.folder;
+            }
+            if (orphansEl) orphansEl.textContent = `Orphans found: ${data.orphans_found}`;
+          } else if (data.phase === 'complete') {
+            if (statusLabelEl) statusLabelEl.textContent = 'Quarantining orphaned files...';
+            if (barEl) barEl.style.width = '100%';
+          } else if (data.phase === 'done') {
+            finalResult = data;
+          } else if (data.phase === 'error') {
+            throw new Error(data.message || 'Deep scan failed');
+          }
+        } catch (parseErr) {
+          if (parseErr.message && !parseErr.message.includes('JSON')) {
+            throw parseErr;
+          }
+          console.warn('SSE parse error:', parseErr);
+        }
+      }
+    }
+    
+    // Hide progress panel
+    if (progressEl) {
+      progressEl.style.display = 'none';
+    }
+    
+    if (finalResult && finalResult.success) {
+      const origCount = finalResult.orig_quarantined || 0;
+      const srtCount = finalResult.srt_quarantined || 0;
       const totalCount = origCount + srtCount;
-      const pathsScanned = data.scanned_paths || 0;
+      const pathsScanned = finalResult.scanned_paths || 0;
       
       if (totalCount > 0) {
-        alert(`✓ Deep scan complete!\\n\\nScanned ${pathsScanned} path(s)\\n\\nQuarantined ${totalCount} orphaned file(s):\\n• ${origCount} .orig file(s)\\n• ${srtCount} .srt file(s)\\n\\nFiles have been moved to quarantine and can be restored if needed.`);
-        // Reload quarantine list to show new items
+        alert(`✓ Deep scan complete!\n\nScanned ${pathsScanned} path(s)\n\nQuarantined ${totalCount} orphaned file(s):\n• ${origCount} .orig file(s)\n• ${srtCount} .srt file(s)\n\nFiles have been moved to quarantine and can be restored if needed.`);
         await loadQuarantineFiles();
       } else {
-        alert(`✓ Deep scan complete!\\n\\nScanned ${pathsScanned} path(s)\\n\\nNo orphaned files found. Your media libraries are clean.`);
+        alert(`✓ Deep scan complete!\n\nScanned ${pathsScanned} path(s)\n\nNo orphaned files found. Your media libraries are clean.`);
       }
       
       if (statusEl) {
         statusEl.innerHTML = `<strong>Scan (History):</strong> Detects orphans from recordings you processed. <strong>Deep Scan:</strong> Last scan found ${totalCount} file(s)`;
         statusEl.style.color = '#6c6';
       }
+    } else if (!finalResult) {
+      throw new Error('Stream ended without results');
     } else {
-      throw new Error(data.error || 'Deep scan failed');
+      throw new Error(finalResult.error || 'Deep scan failed');
     }
   } catch (error) {
     console.error('Deep scan failed:', error);
     alert('Failed to perform deep scan: ' + error.message);
+    if (progressEl) progressEl.style.display = 'none';
     if (statusEl) {
       statusEl.innerHTML = originalText;
       statusEl.style.color = '#666';
