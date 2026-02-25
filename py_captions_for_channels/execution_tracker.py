@@ -7,6 +7,7 @@ Now uses database backend via ExecutionService.
 
 import json
 import logging
+import os
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -27,7 +28,11 @@ def build_manual_process_job_id(path: str) -> str:
 class ExecutionTracker:
     """Thread-safe tracker for pipeline executions using database backend."""
 
-    def __init__(self, storage_path: str = "/app/data/executions.json"):
+    def __init__(self, storage_path: str = None):
+        from .config import DATA_DIR
+
+        if storage_path is None:
+            storage_path = os.path.join(DATA_DIR, "executions.json")
         self.storage_path = Path(storage_path)
         self.lock = threading.Lock()
         self.execution_counter: int = 0

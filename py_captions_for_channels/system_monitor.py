@@ -2,6 +2,7 @@
 Lightweight system monitor for tracking CPU, disk, network, and GPU metrics.
 """
 
+import os
 import time
 import psutil
 import threading
@@ -359,8 +360,12 @@ class PipelineTimeline:
     def __init__(
         self,
         system_monitor: Optional[SystemMonitor] = None,
-        state_file: str = "/app/data/pipeline_state.json",
+        state_file: str = None,
     ):
+        if state_file is None:
+            from .config import DATA_DIR
+
+            state_file = os.path.join(DATA_DIR, "pipeline_state.json")
         self.system_monitor = system_monitor
         self.state_file = state_file
         self.lock = threading.Lock()

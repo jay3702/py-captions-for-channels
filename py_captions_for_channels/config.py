@@ -44,6 +44,15 @@ def load_dotenv():
 
 load_dotenv()
 
+# =============================================================================
+# DATA STORAGE
+# =============================================================================
+# Base directory for all application data (database, logs, quarantine, state).
+# Point this to a volume with ample disk space. The application itself is
+# lightweight; this directory is where large files accumulate.
+# Individual paths below can still be overridden independently.
+DATA_DIR = os.getenv("DATA_DIR", "./data")
+
 # ChannelWatch WebSocket endpoint (usually not needed - webhooks preferred)
 CHANNELWATCH_URL = os.getenv("CHANNELWATCH_URL", "ws://localhost:8501/events")
 
@@ -116,8 +125,11 @@ NVENC_CQ = get_env_int("NVENC_CQ", 18)
 #   28 = Acceptable quality (faster encoding)
 X264_CRF = get_env_int("X264_CRF", 18)
 
+# Database file location (SQLite)
+DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "py_captions.db"))
+
 # State file for tracking last processed timestamp
-STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
+STATE_FILE = os.getenv("STATE_FILE", os.path.join(DATA_DIR, "state.json"))
 
 # Channels DVR log path (for log-based source, if implemented)
 LOG_PATH = os.getenv("LOG_PATH", "/var/log/channels-dvr.log")
@@ -170,10 +182,12 @@ SERVER_TZ = os.getenv("SERVER_TZ")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_VERBOSITY = os.getenv("LOG_VERBOSITY", "NORMAL")  # MINIMAL, NORMAL, or VERBOSE
 LOG_FILE = os.getenv(
-    "LOG_FILE", "./app.log"
+    "LOG_FILE", os.path.join(DATA_DIR, "app.log")
 )  # Write logs to file (in addition to stdout)
 LOG_FILE_READ = os.getenv("LOG_FILE_READ", LOG_FILE)
-LOG_VERBOSITY_FILE = os.getenv("LOG_VERBOSITY_FILE", "/app/data/log_verbosity.json")
+LOG_VERBOSITY_FILE = os.getenv(
+    "LOG_VERBOSITY_FILE", os.path.join(DATA_DIR, "log_verbosity.json")
+)
 
 # Logging visuals and stats
 LOG_DIVIDER_LENGTH = get_env_int("LOG_DIVIDER_LENGTH", 40)
@@ -194,7 +208,7 @@ ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES = get_env_int(
 )
 
 # Quarantine directory for orphaned files (before permanent deletion)
-QUARANTINE_DIR = os.getenv("QUARANTINE_DIR", "./data/quarantine")
+QUARANTINE_DIR = os.getenv("QUARANTINE_DIR", os.path.join(DATA_DIR, "quarantine"))
 QUARANTINE_EXPIRATION_DAYS = get_env_int("QUARANTINE_EXPIRATION_DAYS", 30)
 
 # Media file extensions to check when detecting orphaned .srt/.orig files
