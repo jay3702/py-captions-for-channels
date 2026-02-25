@@ -196,3 +196,13 @@ ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES = get_env_int(
 # Quarantine directory for orphaned files (before permanent deletion)
 QUARANTINE_DIR = os.getenv("QUARANTINE_DIR", "./data/quarantine")
 QUARANTINE_EXPIRATION_DAYS = get_env_int("QUARANTINE_EXPIRATION_DAYS", 30)
+
+# Media file extensions to check when detecting orphaned .srt/.orig files
+# Comma-separated list of extensions (with leading dot)
+# An .srt or .orig is only considered orphaned if no file with any of these
+# extensions exists at the same path stem.
+MEDIA_FILE_EXTENSIONS = tuple(
+    ext.strip()
+    for ext in os.getenv("MEDIA_FILE_EXTENSIONS", ".mpg,.ts,.mkv,.mp4,.avi").split(",")
+    if ext.strip()
+)
