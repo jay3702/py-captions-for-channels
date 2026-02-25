@@ -1744,7 +1744,7 @@ async def get_quarantined_files() -> dict:
                     "status": item.status,
                     "created_at": item.created_at.isoformat() + "Z",
                     "expires_at": item.expires_at.isoformat() + "Z",
-                    "is_expired": item.expires_at <= datetime.now(timezone.utc),
+                    "is_expired": item.expires_at <= datetime.utcnow(),
                 }
                 for item in items
             ],
