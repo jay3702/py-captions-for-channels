@@ -2164,6 +2164,9 @@ async function loadQuarantineFiles() {
     const stats = data.stats || {};
     statsEl.textContent = `${stats.total_quarantined || 0} items (${stats.total_size_mb || 0} MB) | ${stats.total_expired || 0} expired`;
     
+    // Load and update scan status
+    updateQuarantineScanStatus();
+    
     // Render table
     if (!data.items || data.items.length === 0) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #888;">No quarantined files</td></tr>';
@@ -2200,6 +2203,68 @@ async function loadQuarantineFiles() {
     console.error('Failed to load quarantine files:', error);
     document.getElementById('quarantine-list').innerHTML = 
       `<tr><td colspan="7" style="text-align: center; color: #f55;">Failed to load: ${error.message}</td></tr>`;
+  }
+}
+
+async function updateQuarantineScanStatus() {
+  try {
+    const response = await fetch('/api/orphan-cleanup/status');
+    const data = await response.json();
+    const statusEl = document.getElementById('quarantine-scan-status');
+    
+    if (!statusEl) return;
+    
+    if (data.enabled) {
+      const lastScan = data.last_cleanup_time ? new Date(data.last_cleanup_time).toLocaleString() : 'never';
+      statusEl.textContent = `Auto-scan enabled (every ${data.check_interval_hours}h when idle). Last scan: ${lastScan}`;
+    } else {
+      statusEl.textContent = 'Click "Scan for Orphans" to detect orphaned .orig and .srt files from your processing history.';
+    }
+  } catch (error) {
+    console.error('Failed to load scan status:', error);
+  }
+}
+
+async function scanForOrphans() {
+  const statusEl = document.getElementById('quarantine-scan-status');
+  const originalText = statusEl ? statusEl.textContent : '';
+  
+  try {
+    if (statusEl) {
+      statusEl.textContent = '🔍 Scanning for orphaned files...';
+      statusEl.style.color = '#4a9eff';
+    }
+    
+    const response = await fetch('/api/orphan-cleanup/run', { method: 'POST' });
+    const data = await response.json();
+    
+    if (data.success) {
+      const origCount = data.orig_quarantined || 0;
+      const srtCount = data.srt_quarantined || 0;
+      const totalCount = origCount + srtCount;
+      
+      if (totalCount > 0) {
+        alert(`✓ Scan complete!\n\nQuarantined ${totalCount} orphaned file(s):\n• ${origCount} .orig file(s)\n• ${srtCount} .srt file(s)\n\nFiles have been moved to quarantine and can be restored if needed.`);
+        // Reload quarantine list to show new items
+        await loadQuarantineFiles();
+      } else {
+        alert('✓ Scan complete!\n\nNo orphaned files found. Your recordings directory is clean.');
+      }
+      
+      if (statusEl) {
+        statusEl.textContent = `Last scan: just now — Found ${totalCount} orphaned file(s)`;
+        statusEl.style.color = '#6c6';
+      }
+    } else {
+      throw new Error(data.error || 'Scan failed');
+    }
+  } catch (error) {
+    console.error('Orphan scan failed:', error);
+    alert('Failed to scan for orphans: ' + error.message);
+    if (statusEl) {
+      statusEl.textContent = originalText;
+      statusEl.style.color = '#666';
+    }
   }
 }
 

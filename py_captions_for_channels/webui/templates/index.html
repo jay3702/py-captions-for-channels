@@ -163,14 +163,18 @@
         <div class="tab-header">
           <small class="muted" id="quarantine-stats">(loading)</small>
           <div style="margin-left:auto; display:flex; gap:8px;">
+            <button class="btn-small" onclick="scanForOrphans()">Scan for Orphans</button>
             <button class="btn-small" onclick="restoreSelected()">Restore Selected</button>
             <button class="btn-small btn-danger" onclick="deleteSelected()">Delete Selected</button>
           </div>
         </div>
         <div class="quarantine-info" style="padding: 10px; margin-bottom: 10px; background: #2a2a2a; border-radius: 4px;">
-          <p style="margin: 0; color: #888; font-size: 0.9em;">
+          <p style="margin: 0 0 8px 0; color: #888; font-size: 0.9em;">
             Files are quarantined instead of being immediately deleted. They can be restored if deleted by mistake.
             Files expire after 30 days and are permanently deleted.
+          </p>
+          <p style="margin: 0; color: #666; font-size: 0.85em;" id="quarantine-scan-status">
+            Click "Scan for Orphans" to detect orphaned .orig and .srt files from your processing history.
           </p>
         </div>
         <div class="table-container">
@@ -303,6 +307,6 @@
     </div>
 
   <script src="/static/vendor/uplot.min.js"></script>
-  <script src="/static/main.js?v=1771430000"></script>
+  <script src="/static/main.js?v=1772020000"></script>
 </body>
 </html>
