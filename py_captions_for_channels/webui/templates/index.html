@@ -198,6 +198,23 @@
             Files are quarantined instead of being immediately deleted. They can be restored if deleted by mistake.
             Files expire after 30 days and are permanently deleted.
           </p>
+
+          <!-- Deep scan progress display -->
+          <div id="deep-scan-progress" style="display: none; margin-top: 10px; padding: 10px; background: #1a1a1a; border-radius: 4px; border: 1px solid #333;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span id="deep-scan-status" style="color: #4a9eff; font-size: 0.85em; font-weight: 500;">Initializing...</span>
+              <span id="deep-scan-counter" style="color: #888; font-size: 0.8em;">0 / 0</span>
+            </div>
+            <div style="width: 100%; height: 6px; background: #333; border-radius: 3px; overflow: hidden;">
+              <div id="deep-scan-bar" style="height: 100%; width: 0%; background: #4a9eff; border-radius: 3px; transition: width 0.15s ease;"></div>
+            </div>
+            <div id="deep-scan-folder" style="margin-top: 4px; color: #666; font-size: 0.75em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="">
+              —
+            </div>
+            <div id="deep-scan-orphans" style="margin-top: 2px; color: #888; font-size: 0.75em;">
+              Orphans found: 0
+            </div>
+          </div>
           <p style="margin: 0; color: #666; font-size: 0.85em;" id="quarantine-scan-status">
             <strong>Scan (History):</strong> Detects orphans from recordings you processed. <strong>Deep Scan:</strong> Scans configured paths for all orphaned files.
           </p>

@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import logging
 import threading
@@ -1609,6 +1610,107 @@ async def scan_filesystem_for_orphans(dry_run: bool = False) -> dict:
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
+
+
+@app.get("/api/orphan-cleanup/scan-filesystem/stream")
+async def scan_filesystem_stream(dry_run: bool = False):
+    """Stream deep scan progress via Server-Sent Events.
+
+    Sends real-time progress events as each folder is scanned,
+    including current folder name, folder number, and total count.
+    """
+    import queue as thread_queue
+
+    from py_captions_for_channels.models import ScanPath
+    from py_captions_for_channels.orphan_cleanup import (
+        quarantine_orphaned_files,
+        scan_filesystem_progressive,
+    )
+
+    def generate():
+        db = next(get_db())
+
+        scan_paths = (
+            db.query(ScanPath).filter(ScanPath.enabled == True).all()  # noqa: E712
+        )
+
+        if not scan_paths:
+            evt = json.dumps(
+                {
+                    "phase": "error",
+                    "message": (
+                        "No scan paths configured. " "Add scan paths in settings."
+                    ),
+                }
+            )
+            yield f"data: {evt}\n\n"
+            return
+
+        path_dicts = [{"path": sp.path, "label": sp.label} for sp in scan_paths]
+
+        progress_q: thread_queue.Queue = thread_queue.Queue()
+
+        def on_progress(info):
+            progress_q.put(info)
+
+        # Run the scan in the current thread (sync generator)
+        import concurrent.futures
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(scan_filesystem_progressive, path_dicts, on_progress)
+
+        # Drain progress events while scan runs
+        while not future.done():
+            try:
+                info = progress_q.get(timeout=0.1)
+                yield f"data: {json.dumps(info)}\n\n"
+            except thread_queue.Empty:
+                continue
+
+        # Drain remaining events
+        while not progress_q.empty():
+            info = progress_q.get_nowait()
+            yield f"data: {json.dumps(info)}\n\n"
+
+        # Get scan results
+        try:
+            all_orphaned_orig, all_orphaned_srt = future.result()
+        except Exception as exc:
+            evt = json.dumps({"phase": "error", "message": str(exc)})
+            yield f"data: {evt}\n\n"
+            executor.shutdown(wait=False)
+            return
+
+        executor.shutdown(wait=False)
+
+        # Update last scanned timestamps
+        for sp in scan_paths:
+            sp.last_scanned_at = datetime.now(timezone.utc)
+        db.commit()
+
+        # Quarantine found orphans
+        orig_count, srt_count = quarantine_orphaned_files(
+            all_orphaned_orig, all_orphaned_srt, dry_run=dry_run
+        )
+
+        result = {
+            "phase": "done",
+            "success": True,
+            "orig_quarantined": orig_count,
+            "srt_quarantined": srt_count,
+            "scanned_paths": len(scan_paths),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+        yield f"data: {json.dumps(result)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/quarantine")

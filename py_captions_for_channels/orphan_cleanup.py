@@ -30,7 +30,7 @@ import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 LOG = logging.getLogger(__name__)
 
@@ -88,6 +88,105 @@ def find_orphaned_files_by_filesystem(
     )
 
     return (orphaned_orig, orphaned_srt)
+
+
+def scan_filesystem_progressive(
+    scan_paths: List[Dict],
+    progress_callback: Optional[Callable[[Dict], None]] = None,
+) -> Tuple[List[Path], List[Path]]:
+    """Scan filesystem paths for orphaned files with per-folder progress.
+
+    Walks each scan path directory-by-directory, reporting progress via
+    callback so the caller can stream updates to the frontend.
+
+    Args:
+        scan_paths: List of dicts with 'path' and optional 'label' keys.
+        progress_callback: Called with progress dict for each folder:
+            {phase, folder, current, total, scan_path, scan_path_label,
+             orphans_found}
+
+    Returns:
+        Tuple of (orphaned_orig_files, orphaned_srt_files)
+    """
+    all_orphaned_orig: List[Path] = []
+    all_orphaned_srt: List[Path] = []
+
+    # Phase 1: enumerate all directories across all scan paths
+    all_dirs: List[Tuple[str, str, str]] = []  # (dir_path, scan_path, label)
+    for sp in scan_paths:
+        sp_path = sp["path"]
+        sp_label = sp.get("label") or sp_path
+        if not os.path.exists(sp_path):
+            LOG.warning(f"Scan path not found: {sp_path}")
+            continue
+        for dirpath, dirnames, _filenames in os.walk(sp_path):
+            all_dirs.append((dirpath, sp_path, sp_label))
+
+    total_dirs = len(all_dirs)
+    if progress_callback:
+        progress_callback(
+            {
+                "phase": "enumerating",
+                "message": f"Found {total_dirs} folders to scan",
+                "current": 0,
+                "total": total_dirs,
+            }
+        )
+
+    # Phase 2: scan each directory for orphaned files
+    for idx, (dirpath, sp_path, sp_label) in enumerate(all_dirs, start=1):
+        if progress_callback:
+            progress_callback(
+                {
+                    "phase": "scanning",
+                    "folder": dirpath,
+                    "current": idx,
+                    "total": total_dirs,
+                    "scan_path": sp_path,
+                    "scan_path_label": sp_label,
+                    "orphans_found": len(all_orphaned_orig) + len(all_orphaned_srt),
+                }
+            )
+
+        try:
+            entries = os.listdir(dirpath)
+        except PermissionError:
+            LOG.warning(f"Permission denied: {dirpath}")
+            continue
+
+        for entry in entries:
+            full = os.path.join(dirpath, entry)
+            if not os.path.isfile(full):
+                continue
+
+            if entry.endswith(".mpg.orig"):
+                mpg_path = full[: -len(".orig")]  # strip .orig
+                if not os.path.exists(mpg_path):
+                    all_orphaned_orig.append(Path(full))
+
+            elif entry.endswith(".srt"):
+                mpg_path = full[: -len(".srt")] + ".mpg"
+                if not os.path.exists(mpg_path):
+                    all_orphaned_srt.append(Path(full))
+
+    if progress_callback:
+        progress_callback(
+            {
+                "phase": "complete",
+                "message": "Scan complete",
+                "current": total_dirs,
+                "total": total_dirs,
+                "orphans_found": len(all_orphaned_orig) + len(all_orphaned_srt),
+            }
+        )
+
+    LOG.info(
+        f"Progressive scan found {len(all_orphaned_orig)} orphaned .orig "
+        f"and {len(all_orphaned_srt)} orphaned .srt files "
+        f"across {total_dirs} folders"
+    )
+
+    return (all_orphaned_orig, all_orphaned_srt)
 
 
 def find_orphaned_files(recordings_path: str) -> Tuple[List[Path], List[Path]]:
