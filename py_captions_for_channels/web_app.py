@@ -1378,7 +1378,10 @@ async def get_scan_paths() -> dict:
 
 
 @app.post("/api/scan-paths")
-async def add_scan_path(path: str, label: str = None) -> dict:
+async def add_scan_path(
+    path: str = Body(..., embed=True),
+    label: str = Body(None, embed=True),
+) -> dict:
     """Add a new scan path for manual orphan detection.
 
     Args:
@@ -1391,9 +1394,15 @@ async def add_scan_path(path: str, label: str = None) -> dict:
     try:
         from py_captions_for_channels.models import ScanPath
 
-        # Validate path exists
+        # Validate path exists (on the server/container)
         if not os.path.exists(path):
-            return {"error": f"Path does not exist: {path}", "success": False}
+            return {
+                "error": (
+                    f"Path does not exist on server: {path}. "
+                    f"Ensure the path is mounted in the container."
+                ),
+                "success": False,
+            }
 
         db = next(get_db())
 
@@ -1434,7 +1443,10 @@ async def add_scan_path(path: str, label: str = None) -> dict:
 
 @app.put("/api/scan-paths/{path_id}")
 async def update_scan_path(
-    path_id: int, path: str = None, label: str = None, enabled: bool = None
+    path_id: int,
+    path: str = Body(None, embed=True),
+    label: str = Body(None, embed=True),
+    enabled: bool = Body(None, embed=True),
 ) -> dict:
     """Update an existing scan path.
 
