@@ -154,7 +154,7 @@ class QuarantineService:
         )
 
         if not include_expired:
-            query = query.filter(QuarantineItem.expires_at > datetime.now(timezone.utc))
+            query = query.filter(QuarantineItem.expires_at > datetime.utcnow())
 
         return query.order_by(QuarantineItem.created_at.desc()).all()
 
@@ -168,7 +168,7 @@ class QuarantineService:
             self.db.query(QuarantineItem)
             .filter(
                 QuarantineItem.status == "quarantined",
-                QuarantineItem.expires_at <= datetime.now(timezone.utc),
+                QuarantineItem.expires_at <= datetime.utcnow(),
             )
             .order_by(QuarantineItem.created_at.desc())
             .all()
