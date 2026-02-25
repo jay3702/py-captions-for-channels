@@ -57,7 +57,7 @@ def find_orphaned_files_by_filesystem(
     orphaned_orig = []
     orphaned_srt = []
 
-    VIDEO_EXTENSIONS = (".mpg", ".ts", ".mkv", ".mp4", ".avi")
+    from py_captions_for_channels.config import MEDIA_FILE_EXTENSIONS
 
     # Find all .orig files (any <video>.orig pattern)
     orig_files = list(recordings_dir.rglob("*.orig"))
@@ -75,9 +75,11 @@ def find_orphaned_files_by_filesystem(
 
     # Check .srt files
     for srt_file in srt_files:
-        # Video should be the same stem with any common video extension
+        # Video should be the same stem with any configured media extension
         stem = srt_file.with_suffix("")
-        video_exists = any(stem.with_suffix(ext).exists() for ext in VIDEO_EXTENSIONS)
+        video_exists = any(
+            stem.with_suffix(ext).exists() for ext in MEDIA_FILE_EXTENSIONS
+        )
         if not video_exists:
             orphaned_srt.append(srt_file)
             LOG.debug(f"Orphaned .srt: {srt_file} (no matching video found)")
@@ -108,6 +110,10 @@ def scan_filesystem_progressive(
     Returns:
         Tuple of (orphaned_orig_files, orphaned_srt_files)
     """
+    from py_captions_for_channels.config import MEDIA_FILE_EXTENSIONS
+
+    media_extensions = MEDIA_FILE_EXTENSIONS
+
     all_orphaned_orig: List[Path] = []
     all_orphaned_srt: List[Path] = []
 
@@ -168,11 +174,10 @@ def scan_filesystem_progressive(
 
             elif entry.endswith(".srt"):
                 # Check if a video file with the same stem exists
-                # under any common video extension
+                # under any configured media extension
                 stem = full[: -len(".srt")]
                 video_exists = any(
-                    os.path.exists(stem + ext)
-                    for ext in (".mpg", ".ts", ".mkv", ".mp4", ".avi")
+                    os.path.exists(stem + ext) for ext in media_extensions
                 )
                 if not video_exists:
                     all_orphaned_srt.append(Path(full))
