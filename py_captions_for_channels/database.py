@@ -1,14 +1,14 @@
 """Database connection and session management."""
 
-import os
 from pathlib import Path
 from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from sqlalchemy.pool import NullPool
 
-# Database file location
-DB_PATH = os.getenv("DB_PATH", "/app/data/py_captions.db")
+# Database file location — derived from DATA_DIR (see config.py)
+from .config import DB_PATH
+
 DB_URL = f"sqlite:///{DB_PATH}"
 
 # Create engine with NullPool for SQLite

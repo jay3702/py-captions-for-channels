@@ -43,8 +43,11 @@ def get_log_level():
 
 
 def get_log_path():
-    # Use a relative path for portability and CI compatibility
-    return os.environ.get("LOG_PATH", "./logs/pipeline.log")
+    # Default to DATA_DIR/logs/pipeline.log for portability
+    from py_captions_for_channels.config import DATA_DIR
+
+    default = os.path.join(DATA_DIR, "logs", "pipeline.log")
+    return os.environ.get("STRUCTURED_LOG_PATH", default)
 
 
 def get_logger(name="pipeline", job_id=None):
