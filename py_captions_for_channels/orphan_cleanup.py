@@ -2,15 +2,15 @@
 Automatic cleanup of orphaned caption files.
 
 Two detection methods:
-1. History-based (automated): Only deletes orphans for files we processed
-   that are now missing
+1. History-based (automated): Uses execution history (Jobs tab) to find
+   orphaned files for recordings that were processed and are now missing
 2. Filesystem-based (manual): Scans all files regardless of history
-   (for future manual use)
+   (for deep scan / manual use)
 
 The automated cleanup uses processing history to ensure safety - it only
 removes .orig and .srt files for recordings that:
-- Were successfully processed by this system
-- Have since been deleted (video file no longer exists)
+- Were successfully processed by this system (have an execution record)
+- Have since been deleted (recording file no longer exists at the stored path)
 
 This prevents accidental deletion of files from unprocessed recordings or
 recordings that failed processing.
@@ -38,13 +38,10 @@ LOG = logging.getLogger(__name__)
 def find_orphaned_files_by_filesystem(
     recordings_path: str,
 ) -> Tuple[List[Path], List[Path]]:
-    """Find .orig and .srt files without corresponding .mpg files (filesystem scan).
+    """Find .orig and .srt files without corresponding video files (filesystem scan).
 
     This method scans all files regardless of processing history.
     Kept for future manual cleanup operations where user can review before deleting.
-
-    TODO: Wire to manual orphan search UI button
-    TODO: Add restore capability for manual operations
 
     Args:
         recordings_path: Path to DVR recordings directory
@@ -60,8 +57,10 @@ def find_orphaned_files_by_filesystem(
     orphaned_orig = []
     orphaned_srt = []
 
-    # Find all .orig and .srt files
-    orig_files = list(recordings_dir.rglob("*.mpg.orig"))
+    VIDEO_EXTENSIONS = (".mpg", ".ts", ".mkv", ".mp4", ".avi")
+
+    # Find all .orig files (any <video>.orig pattern)
+    orig_files = list(recordings_dir.rglob("*.orig"))
     srt_files = list(recordings_dir.rglob("*.srt"))
 
     LOG.debug(f"Scanning {len(orig_files)} .orig files and {len(srt_files)} .srt files")
@@ -69,18 +68,19 @@ def find_orphaned_files_by_filesystem(
     # Check .orig files
     for orig_file in orig_files:
         # Original video should be at the path without .orig
-        mpg_path = orig_file.with_suffix("")  # Remove .orig suffix
-        if not mpg_path.exists():
+        video_path = orig_file.with_suffix("")  # Remove .orig suffix
+        if not video_path.exists():
             orphaned_orig.append(orig_file)
-            LOG.debug(f"Orphaned .orig: {orig_file} (missing {mpg_path})")
+            LOG.debug(f"Orphaned .orig: {orig_file} (missing {video_path})")
 
     # Check .srt files
     for srt_file in srt_files:
-        # Video should be the same name with .mpg extension
-        mpg_path = srt_file.with_suffix(".mpg")
-        if not mpg_path.exists():
+        # Video should be the same stem with any common video extension
+        stem = srt_file.with_suffix("")
+        video_exists = any(stem.with_suffix(ext).exists() for ext in VIDEO_EXTENSIONS)
+        if not video_exists:
             orphaned_srt.append(srt_file)
-            LOG.debug(f"Orphaned .srt: {srt_file} (missing {mpg_path})")
+            LOG.debug(f"Orphaned .srt: {srt_file} (no matching video found)")
 
     LOG.info(
         f"Found {len(orphaned_orig)} orphaned .orig files "
@@ -159,14 +159,22 @@ def scan_filesystem_progressive(
             if not os.path.isfile(full):
                 continue
 
-            if entry.endswith(".mpg.orig"):
-                mpg_path = full[: -len(".orig")]  # strip .orig
-                if not os.path.exists(mpg_path):
+            if entry.endswith(".orig"):
+                # .orig is always <video_file>.orig — strip .orig to
+                # get the expected video path
+                video_path = full[: -len(".orig")]
+                if not os.path.exists(video_path):
                     all_orphaned_orig.append(Path(full))
 
             elif entry.endswith(".srt"):
-                mpg_path = full[: -len(".srt")] + ".mpg"
-                if not os.path.exists(mpg_path):
+                # Check if a video file with the same stem exists
+                # under any common video extension
+                stem = full[: -len(".srt")]
+                video_exists = any(
+                    os.path.exists(stem + ext)
+                    for ext in (".mpg", ".ts", ".mkv", ".mp4", ".avi")
+                )
+                if not video_exists:
                     all_orphaned_srt.append(Path(full))
 
     if progress_callback:
@@ -189,28 +197,23 @@ def scan_filesystem_progressive(
     return (all_orphaned_orig, all_orphaned_srt)
 
 
-def find_orphaned_files(recordings_path: str) -> Tuple[List[Path], List[Path]]:
+def find_orphaned_files() -> Tuple[List[Path], List[Path]]:
     """Find orphaned files using processing history (safe for automated cleanup).
 
-    Only identifies .orig and .srt files as orphaned if:
-    1. We have a record of processing the file (in execution history)
-    2. The corresponding .mpg file is now missing
+    Uses the execution history maintained by this system (visible on the Jobs
+    tab) to identify orphaned files.  Each execution record stores the full
+    absolute path of the recording that was processed.  If that recording file
+    no longer exists, the associated .orig and .srt files are considered
+    orphaned and returned for quarantine.
 
-    This ensures we only delete files from recordings that were intentionally
-    removed, not files from recordings that were never processed.
-
-    Args:
-        recordings_path: Path to DVR recordings directory
+    No base "recordings path" is needed — the full paths come directly from
+    the execution history.
 
     Returns:
         Tuple of (orphaned_orig_files, orphaned_srt_files)
     """
     # Import here to avoid circular dependency
     from py_captions_for_channels.web_app import state_backend
-
-    if not recordings_path or not os.path.exists(recordings_path):
-        LOG.warning(f"Recordings path not found: {recordings_path}")
-        return ([], [])
 
     orphaned_orig = []
     orphaned_srt = []
@@ -230,30 +233,32 @@ def find_orphaned_files(recordings_path: str) -> Tuple[List[Path], List[Path]]:
         LOG.debug(f"Found {len(processed_paths)} processed recordings in history")
 
         # Check each processed recording for orphaned files
-        for mpg_path_str in processed_paths:
-            mpg_path = Path(mpg_path_str)
+        for recording_path_str in processed_paths:
+            recording_path = Path(recording_path_str)
 
-            # Check if the video file still exists
-            if mpg_path.exists():
-                # Video still exists, skip
+            # Check if the recording file still exists
+            if recording_path.exists():
+                # Recording still exists, skip
                 continue
 
-            # Video is missing - check for orphaned backup/caption files
-            orig_path = Path(str(mpg_path) + ".orig")
-            srt_path = mpg_path.with_suffix(".srt")
+            # Recording is missing — check for orphaned backup/caption files
+            # .orig is always <recording_path>.orig  (e.g. video.mpg.orig)
+            orig_path = Path(str(recording_path) + ".orig")
+            # .srt shares the stem but has .srt extension (e.g. video.srt)
+            srt_path = recording_path.with_suffix(".srt")
 
             if orig_path.exists():
                 orphaned_orig.append(orig_path)
                 LOG.debug(
                     f"Orphaned .orig: {orig_path} "
-                    f"(processed recording deleted: {mpg_path})"
+                    f"(processed recording deleted: {recording_path})"
                 )
 
             if srt_path.exists():
                 orphaned_srt.append(srt_path)
                 LOG.debug(
                     f"Orphaned .srt: {srt_path} "
-                    f"(processed recording deleted: {mpg_path})"
+                    f"(processed recording deleted: {recording_path})"
                 )
 
         LOG.info(
@@ -298,6 +303,9 @@ def quarantine_orphaned_files(
         db = next(get_db())
         service = QuarantineService(db, QUARANTINE_DIR)
 
+    orig_failed = 0
+    srt_failed = 0
+
     # Quarantine .orig files
     for orig_file in orig_files:
         try:
@@ -320,6 +328,7 @@ def quarantine_orphaned_files(
                 LOG.info(f"Quarantined orphaned .orig: {orig_file}")
             orig_quarantined += 1
         except Exception as e:
+            orig_failed += 1
             LOG.error(f"Failed to quarantine {orig_file}: {e}")
 
     # Quarantine .srt files
@@ -344,7 +353,11 @@ def quarantine_orphaned_files(
                 LOG.info(f"Quarantined orphaned .srt: {srt_file}")
             srt_quarantined += 1
         except Exception as e:
+            srt_failed += 1
             LOG.error(f"Failed to quarantine {srt_file}: {e}")
+
+    if orig_failed or srt_failed:
+        LOG.warning(f"Quarantine failures: {orig_failed} .orig, {srt_failed} .srt")
 
     return (orig_quarantined, srt_quarantined)
 
@@ -408,7 +421,6 @@ def run_cleanup(dry_run: bool = False, cleanup_history: bool = True) -> dict:
     Returns:
         Dict with cleanup statistics
     """
-    from py_captions_for_channels.config import DVR_RECORDINGS_PATH
     from py_captions_for_channels.database import get_db
     from py_captions_for_channels.models import OrphanCleanupHistory
     from py_captions_for_channels.services.execution_service import ExecutionService
@@ -417,8 +429,8 @@ def run_cleanup(dry_run: bool = False, cleanup_history: bool = True) -> dict:
     start_time = time.time()
 
     try:
-        # Find orphaned files
-        orig_files, srt_files = find_orphaned_files(DVR_RECORDINGS_PATH)
+        # Find orphaned files using execution history (no base path needed)
+        orig_files, srt_files = find_orphaned_files()
 
         # Quarantine them (move to quarantine instead of immediate deletion)
         orig_quarantined, srt_quarantined = quarantine_orphaned_files(

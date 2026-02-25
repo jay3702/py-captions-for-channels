@@ -39,10 +39,17 @@ class QuarantineService:
         """
         original_path_obj = Path(original_path)
 
-        # Generate quarantine path with timestamp to avoid collisions
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        # Generate quarantine path with timestamp + microseconds to avoid collisions
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
         filename = f"{timestamp}_{original_path_obj.name}"
         quarantine_path = self.quarantine_dir / filename
+
+        # Ensure uniqueness if file already exists
+        counter = 1
+        while quarantine_path.exists():
+            filename = f"{timestamp}_{counter}_{original_path_obj.name}"
+            quarantine_path = self.quarantine_dir / filename
+            counter += 1
 
         # Get file size
         file_size = None

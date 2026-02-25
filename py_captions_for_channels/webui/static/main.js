@@ -2363,17 +2363,24 @@ async function deepScanForOrphans() {
       const origCount = finalResult.orig_quarantined || 0;
       const srtCount = finalResult.srt_quarantined || 0;
       const totalCount = origCount + srtCount;
+      const totalFound = finalResult.total_found || totalCount;
       const pathsScanned = finalResult.scanned_paths || 0;
+      const failedCount = totalFound - totalCount;
       
-      if (totalCount > 0) {
-        alert(`✓ Deep scan complete!\n\nScanned ${pathsScanned} path(s)\n\nQuarantined ${totalCount} orphaned file(s):\n• ${origCount} .orig file(s)\n• ${srtCount} .srt file(s)\n\nFiles have been moved to quarantine and can be restored if needed.`);
+      if (totalFound > 0) {
+        let msg = `✓ Deep scan complete!\n\nScanned ${pathsScanned} path(s)\nFound ${totalFound} orphaned file(s)\n\nQuarantined ${totalCount} file(s):\n• ${origCount} .orig file(s)\n• ${srtCount} .srt file(s)`;
+        if (failedCount > 0) {
+          msg += `\n\n⚠ ${failedCount} file(s) could not be quarantined (check logs for details)`;
+        }
+        msg += `\n\nFiles have been moved to quarantine and can be restored if needed.`;
+        alert(msg);
         await loadQuarantineFiles();
       } else {
         alert(`✓ Deep scan complete!\n\nScanned ${pathsScanned} path(s)\n\nNo orphaned files found. Your media libraries are clean.`);
       }
       
       if (statusEl) {
-        statusEl.innerHTML = `<strong>Scan (History):</strong> Detects orphans from recordings you processed. <strong>Deep Scan:</strong> Last scan found ${totalCount} file(s)`;
+        statusEl.innerHTML = `<strong>Scan (History):</strong> Detects orphans from recordings you processed. <strong>Deep Scan:</strong> Last scan found ${totalFound}, quarantined ${totalCount} file(s)`;
         statusEl.style.color = '#6c6';
       }
     } else if (!finalResult) {
