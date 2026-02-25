@@ -288,6 +288,34 @@ class QuarantineItem(Base):
         )
 
 
+class ScanPath(Base):
+    """Configurable root folder paths for manual orphan scanning.
+
+    Allows users to define custom folder trees to scan for orphaned files,
+    supporting cases where files were moved from Channels DVR storage
+    or custom library structures.
+    """
+
+    __tablename__ = "scan_paths"
+    __table_args__ = (Index("idx_scan_path_enabled", "enabled"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    path = Column(String(1000), nullable=False, unique=True)
+    label = Column(String(200), nullable=True)  # Optional user-friendly name
+    enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    last_scanned_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return (
+            f"<ScanPath(id={self.id}, "
+            f"path='{self.path}', "
+            f"enabled={self.enabled})>"
+        )
+
+
 class LearnedProfile(Base):
     """Learned encoding profiles from test suite results.
 

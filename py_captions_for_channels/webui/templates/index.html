@@ -163,18 +163,43 @@
         <div class="tab-header">
           <small class="muted" id="quarantine-stats">(loading)</small>
           <div style="margin-left:auto; display:flex; gap:8px;">
-            <button class="btn-small" onclick="scanForOrphans()">Scan for Orphans</button>
+            <button class="btn-small" onclick="scanForOrphans()">Scan (History)</button>
+            <button class="btn-small" onclick="deepScanForOrphans()">Deep Scan (Filesystem)</button>
             <button class="btn-small" onclick="restoreSelected()">Restore Selected</button>
             <button class="btn-small btn-danger" onclick="deleteSelected()">Delete Selected</button>
           </div>
         </div>
+        
+        <!-- Scan Paths Management -->
+        <div class="scan-paths-section" style="padding: 10px; margin-bottom: 10px; background: #2a2a2a; border-radius: 4px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <h3 style="margin: 0; font-size: 0.95em; color: #aaa;">Deep Scan Paths</h3>
+            <button class="btn-small" onclick="toggleScanPathsManager()" id="toggle-scan-paths-btn">Configure</button>
+          </div>
+          <div id="scan-paths-manager" style="display: none;">
+            <div style="margin-bottom: 10px;">
+              <p style="margin: 0 0 10px 0; color: #888; font-size: 0.85em;">
+                Configure folder paths for deep filesystem scanning. Useful for files moved from Channels DVR storage or custom library structures.
+              </p>
+              <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                <input type="text" id="new-scan-path" placeholder="/path/to/media" style="flex: 1; padding: 6px; background: #1a1a1a; border: 1px solid #444; border-radius: 3px; color: #fff;">
+                <input type="text" id="new-scan-label" placeholder="Label (optional)" style="width: 150px; padding: 6px; background: #1a1a1a; border: 1px solid #444; border-radius: 3px; color: #fff;">
+                <button class="btn-small" onclick="addScanPath()">Add Path</button>
+              </div>
+            </div>
+            <div id="scan-paths-list" style="max-height: 200px; overflow-y: auto;">
+              <p style="color: #666; font-size: 0.85em;">Loading scan paths...</p>
+            </div>
+          </div>
+        </div>
+        
         <div class="quarantine-info" style="padding: 10px; margin-bottom: 10px; background: #2a2a2a; border-radius: 4px;">
           <p style="margin: 0 0 8px 0; color: #888; font-size: 0.9em;">
             Files are quarantined instead of being immediately deleted. They can be restored if deleted by mistake.
             Files expire after 30 days and are permanently deleted.
           </p>
           <p style="margin: 0; color: #666; font-size: 0.85em;" id="quarantine-scan-status">
-            Click "Scan for Orphans" to detect orphaned .orig and .srt files from your processing history.
+            <strong>Scan (History):</strong> Detects orphans from recordings you processed. <strong>Deep Scan:</strong> Scans configured paths for all orphaned files.
           </p>
         </div>
         <div class="table-container">
@@ -307,6 +332,6 @@
     </div>
 
   <script src="/static/vendor/uplot.min.js"></script>
-  <script src="/static/main.js?v=1772020000"></script>
+  <script src="/static/main.js?v=1772030000"></script>
 </body>
 </html>

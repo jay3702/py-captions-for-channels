@@ -2167,6 +2167,11 @@ async function loadQuarantineFiles() {
     // Load and update scan status
     updateQuarantineScanStatus();
     
+    // Load scan paths if manager is visible
+    if (document.getElementById('scan-paths-manager')?.style.display !== 'none') {
+      loadScanPaths();
+    }
+    
     // Render table
     if (!data.items || data.items.length === 0) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #888;">No quarantined files</td></tr>';
@@ -2265,6 +2270,219 @@ async function scanForOrphans() {
       statusEl.textContent = originalText;
       statusEl.style.color = '#666';
     }
+  }
+}
+
+async function deepScanForOrphans() {
+  const statusEl = document.getElementById('quarantine-scan-status');
+  const originalText = statusEl ? statusEl.textContent : '';
+  
+  try {
+    if (statusEl) {
+      statusEl.innerHTML = '<strong>🔍 Deep scanning filesystem paths...</strong> This may take a while for large libraries.';
+      statusEl.style.color = '#4a9eff';
+    }
+    
+    const response = await fetch('/api/orphan-cleanup/scan-filesystem', { method: 'POST' });
+    const data = await response.json();
+    
+    if (data.success) {
+      const origCount = data.orig_quarantined || 0;
+      const srtCount = data.srt_quarantined || 0;
+      const totalCount = origCount + srtCount;
+      const pathsScanned = data.scanned_paths || 0;
+      
+      if (totalCount > 0) {
+        alert(`✓ Deep scan complete!\\n\\nScanned ${pathsScanned} path(s)\\n\\nQuarantined ${totalCount} orphaned file(s):\\n• ${origCount} .orig file(s)\\n• ${srtCount} .srt file(s)\\n\\nFiles have been moved to quarantine and can be restored if needed.`);
+        // Reload quarantine list to show new items
+        await loadQuarantineFiles();
+      } else {
+        alert(`✓ Deep scan complete!\\n\\nScanned ${pathsScanned} path(s)\\n\\nNo orphaned files found. Your media libraries are clean.`);
+      }
+      
+      if (statusEl) {
+        statusEl.innerHTML = `<strong>Scan (History):</strong> Detects orphans from recordings you processed. <strong>Deep Scan:</strong> Last scan found ${totalCount} file(s)`;
+        statusEl.style.color = '#6c6';
+      }
+    } else {
+      throw new Error(data.error || 'Deep scan failed');
+    }
+  } catch (error) {
+    console.error('Deep scan failed:', error);
+    alert('Failed to perform deep scan: ' + error.message);
+    if (statusEl) {
+      statusEl.innerHTML = originalText;
+      statusEl.style.color = '#666';
+    }
+  }
+}
+
+async function loadScanPaths() {
+  try {
+    const response = await fetch('/api/scan-paths');
+    const data = await response.json();
+    
+    const listEl = document.getElementById('scan-paths-list');
+    if (!listEl) return;
+    
+    if (data.error || !data.paths || data.paths.length === 0) {
+      listEl.innerHTML = '<p style="color: #888; font-size: 0.85em; margin: 0;">No scan paths configured. Add a path above to enable deep scanning.</p>';
+      return;
+    }
+    
+    listEl.innerHTML = data.paths.map(path => {
+      const label = path.label ? `${path.label}` : '';
+      const lastScanned = path.last_scanned_at ? new Date(path.last_scanned_at).toLocaleString() : 'never';
+      const statusIcon = path.enabled ? '✓' : '✗';
+      const statusColor = path.enabled ? '#6c6' : '#c66';
+      
+      return `
+        <div style="padding: 8px; margin-bottom: 6px; background: #1a1a1a; border-radius: 3px; display: flex; align-items: center; gap: 10px;">
+          <span style="color: ${statusColor}; font-size: 1.2em;">${statusIcon}</span>
+          <div style="flex: 1; overflow: hidden;">
+            <div style="color: #fff; font-size: 0.9em; font-weight: 500; margin-bottom: 2px;">
+              ${label ? `${escapeHtml(label)} <span style="color: #666;">—</span> ` : ''}
+              <span style="color: #aaa;">${escapeHtml(path.path)}</span>
+            </div>
+            <div style="color: #666; font-size: 0.75em;">
+              Last scanned: ${lastScanned}
+            </div>
+          </div>
+          <button class="btn-small" onclick="toggleScanPath(${path.id}, ${!path.enabled})" style="min-width: 60px;">
+            ${path.enabled ? 'Disable' : 'Enable'}
+          </button>
+          <button class="btn-small" onclick="editScanPath(${path.id}, '${escapeAttr(path.path)}', '${escapeAttr(path.label || '')}')">Edit</button>
+          <button class="btn-small btn-danger" onclick="deleteScanPath(${path.id}, '${escapeAttr(path.path)}')">Delete</button>
+        </div>
+      `;
+    }).join('');
+    
+  } catch (error) {
+    console.error('Failed to load scan paths:', error);
+    document.getElementById('scan-paths-list').innerHTML = 
+      `<p style="color: #f55; font-size: 0.85em;">Error loading scan paths: ${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function toggleScanPathsManager() {
+  const manager = document.getElementById('scan-paths-manager');
+  const btn = document.getElementById('toggle-scan-paths-btn');
+  
+  if (manager.style.display === 'none') {
+    manager.style.display = 'block';
+    btn.textContent = 'Hide';
+    loadScanPaths();
+  } else {
+    manager.style.display = 'none';
+    btn.textContent = 'Configure';
+  }
+}
+
+async function addScanPath() {
+  const pathInput = document.getElementById('new-scan-path');
+  const labelInput = document.getElementById('new-scan-label');
+  
+  const path = pathInput.value.trim();
+  const label = labelInput.value.trim();
+  
+  if (!path) {
+    alert('Please enter a folder path');
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/scan-paths', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, label: label || null })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      pathInput.value = '';
+      labelInput.value = '';
+      await loadScanPaths();
+    } else {
+      alert('Failed to add scan path: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Failed to add scan path:', error);
+    alert('Failed to add scan path: ' + error.message);
+  }
+}
+
+async function editScanPath(pathId, currentPath, currentLabel) {
+  const newPath = prompt('Edit folder path:', currentPath);
+  if (newPath === null) return; // User cancelled
+  
+  const newLabel = prompt('Edit label (optional):', currentLabel);
+  if (newLabel === null) return; // User cancelled
+  
+  try {
+    const response = await fetch(`/api/scan-paths/${pathId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        path: newPath.trim() || currentPath,
+        label: newLabel.trim() || null
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      await loadScanPaths();
+    } else {
+      alert('Failed to update scan path: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Failed to update scan path:', error);
+    alert('Failed to update scan path: ' + error.message);
+  }
+}
+
+async function toggleScanPath(pathId, enabled) {
+  try {
+    const response = await fetch(`/api/scan-paths/${pathId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      await loadScanPaths();
+    } else {
+      alert('Failed to toggle scan path: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Failed to toggle scan path:', error);
+    alert('Failed to toggle scan path: ' + error.message);
+  }
+}
+
+async function deleteScanPath(pathId, pathStr) {
+  if (!confirm(`Delete scan path:\\n${pathStr}\\n\\nThis will not delete any files.`)) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/api/scan-paths/${pathId}`, {
+      method: 'DELETE'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      await loadScanPaths();
+    } else {
+      alert('Failed to delete scan path: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Failed to delete scan path:', error);
+    alert('Failed to delete scan path: ' + error.message);
   }
 }
 
