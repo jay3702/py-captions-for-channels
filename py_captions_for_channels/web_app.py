@@ -1340,6 +1340,265 @@ async def get_orphan_cleanup_status() -> dict:
         }
 
 
+@app.get("/api/scan-paths")
+async def get_scan_paths() -> dict:
+    """Get all configured scan paths for manual orphan detection.
+
+    Returns:
+        List of scan path configurations
+    """
+    try:
+        from py_captions_for_channels.models import ScanPath
+
+        db = next(get_db())
+        paths = db.query(ScanPath).order_by(ScanPath.created_at).all()
+
+        return {
+            "paths": [
+                {
+                    "id": p.id,
+                    "path": p.path,
+                    "label": p.label,
+                    "enabled": p.enabled,
+                    "created_at": (
+                        p.created_at.isoformat() + "Z" if p.created_at else None
+                    ),
+                    "last_scanned_at": (
+                        p.last_scanned_at.isoformat() + "Z"
+                        if p.last_scanned_at
+                        else None
+                    ),
+                }
+                for p in paths
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Failed to get scan paths: {e}", exc_info=True)
+        return {"error": str(e), "paths": []}
+
+
+@app.post("/api/scan-paths")
+async def add_scan_path(path: str, label: str = None) -> dict:
+    """Add a new scan path for manual orphan detection.
+
+    Args:
+        path: Folder path to scan
+        label: Optional user-friendly label
+
+    Returns:
+        Created scan path info
+    """
+    try:
+        from py_captions_for_channels.models import ScanPath
+
+        # Validate path exists
+        if not os.path.exists(path):
+            return {"error": f"Path does not exist: {path}", "success": False}
+
+        db = next(get_db())
+
+        # Check for duplicates
+        existing = db.query(ScanPath).filter(ScanPath.path == path).first()
+        if existing:
+            return {
+                "error": f"Path already exists: {path}",
+                "success": False,
+            }
+
+        # Create new scan path
+        scan_path = ScanPath(path=path, label=label, enabled=True)
+        db.add(scan_path)
+        db.commit()
+        db.refresh(scan_path)
+
+        logger.info(f"Added scan path: {path} (label: {label})")
+
+        return {
+            "success": True,
+            "path": {
+                "id": scan_path.id,
+                "path": scan_path.path,
+                "label": scan_path.label,
+                "enabled": scan_path.enabled,
+                "created_at": (
+                    scan_path.created_at.isoformat() + "Z"
+                    if scan_path.created_at
+                    else None
+                ),
+            },
+        }
+    except Exception as e:
+        logger.error(f"Failed to add scan path: {e}", exc_info=True)
+        return {"error": str(e), "success": False}
+
+
+@app.put("/api/scan-paths/{path_id}")
+async def update_scan_path(
+    path_id: int, path: str = None, label: str = None, enabled: bool = None
+) -> dict:
+    """Update an existing scan path.
+
+    Args:
+        path_id: Scan path ID
+        path: New folder path (optional)
+        label: New label (optional)
+        enabled: Enable/disable (optional)
+
+    Returns:
+        Updated scan path info
+    """
+    try:
+        from py_captions_for_channels.models import ScanPath
+
+        db = next(get_db())
+        scan_path = db.query(ScanPath).filter(ScanPath.id == path_id).first()
+
+        if not scan_path:
+            return {"error": f"Scan path not found: {path_id}", "success": False}
+
+        # Update fields if provided
+        if path is not None:
+            if not os.path.exists(path):
+                return {"error": f"Path does not exist: {path}", "success": False}
+            scan_path.path = path
+
+        if label is not None:
+            scan_path.label = label
+
+        if enabled is not None:
+            scan_path.enabled = enabled
+
+        db.commit()
+        db.refresh(scan_path)
+
+        logger.info(f"Updated scan path {path_id}: {scan_path.path}")
+
+        return {
+            "success": True,
+            "path": {
+                "id": scan_path.id,
+                "path": scan_path.path,
+                "label": scan_path.label,
+                "enabled": scan_path.enabled,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Failed to update scan path: {e}", exc_info=True)
+        return {"error": str(e), "success": False}
+
+
+@app.delete("/api/scan-paths/{path_id}")
+async def delete_scan_path(path_id: int) -> dict:
+    """Delete a scan path.
+
+    Args:
+        path_id: Scan path ID
+
+    Returns:
+        Success status
+    """
+    try:
+        from py_captions_for_channels.models import ScanPath
+
+        db = next(get_db())
+        scan_path = db.query(ScanPath).filter(ScanPath.id == path_id).first()
+
+        if not scan_path:
+            return {"error": f"Scan path not found: {path_id}", "success": False}
+
+        path_str = scan_path.path
+        db.delete(scan_path)
+        db.commit()
+
+        logger.info(f"Deleted scan path {path_id}: {path_str}")
+
+        return {"success": True, "message": f"Deleted scan path: {path_str}"}
+    except Exception as e:
+        logger.error(f"Failed to delete scan path: {e}", exc_info=True)
+        return {"error": str(e), "success": False}
+
+
+@app.post("/api/orphan-cleanup/scan-filesystem")
+async def scan_filesystem_for_orphans(dry_run: bool = False) -> dict:
+    """Scan configured filesystem paths for orphaned files (deep scan).
+
+    Uses filesystem-based detection across all configured scan paths,
+    finding orphans regardless of processing history.
+
+    Args:
+        dry_run: If true, only report what would be quarantined
+
+    Returns:
+        Scan results with quarantined file counts
+    """
+    try:
+        from py_captions_for_channels.models import ScanPath
+        from py_captions_for_channels.orphan_cleanup import (
+            find_orphaned_files_by_filesystem,
+            quarantine_orphaned_files,
+        )
+
+        db = next(get_db())
+
+        # Get all enabled scan paths
+        scan_paths = (
+            db.query(ScanPath).filter(ScanPath.enabled == True).all()  # noqa: E712
+        )
+
+        if not scan_paths:
+            return {
+                "success": False,
+                "error": ("No scan paths configured. " "Add scan paths in settings."),
+                "orig_quarantined": 0,
+                "srt_quarantined": 0,
+            }
+
+        all_orphaned_orig = []
+        all_orphaned_srt = []
+
+        # Scan each path
+        for scan_path in scan_paths:
+            label_txt = scan_path.label or "unlabeled"
+            logger.info(
+                f"Scanning path for orphans: " f"{scan_path.path} ({label_txt})"
+            )
+            files = find_orphaned_files_by_filesystem(scan_path.path)
+            orig_files, srt_files = files
+            all_orphaned_orig.extend(orig_files)
+            all_orphaned_srt.extend(srt_files)
+
+            # Update last scanned timestamp
+            scan_path.last_scanned_at = datetime.now(timezone.utc)
+
+        db.commit()
+
+        # Quarantine the found orphans
+        orig_count, srt_count = quarantine_orphaned_files(
+            all_orphaned_orig, all_orphaned_srt, dry_run=dry_run
+        )
+
+        logger.info(
+            f"Filesystem scan complete: "
+            f"{orig_count} .orig, {srt_count} .srt quarantined"
+        )
+
+        return {
+            "success": True,
+            "orig_quarantined": orig_count,
+            "srt_quarantined": srt_count,
+            "scanned_paths": len(scan_paths),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    except Exception as e:
+        logger.error(f"Filesystem orphan scan failed: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+
 @app.get("/api/quarantine")
 async def get_quarantined_files() -> dict:
     """Get list of all files in quarantine.
