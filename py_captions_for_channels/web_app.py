@@ -1689,6 +1689,7 @@ async def scan_filesystem_stream(dry_run: bool = False):
         db.commit()
 
         # Quarantine found orphans
+        total_found = len(all_orphaned_orig) + len(all_orphaned_srt)
         orig_count, srt_count = quarantine_orphaned_files(
             all_orphaned_orig, all_orphaned_srt, dry_run=dry_run
         )
@@ -1696,6 +1697,9 @@ async def scan_filesystem_stream(dry_run: bool = False):
         result = {
             "phase": "done",
             "success": True,
+            "orig_found": len(all_orphaned_orig),
+            "srt_found": len(all_orphaned_srt),
+            "total_found": total_found,
             "orig_quarantined": orig_count,
             "srt_quarantined": srt_count,
             "scanned_paths": len(scan_paths),
