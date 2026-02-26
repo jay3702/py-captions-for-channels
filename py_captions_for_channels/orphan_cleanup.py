@@ -424,6 +424,7 @@ def quarantine_orphaned_files(
         QUARANTINE_EXPIRATION_DAYS,
     )
     from py_captions_for_channels.database import get_db
+    from py_captions_for_channels.services.filesystem_service import FilesystemService
     from py_captions_for_channels.services.quarantine_service import QuarantineService
 
     orig_quarantined = 0
@@ -431,7 +432,24 @@ def quarantine_orphaned_files(
 
     if not dry_run:
         db = next(get_db())
-        service = QuarantineService(db, QUARANTINE_DIR)
+
+        # Build filesystem-aware quarantine service so moves are same-FS
+        fs_service = FilesystemService(fallback_quarantine_dir=QUARANTINE_DIR)
+        # Register all paths that the orphaned files came from so their
+        # filesystems get quarantine directories.
+        seen_parents: set = set()
+        for f in orig_files:
+            parent = str(f.parent) if hasattr(f, "parent") else os.path.dirname(str(f))
+            if parent not in seen_parents:
+                seen_parents.add(parent)
+                fs_service.register_path(parent)
+        for f in srt_files:
+            parent = str(f.parent) if hasattr(f, "parent") else os.path.dirname(str(f))
+            if parent not in seen_parents:
+                seen_parents.add(parent)
+                fs_service.register_path(parent)
+
+        service = QuarantineService(db, QUARANTINE_DIR, filesystem_service=fs_service)
 
     orig_failed = 0
     orig_skipped = 0
