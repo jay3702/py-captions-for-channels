@@ -577,16 +577,11 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  position: relative;
-  z-index: 1;
-  background: inherit;
 }
 
 .tab-scrollable {
   flex: 1;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
   min-height: 0;
 }
 
@@ -641,29 +636,26 @@ body {
   background: none;
 }
 
-  .exec-item {
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--panel-border);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-  /* removed stray closing brace */
+.exec-item {
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
 
-  .exec-item:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.15);
-    transform: translateY(-1px);
-  }
+.exec-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
 
-  .exec-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 12px;
-  }
-
-  .exec-status {
+.exec-status {
     font-size: 18px;
     line-height: 1;
     flex-shrink: 0;
