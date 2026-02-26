@@ -114,16 +114,16 @@ PRESERVE_ALL_AUDIO_TRACKS = os.getenv("PRESERVE_ALL_AUDIO_TRACKS", "1").lower() 
 
 # Video encoding quality settings
 # NVENC_CQ: Constant Quality for NVIDIA GPU encoding (0-51, lower=better)
-#   18 = Near-transparent (high quality, default)
-#   23 = Good quality/size balance
+#   18 = Near-transparent (high quality)
+#   23 = Good quality/size balance (default, matches pre-config encoder behavior)
 #   28 = Acceptable quality (faster encoding)
-NVENC_CQ = get_env_int("NVENC_CQ", 18)
+NVENC_CQ = get_env_int("NVENC_CQ", 23)
 
 # X264_CRF: Constant Rate Factor for CPU encoding (0-51, lower=better)
-#   18 = Near-transparent (high quality, default)
-#   23 = Default x264 (good quality/size balance)
+#   18 = Near-transparent (high quality)
+#   23 = Good quality/size balance (default, matches x264 standard default)
 #   28 = Acceptable quality (faster encoding)
-X264_CRF = get_env_int("X264_CRF", 18)
+X264_CRF = get_env_int("X264_CRF", 23)
 
 # Database file location (SQLite)
 DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "py_captions.db"))
