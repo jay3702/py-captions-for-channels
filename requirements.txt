@@ -12,7 +12,7 @@ uvicorn[standard]
 jinja2
 # System monitoring
 psutil
-pynvml  # Optional: NVIDIA GPU monitoring
+nvidia-ml-py  # NVIDIA GPU monitoring (replaces deprecated pynvml package)
 # Database persistence layer
 sqlalchemy>=2.0.0
 alembic>=1.13.0

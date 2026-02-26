@@ -68,12 +68,16 @@ class GPUProvider:
 
 
 class NvidiaNvmlProvider(GPUProvider):
-    """NVIDIA GPU metrics via pynvml library."""
+    """NVIDIA GPU metrics via nvidia-ml-py (pynvml) library."""
 
     def __init__(self):
         self.available = False
         try:
-            import pynvml
+            import warnings
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*pynvml.*deprecated.*")
+                import pynvml
 
             pynvml.nvmlInit()
             self.handle = pynvml.nvmlDeviceGetHandleByIndex(0)

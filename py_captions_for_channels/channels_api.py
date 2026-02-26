@@ -157,34 +157,61 @@ class ChannelsAPI:
             recent_titles = [r.get("title", "") for r in recent_recordings[:5]]
             LOG.info("Recent recordings: %s", recent_titles)
 
-            # Try exact match first
-            for recording in recent_recordings:
-                rec_title = recording.get("title", "")
-                rec_path = recording.get("path")
+            # Separate completed vs in-progress recordings
+            # Channels DVR API returns 'completed' (bool) and 'inprogress' (bool)
+            completed_recordings = [
+                r
+                for r in recent_recordings
+                if r.get("completed") and not r.get("inprogress")
+            ]
+            # Try completed recordings first to avoid matching
+            # a currently-recording episode
+            for pool, pool_name in [
+                (completed_recordings, "completed"),
+                (recent_recordings, "all"),
+            ]:
+                # Try exact match
+                for recording in pool:
+                    rec_title = recording.get("title", "")
+                    rec_path = recording.get("path")
 
-                if rec_title == title and rec_path:
-                    LOG.info("Exact match found: %s -> %s", title, rec_path)
-                    return rec_path
+                    if rec_title == title and rec_path:
+                        LOG.info(
+                            "Exact match found (%s): %s -> %s",
+                            pool_name,
+                            title,
+                            rec_path,
+                        )
+                        return rec_path
 
-            # Try partial/fuzzy match on recent recordings
-            title_lower = title.lower()
-            for recording in recent_recordings:
-                rec_title = recording.get("title", "")
-                rec_path = recording.get("path")
+                # Try partial/fuzzy match
+                title_lower = title.lower()
+                for recording in pool:
+                    rec_title = recording.get("title", "")
+                    rec_path = recording.get("path")
 
-                # Case-insensitive partial match
-                if rec_path and rec_title.lower() == title_lower:
-                    LOG.info(
-                        "Case-insensitive match found: %s -> %s", rec_title, rec_path
-                    )
-                    return rec_path
+                    # Case-insensitive partial match
+                    if rec_path and rec_title.lower() == title_lower:
+                        LOG.info(
+                            "Case-insensitive match found (%s): %s -> %s",
+                            pool_name,
+                            rec_title,
+                            rec_path,
+                        )
+                        return rec_path
 
-                # Contains match (for titles with extra info)
-                if rec_path and (
-                    title_lower in rec_title.lower() or rec_title.lower() in title_lower
-                ):
-                    LOG.info("Partial match found: %s -> %s", rec_title, rec_path)
-                    return rec_path
+                    # Contains match (for titles with extra info)
+                    if rec_path and (
+                        title_lower in rec_title.lower()
+                        or rec_title.lower() in title_lower
+                    ):
+                        LOG.info(
+                            "Partial match found (%s): %s -> %s",
+                            pool_name,
+                            rec_title,
+                            rec_path,
+                        )
+                        return rec_path
 
             # No match found in recent recordings
             LOG.warning(
