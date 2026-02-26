@@ -1301,6 +1301,30 @@ let monitorInterval = null;
 const MONITOR_WINDOW_SEC = 300; // 5 minutes
 const MONITOR_MAX_POINTS = 300; // 5 minutes at 1Hz
 
+// Track which charts are being hovered
+const chartHovering = new Set();
+
+// Snap a chart's cursor to the latest data point (shows current values in legend)
+function snapToLatest(chart) {
+  if (!chart || !chart.data || chart.data[0].length === 0) return;
+  const lastIdx = chart.data[0].length - 1;
+  const left = chart.valToPos(chart.data[0][lastIdx], 'x');
+  chart.setCursor({ left, top: -1 });
+}
+
+// Attach hover tracking + snap-to-latest behavior to a chart
+function attachChartHoverTracking(chart) {
+  if (!chart || !chart.root) return;
+  const el = chart.root;
+  el.addEventListener('mouseenter', () => chartHovering.add(chart));
+  el.addEventListener('mouseleave', () => {
+    chartHovering.delete(chart);
+    snapToLatest(chart);
+  });
+  // Show current values immediately
+  snapToLatest(chart);
+}
+
 // Track maximum values seen for persistent scaling
 const chartMaxValues = {
   cpu: 10,      // Start with 10% minimum
@@ -1429,6 +1453,11 @@ function initSystemMonitor() {
     
     // Don't create GPU chart yet - will be created when first needed
     monitorCharts.gpu = null;
+    
+    // Attach hover tracking so legend shows current values when not hovering
+    attachChartHoverTracking(monitorCharts.cpu);
+    attachChartHoverTracking(monitorCharts.disk);
+    attachChartHoverTracking(monitorCharts.network);
     
     console.log('Charts created. CPU chart:', monitorCharts.cpu);
     console.log('CPU chart has legend?', monitorCharts.cpu.root.querySelector('.u-legend') !== null);
@@ -1605,6 +1634,9 @@ function updateSystemMonitor() {
             
             console.log('GPU chart created successfully. Width:', monitorCharts.gpu.width);
             console.log('GPU chart element:', monitorCharts.gpu.root);
+            
+            // Attach hover tracking for GPU chart
+            attachChartHoverTracking(monitorCharts.gpu);
             
             // Force layout recalculation for flex centering
             gpuContainer.style.display = 'none';
@@ -1844,6 +1876,11 @@ function appendChartData(chart, timestamp, values) {
   }
   
   chart.setData(data);
+  
+  // If user isn't hovering, snap legend to latest value
+  if (!chartHovering.has(chart)) {
+    snapToLatest(chart);
+  }
 }
 
 // Pipeline stage definitions with metadata
