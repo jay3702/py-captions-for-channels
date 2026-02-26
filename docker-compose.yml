@@ -30,6 +30,9 @@ services:
       # container (/app/data by default).  The volume mount below controls
       # where that maps on the host.  Individual paths can still be overridden.
       - DATA_DIR=${DATA_DIR:-/app/data}
+      # Override quarantine dir to live on the same mount as recordings,
+      # so os.rename() works (instant) instead of cross-device copy.
+      - QUARANTINE_DIR=${QUARANTINE_DIR:-}
       - DRY_RUN=${DRY_RUN:-false}
       - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-7200}
       - STALE_EXECUTION_SECONDS=${STALE_EXECUTION_SECONDS:-7200}
@@ -43,7 +46,9 @@ services:
       - ${HOST_DATA_DIR:-./data}:/app/data
       - ./py_captions_for_channels:/app/py_captions_for_channels
       - ./.env:/app/.env
-      - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
+      # Mount one level above Channels so quarantine dir can sit alongside
+      # it on the same filesystem (enables instant os.rename moves).
+      - ${DVR_MEDIA_MOUNT:-/tank/AllMedia}:${DVR_MEDIA_MOUNT:-/tank/AllMedia}:rw
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
