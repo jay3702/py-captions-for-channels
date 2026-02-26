@@ -308,8 +308,9 @@ class QuarantineService:
             if (i + 1) % batch_size == 0:
                 self.db.commit()
 
-            # Yield progress every 10 items or on last item
-            if (i + 1) % 10 == 0 or i == total - 1:
+            # Yield progress periodically or on last item
+            progress_interval = max(1, min(50, total // 20))
+            if (i + 1) % progress_interval == 0 or i == total - 1:
                 yield (i + 1, total, deleted, failed, cancelled)
 
         # Final commit for remaining items
