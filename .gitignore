@@ -60,3 +60,14 @@ Thumbs.db
 # Editor swap files
 *~
 *.swp
+
+# Temp/debug files from dev sessions
+temp_*
+check_*.py
+check_*.sh
+quick_report.py
+verify_deployment.sh
+*.tar
+*.csv
+*_probe.json
+.env.niu*

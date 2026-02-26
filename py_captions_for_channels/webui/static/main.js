@@ -2199,7 +2199,8 @@ async function loadQuarantineFiles() {
     
     // Update stats
     const stats = data.stats || {};
-    statsEl.textContent = `${stats.total_quarantined || 0} items (${stats.total_size_mb || 0} MB) | ${stats.total_expired || 0} expired`;
+    const itemCount = data.items ? data.items.length : 0;
+    statsEl.innerHTML = `<strong>${itemCount} file${itemCount !== 1 ? 's' : ''}</strong> (${stats.total_size_mb || 0} MB) | ${stats.total_expired || 0} expired`;
     
     // Load and update scan status
     updateQuarantineScanStatus();
@@ -2403,9 +2404,17 @@ async function deepScanForOrphans() {
       }
     }
     
-    // Hide progress panel
+    // When done: hide progress bar details, keep summary visible
     if (progressEl) {
-      progressEl.style.display = 'none';
+      if (barEl) barEl.parentElement.style.display = 'none';
+      if (folderEl) folderEl.style.display = 'none';
+      if (statusLabelEl) statusLabelEl.textContent = 'Scan complete';
+      if (statusLabelEl) statusLabelEl.style.color = '#6c6';
+      // Keep orphansEl and counterEl visible with final counts
+      // Hide the whole panel after a delay
+      setTimeout(() => {
+        if (progressEl) progressEl.style.display = 'none';
+      }, 10000);
     }
     
     if (finalResult && finalResult.success) {
@@ -2676,25 +2685,120 @@ async function deleteSelected() {
   if (!confirm(`Permanently delete ${itemIds.length} file(s)? This cannot be undone!`)) {
     return;
   }
-  
+
+  // Show delete progress UI
+  const progressEl = document.getElementById('delete-progress');
+  const statusEl = document.getElementById('delete-status');
+  const counterEl = document.getElementById('delete-counter');
+  const barEl = document.getElementById('delete-bar');
+  const cancelBtn = document.getElementById('delete-cancel-btn');
+
+  if (progressEl) {
+    progressEl.style.display = 'block';
+    statusEl.textContent = 'Deleting files...';
+    counterEl.textContent = `0 / ${itemIds.length}`;
+    barEl.style.width = '0%';
+    cancelBtn.style.display = 'inline-block';
+  }
+
+  // Disable action buttons during delete
+  const actionBtns = document.querySelectorAll('.tab-header .btn-small, .tab-header .btn-danger');
+  actionBtns.forEach(btn => { btn.disabled = true; });
+
   try {
     const response = await fetch('/api/quarantine/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(itemIds)
     });
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      alert(`Deleted: ${result.deleted}, Failed: ${result.failed}`);
-      loadQuarantineFiles(); // Reload list
-    } else {
-      alert(`Error: ${result.error}`);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+
+          if (data.phase === 'deleting') {
+            const pct = data.total > 0 ? (data.current / data.total * 100) : 0;
+            if (statusEl) statusEl.textContent = data.cancelled ? 'Cancelling...' : 'Deleting files...';
+            if (counterEl) counterEl.textContent = `${data.current} / ${data.total} (${data.deleted} deleted)`;
+            if (barEl) barEl.style.width = `${pct.toFixed(1)}%`;
+          } else if (data.phase === 'done') {
+            finalResult = data;
+          } else if (data.phase === 'error') {
+            throw new Error(data.message || 'Delete failed');
+          }
+        } catch (parseErr) {
+          if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+        }
+      }
+    }
+
+    // Hide progress
+    if (progressEl) {
+      progressEl.style.display = 'none';
+      cancelBtn.style.display = 'none';
+    }
+
+    if (finalResult) {
+      let msg = `Deleted: ${finalResult.deleted}, Failed: ${finalResult.failed}`;
+      if (finalResult.cancelled) {
+        msg += `\n\nOperation was cancelled after ${finalResult.deleted} deletion(s).`;
+      }
+      alert(msg);
+      loadQuarantineFiles();
     }
   } catch (error) {
     console.error('Failed to delete files:', error);
     alert(`Failed to delete: ${error.message}`);
+    if (progressEl) {
+      progressEl.style.display = 'none';
+      cancelBtn.style.display = 'none';
+    }
+  } finally {
+    actionBtns.forEach(btn => { btn.disabled = false; });
+  }
+}
+
+async function cancelDelete() {
+  try {
+    await fetch('/api/quarantine/delete/cancel', { method: 'POST' });
+    const cancelBtn = document.getElementById('delete-cancel-btn');
+    if (cancelBtn) cancelBtn.textContent = 'Cancelling...';
+  } catch (e) {
+    console.error('Failed to cancel delete:', e);
+  }
+}
+
+async function dedupQuarantine() {
+  try {
+    const response = await fetch('/api/quarantine/dedup', { method: 'POST' });
+    const result = await response.json();
+    if (result.success) {
+      if (result.duplicates_removed > 0) {
+        alert(`Removed ${result.duplicates_removed} duplicate entries from ${result.duplicate_paths} path(s).`);
+        loadQuarantineFiles();
+      } else {
+        alert('No duplicates found.');
+      }
+    } else {
+      alert('Dedup failed: ' + (result.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Dedup failed:', error);
+    alert('Dedup failed: ' + error.message);
   }
 }
 
