@@ -1488,6 +1488,8 @@ body {
 /* Quarantine Table */
 .table-container {
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 60vh;
   margin-top: 10px;
 }
 
@@ -1505,7 +1507,7 @@ body {
 }
 
 .quarantine-table th {
-  background: rgba(255, 255, 255, 0.03);
+  background: #151e30;
   font-weight: 600;
   color: var(--text);
   position: sticky;

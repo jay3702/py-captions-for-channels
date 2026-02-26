@@ -1,5 +1,6 @@
 """Service layer for quarantine operations."""
 
+import logging
 import os
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -7,6 +8,8 @@ from pathlib import Path
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from ..models import QuarantineItem
+
+LOG = logging.getLogger(__name__)
 
 
 class QuarantineService:
@@ -17,6 +20,25 @@ class QuarantineService:
         self.quarantine_dir = Path(quarantine_dir)
         self.quarantine_dir.mkdir(parents=True, exist_ok=True)
 
+    def is_already_quarantined(self, original_path: str) -> bool:
+        """Check if a file is already quarantined (active record exists).
+
+        Args:
+            original_path: Original file path to check
+
+        Returns:
+            True if an active quarantine record exists for this path
+        """
+        existing = (
+            self.db.query(QuarantineItem)
+            .filter(
+                QuarantineItem.original_path == original_path,
+                QuarantineItem.status == "quarantined",
+            )
+            .first()
+        )
+        return existing is not None
+
     def quarantine_file(
         self,
         original_path: str,
@@ -24,8 +46,10 @@ class QuarantineService:
         recording_path: Optional[str] = None,
         reason: str = "orphaned_by_pipeline",
         expiration_days: int = 30,
-    ) -> QuarantineItem:
+    ) -> Optional[QuarantineItem]:
         """Move a file to quarantine instead of deleting it.
+
+        Skips files that don't exist or are already quarantined.
 
         Args:
             original_path: Original file path
@@ -35,9 +59,25 @@ class QuarantineService:
             expiration_days: Days until auto-deletion
 
         Returns:
-            Created QuarantineItem
+            Created QuarantineItem, or None if skipped
         """
         original_path_obj = Path(original_path)
+
+        # Skip if file doesn't exist (already moved by concurrent scan, etc.)
+        if not original_path_obj.exists():
+            LOG.debug(
+                "Skipping quarantine of %s: file does not exist (already moved?)",
+                original_path,
+            )
+            return None
+
+        # Skip if already quarantined (prevents duplicate DB records)
+        if self.is_already_quarantined(original_path):
+            LOG.debug(
+                "Skipping quarantine of %s: already quarantined",
+                original_path,
+            )
+            return None
 
         # Generate quarantine path with timestamp + microseconds to avoid collisions
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
@@ -51,12 +91,13 @@ class QuarantineService:
             quarantine_path = self.quarantine_dir / filename
             counter += 1
 
-        # Get file size
-        file_size = None
-        if original_path_obj.exists():
-            file_size = original_path_obj.stat().st_size
+        # Get file size before moving
+        file_size = original_path_obj.stat().st_size
 
-        # Create database record first
+        # Move the file first, then create DB record (avoids ghost records)
+        shutil.move(str(original_path), str(quarantine_path))
+
+        # Create database record after successful move
         expires_at = datetime.now(timezone.utc) + timedelta(days=expiration_days)
         item = QuarantineItem(
             original_path=str(original_path),
@@ -71,10 +112,6 @@ class QuarantineService:
         self.db.add(item)
         self.db.commit()
         self.db.refresh(item)
-
-        # Move the file if it exists
-        if original_path_obj.exists():
-            shutil.move(str(original_path), str(quarantine_path))
 
         return item
 

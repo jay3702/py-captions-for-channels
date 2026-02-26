@@ -384,20 +384,26 @@ def find_orphaned_files() -> Tuple[List[Path], List[Path]]:
 
 
 def quarantine_orphaned_files(
-    orig_files: List[Path], srt_files: List[Path], dry_run: bool = False
-) -> Tuple[int, int]:
+    orig_files: List[Path],
+    srt_files: List[Path],
+    dry_run: bool = False,
+    progress_callback: Optional[Callable[[Dict], None]] = None,
+) -> Tuple[int, int, int]:
     """Quarantine orphaned backup/temp and .srt files instead of deleting them.
 
     Files are moved to quarantine with an expiration date, allowing restore if needed.
+    Skips files that no longer exist or are already quarantined.
 
     Args:
         orig_files: List of orphaned backup/temp files to quarantine
             (includes .cc4chan.orig, .orig, .orig.mpg, and .cc4chan.* temp files)
         srt_files: List of orphaned .srt files to quarantine
         dry_run: If True, only log what would be quarantined without moving files
+        progress_callback: Optional callback for reporting quarantine progress.
+            Called with dict: {current, total, file, quarantined, skipped, failed}
 
     Returns:
-        Tuple of (orig_quarantined_count, srt_quarantined_count)
+        Tuple of (orig_quarantined_count, srt_quarantined_count, skipped_count)
     """
     from py_captions_for_channels.config import (
         QUARANTINE_DIR,
@@ -414,14 +420,37 @@ def quarantine_orphaned_files(
         service = QuarantineService(db, QUARANTINE_DIR)
 
     orig_failed = 0
+    orig_skipped = 0
     srt_failed = 0
+    srt_skipped = 0
+
+    total_files = len(orig_files) + len(srt_files)
+    current = 0
+
+    def _report_progress(filepath: str) -> None:
+        if progress_callback:
+            progress_callback(
+                {
+                    "phase": "quarantining",
+                    "current": current,
+                    "total": total_files,
+                    "file": filepath,
+                    "quarantined": orig_quarantined + srt_quarantined,
+                    "skipped": orig_skipped + srt_skipped,
+                    "failed": orig_failed + srt_failed,
+                }
+            )
 
     # Quarantine backup/temp files (.orig, .cc4chan.*, .orig.mpg)
     for orig_file in orig_files:
+        current += 1
         try:
             if dry_run:
                 LOG.info(f"[DRY RUN] Would quarantine orphaned: {orig_file}")
+                orig_quarantined += 1
             else:
+                _report_progress(str(orig_file))
+
                 # Determine file type label for quarantine record
                 name = str(orig_file)
                 if ".cc4chan." in name:
@@ -437,48 +466,63 @@ def quarantine_orphaned_files(
                     # Parent dir is likely the recording directory
                     recording_path = str(orig_file.parent)
 
-                service.quarantine_file(
+                result = service.quarantine_file(
                     original_path=str(orig_file),
                     file_type=file_type,
                     recording_path=recording_path,
                     reason="orphaned_by_pipeline",
                     expiration_days=QUARANTINE_EXPIRATION_DAYS,
                 )
-                LOG.info(f"Quarantined orphaned {file_type}: {orig_file}")
-            orig_quarantined += 1
+                if result is not None:
+                    LOG.info(f"Quarantined orphaned {file_type}: {orig_file}")
+                    orig_quarantined += 1
+                else:
+                    orig_skipped += 1
         except Exception as e:
             orig_failed += 1
             LOG.error(f"Failed to quarantine {orig_file}: {e}")
 
     # Quarantine .srt files
     for srt_file in srt_files:
+        current += 1
         try:
             if dry_run:
                 LOG.info(f"[DRY RUN] Would quarantine orphaned .srt: {srt_file}")
+                srt_quarantined += 1
             else:
+                _report_progress(str(srt_file))
+
                 # Try to find associated recording path
                 recording_path = None
                 if srt_file.parent.is_dir():
                     # Parent dir is the recording directory
                     recording_path = str(srt_file.parent)
 
-                service.quarantine_file(
+                result = service.quarantine_file(
                     original_path=str(srt_file),
                     file_type="srt",
                     recording_path=recording_path,
                     reason="orphaned_by_pipeline",
                     expiration_days=QUARANTINE_EXPIRATION_DAYS,
                 )
-                LOG.info(f"Quarantined orphaned .srt: {srt_file}")
-            srt_quarantined += 1
+                if result is not None:
+                    LOG.info(f"Quarantined orphaned .srt: {srt_file}")
+                    srt_quarantined += 1
+                else:
+                    srt_skipped += 1
         except Exception as e:
             srt_failed += 1
             LOG.error(f"Failed to quarantine {srt_file}: {e}")
 
+    if orig_skipped or srt_skipped:
+        LOG.info(
+            f"Quarantine skipped (already done or missing): "
+            f"{orig_skipped} .orig, {srt_skipped} .srt"
+        )
     if orig_failed or srt_failed:
         LOG.warning(f"Quarantine failures: {orig_failed} .orig, {srt_failed} .srt")
 
-    return (orig_quarantined, srt_quarantined)
+    return (orig_quarantined, srt_quarantined, orig_skipped + srt_skipped)
 
 
 def is_system_idle(threshold_minutes: int = 15) -> bool:
@@ -552,7 +596,7 @@ def run_cleanup(dry_run: bool = False, cleanup_history: bool = True) -> dict:
         orig_files, srt_files = find_orphaned_files()
 
         # Quarantine them (move to quarantine instead of immediate deletion)
-        orig_quarantined, srt_quarantined = quarantine_orphaned_files(
+        orig_quarantined, srt_quarantined, _skipped = quarantine_orphaned_files(
             orig_files, srt_files, dry_run=dry_run
         )
 
@@ -684,7 +728,7 @@ def run_manual_cleanup(dry_run: bool = True) -> dict:
 
         # If not dry run, actually quarantine the files
         if not dry_run:
-            orig_quarantined, srt_quarantined = quarantine_orphaned_files(
+            orig_quarantined, srt_quarantined, _skipped = quarantine_orphaned_files(
                 orig_files, srt_files, dry_run=False
             )
             result["orig_quarantined"] = orig_quarantined
