@@ -62,6 +62,10 @@ logger = logging.getLogger(__name__)
 orphan_cleanup_scheduler = None
 cleanup_task = None
 
+# Lock to prevent concurrent filesystem scans (avoids race conditions
+# where two scans quarantine the same files simultaneously)
+_scan_lock = threading.Lock()
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -1544,6 +1548,17 @@ async def scan_filesystem_for_orphans(dry_run: bool = False) -> dict:
     Returns:
         Scan results with quarantined file counts
     """
+    # Acquire scan lock — refuse if another scan is already running
+    if not _scan_lock.acquire(blocking=False):
+        return {
+            "success": False,
+            "error": (
+                "A scan is already in progress. " "Please wait for it to finish."
+            ),
+            "orig_quarantined": 0,
+            "srt_quarantined": 0,
+        }
+
     try:
         from py_captions_for_channels.models import ScanPath
         from py_captions_for_channels.orphan_cleanup import (
@@ -1586,7 +1601,7 @@ async def scan_filesystem_for_orphans(dry_run: bool = False) -> dict:
         db.commit()
 
         # Quarantine the found orphans
-        orig_count, srt_count = quarantine_orphaned_files(
+        orig_count, srt_count, _skipped = quarantine_orphaned_files(
             all_orphaned_orig, all_orphaned_srt, dry_run=dry_run
         )
 
@@ -1610,6 +1625,8 @@ async def scan_filesystem_for_orphans(dry_run: bool = False) -> dict:
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
+    finally:
+        _scan_lock.release()
 
 
 @app.get("/api/orphan-cleanup/scan-filesystem/stream")
@@ -1618,6 +1635,7 @@ async def scan_filesystem_stream(dry_run: bool = False):
 
     Sends real-time progress events as each folder is scanned,
     including current folder name, folder number, and total count.
+    Uses a lock to prevent concurrent scans from racing.
     """
     import queue as thread_queue
 
@@ -1628,84 +1646,142 @@ async def scan_filesystem_stream(dry_run: bool = False):
     )
 
     def generate():
-        db = next(get_db())
-
-        scan_paths = (
-            db.query(ScanPath).filter(ScanPath.enabled == True).all()  # noqa: E712
-        )
-
-        if not scan_paths:
+        # Acquire scan lock — refuse if another scan is already running
+        if not _scan_lock.acquire(blocking=False):
             evt = json.dumps(
                 {
                     "phase": "error",
                     "message": (
-                        "No scan paths configured. " "Add scan paths in settings."
+                        "A scan is already in progress. "
+                        "Please wait for it to finish."
                     ),
                 }
             )
             yield f"data: {evt}\n\n"
             return
 
-        path_dicts = [{"path": sp.path, "label": sp.label} for sp in scan_paths]
-
-        progress_q: thread_queue.Queue = thread_queue.Queue()
-
-        def on_progress(info):
-            progress_q.put(info)
-
-        # Run the scan in the current thread (sync generator)
-        import concurrent.futures
-
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(scan_filesystem_progressive, path_dicts, on_progress)
-
-        # Drain progress events while scan runs
-        while not future.done():
-            try:
-                info = progress_q.get(timeout=0.1)
-                yield f"data: {json.dumps(info)}\n\n"
-            except thread_queue.Empty:
-                continue
-
-        # Drain remaining events
-        while not progress_q.empty():
-            info = progress_q.get_nowait()
-            yield f"data: {json.dumps(info)}\n\n"
-
-        # Get scan results
         try:
-            all_orphaned_orig, all_orphaned_srt = future.result()
-        except Exception as exc:
-            evt = json.dumps({"phase": "error", "message": str(exc)})
-            yield f"data: {evt}\n\n"
+            db = next(get_db())
+
+            scan_paths = (
+                db.query(ScanPath).filter(ScanPath.enabled == True).all()  # noqa: E712
+            )
+
+            if not scan_paths:
+                evt = json.dumps(
+                    {
+                        "phase": "error",
+                        "message": (
+                            "No scan paths configured. " "Add scan paths in settings."
+                        ),
+                    }
+                )
+                yield f"data: {evt}\n\n"
+                return
+
+            path_dicts = [{"path": sp.path, "label": sp.label} for sp in scan_paths]
+
+            progress_q: thread_queue.Queue = thread_queue.Queue()
+
+            def on_progress(info):
+                progress_q.put(info)
+
+            # Run the scan in a background thread
+            import concurrent.futures
+
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                scan_filesystem_progressive, path_dicts, on_progress
+            )
+
+            # Drain progress events while scan runs
+            while not future.done():
+                try:
+                    info = progress_q.get(timeout=0.1)
+                    yield f"data: {json.dumps(info)}\n\n"
+                except thread_queue.Empty:
+                    continue
+
+            # Drain remaining events
+            while not progress_q.empty():
+                info = progress_q.get_nowait()
+                yield f"data: {json.dumps(info)}\n\n"
+
+            # Get scan results
+            try:
+                all_orphaned_orig, all_orphaned_srt = future.result()
+            except Exception as exc:
+                evt = json.dumps({"phase": "error", "message": str(exc)})
+                yield f"data: {evt}\n\n"
+                executor.shutdown(wait=False)
+                return
+
             executor.shutdown(wait=False)
-            return
 
-        executor.shutdown(wait=False)
+            # Update last scanned timestamps
+            for sp in scan_paths:
+                sp.last_scanned_at = datetime.now(timezone.utc)
+            db.commit()
 
-        # Update last scanned timestamps
-        for sp in scan_paths:
-            sp.last_scanned_at = datetime.now(timezone.utc)
-        db.commit()
+            # Quarantine found orphans, with progress events streamed to client
+            total_found = len(all_orphaned_orig) + len(all_orphaned_srt)
 
-        # Quarantine found orphans
-        total_found = len(all_orphaned_orig) + len(all_orphaned_srt)
-        orig_count, srt_count = quarantine_orphaned_files(
-            all_orphaned_orig, all_orphaned_srt, dry_run=dry_run
-        )
+            def quarantine_progress(info):
+                progress_q.put(info)
 
-        result = {
-            "phase": "done",
-            "success": True,
-            "orig_found": len(all_orphaned_orig),
-            "srt_found": len(all_orphaned_srt),
-            "total_found": total_found,
-            "orig_quarantined": orig_count,
-            "srt_quarantined": srt_count,
-            "scanned_paths": len(scan_paths),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
-        yield f"data: {json.dumps(result)}\n\n"
+            # Run quarantine in a thread so we can stream progress
+            quarantine_q: thread_queue.Queue = thread_queue.Queue()
+
+            def quarantine_with_progress():
+                return quarantine_orphaned_files(
+                    all_orphaned_orig,
+                    all_orphaned_srt,
+                    dry_run=dry_run,
+                    progress_callback=lambda info: quarantine_q.put(info),
+                )
+
+            q_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            q_future = q_executor.submit(quarantine_with_progress)
+
+            # Drain quarantine progress events
+            while not q_future.done():
+                try:
+                    info = quarantine_q.get(timeout=0.5)
+                    yield f"data: {json.dumps(info)}\n\n"
+                except thread_queue.Empty:
+                    continue
+
+            # Drain remaining quarantine events
+            while not quarantine_q.empty():
+                info = quarantine_q.get_nowait()
+                yield f"data: {json.dumps(info)}\n\n"
+
+            try:
+                orig_count, srt_count, skipped_count = q_future.result()
+            except Exception as exc:
+                evt = json.dumps({"phase": "error", "message": str(exc)})
+                yield f"data: {evt}\n\n"
+                q_executor.shutdown(wait=False)
+                return
+
+            q_executor.shutdown(wait=False)
+
+            result = {
+                "phase": "done",
+                "success": True,
+                "orig_found": len(all_orphaned_orig),
+                "srt_found": len(all_orphaned_srt),
+                "total_found": total_found,
+                "orig_quarantined": orig_count,
+                "srt_quarantined": srt_count,
+                "skipped": skipped_count,
+                "scanned_paths": len(scan_paths),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
+            yield f"data: {json.dumps(result)}\n\n"
+
+        finally:
+            _scan_lock.release()
 
     return StreamingResponse(
         generate(),

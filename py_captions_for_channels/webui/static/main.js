@@ -2377,6 +2377,18 @@ async function deepScanForOrphans() {
           } else if (data.phase === 'complete') {
             if (statusLabelEl) statusLabelEl.textContent = 'Quarantining orphaned files...';
             if (barEl) barEl.style.width = '100%';
+          } else if (data.phase === 'quarantining') {
+            // Real-time quarantine progress (file moves in progress)
+            const pct = data.total > 0 ? (data.current / data.total * 100) : 0;
+            if (statusLabelEl) statusLabelEl.textContent = `Quarantining: ${data.current} / ${data.total}`;
+            if (barEl) barEl.style.width = `${pct.toFixed(1)}%`;
+            if (orphansEl) orphansEl.textContent = `Moved: ${data.quarantined} | Skipped: ${data.skipped} | Failed: ${data.failed}`;
+            if (folderEl) {
+              // Show abbreviated filename
+              const parts = (data.file || '').split('/');
+              folderEl.textContent = parts.length > 1 ? parts.slice(-2).join('/') : data.file;
+              folderEl.title = data.file || '';
+            }
           } else if (data.phase === 'done') {
             finalResult = data;
           } else if (data.phase === 'error') {
@@ -2402,14 +2414,20 @@ async function deepScanForOrphans() {
       const totalCount = origCount + srtCount;
       const totalFound = finalResult.total_found || totalCount;
       const pathsScanned = finalResult.scanned_paths || 0;
-      const failedCount = totalFound - totalCount;
+      const skippedCount = finalResult.skipped || 0;
+      const failedCount = totalFound - totalCount - skippedCount;
       
       if (totalFound > 0) {
         let msg = `✓ Deep scan complete!\n\nScanned ${pathsScanned} path(s)\nFound ${totalFound} orphaned file(s)\n\nQuarantined ${totalCount} file(s):\n• ${origCount} .orig file(s)\n• ${srtCount} .srt file(s)`;
+        if (skippedCount > 0) {
+          msg += `\n\n${skippedCount} file(s) already quarantined or no longer on disk`;
+        }
         if (failedCount > 0) {
           msg += `\n\n⚠ ${failedCount} file(s) could not be quarantined (check logs for details)`;
         }
-        msg += `\n\nFiles have been moved to quarantine and can be restored if needed.`;
+        if (totalCount > 0) {
+          msg += `\n\nFiles have been moved to quarantine and can be restored if needed.`;
+        }
         alert(msg);
         await loadQuarantineFiles();
       } else {
