@@ -69,6 +69,9 @@ _scan_lock = threading.Lock()
 # Cancel flag for delete operations
 _delete_cancel = threading.Event()
 
+# Cancel flag for deep scan operations
+_scan_cancel = threading.Event()
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -1639,6 +1642,7 @@ async def scan_filesystem_stream(dry_run: bool = False):
     Sends real-time progress events as each folder is scanned,
     including current folder name, folder number, and total count.
     Uses a lock to prevent concurrent scans from racing.
+    Supports cancellation via /api/orphan-cleanup/scan-filesystem/cancel.
     """
     import queue as thread_queue
 
@@ -1647,6 +1651,8 @@ async def scan_filesystem_stream(dry_run: bool = False):
         quarantine_orphaned_files,
         scan_filesystem_progressive,
     )
+
+    _scan_cancel.clear()
 
     def generate():
         # Acquire scan lock — refuse if another scan is already running
@@ -1689,12 +1695,18 @@ async def scan_filesystem_stream(dry_run: bool = False):
             def on_progress(info):
                 progress_q.put(info)
 
+            def is_cancelled():
+                return _scan_cancel.is_set()
+
             # Run the scan in a background thread
             import concurrent.futures
 
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             future = executor.submit(
-                scan_filesystem_progressive, path_dicts, on_progress
+                scan_filesystem_progressive,
+                path_dicts,
+                on_progress,
+                cancel_check=is_cancelled,
             )
 
             # Drain progress events while scan runs
@@ -1721,6 +1733,24 @@ async def scan_filesystem_stream(dry_run: bool = False):
 
             executor.shutdown(wait=False)
 
+            # If cancelled during scan, return partial results
+            if _scan_cancel.is_set():
+                result = {
+                    "phase": "done",
+                    "success": True,
+                    "cancelled": True,
+                    "orig_found": len(all_orphaned_orig),
+                    "srt_found": len(all_orphaned_srt),
+                    "total_found": len(all_orphaned_orig) + len(all_orphaned_srt),
+                    "orig_quarantined": 0,
+                    "srt_quarantined": 0,
+                    "skipped": 0,
+                    "scanned_paths": len(scan_paths),
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                }
+                yield f"data: {json.dumps(result)}\n\n"
+                return
+
             # Update last scanned timestamps
             for sp in scan_paths:
                 sp.last_scanned_at = datetime.now(timezone.utc)
@@ -1728,9 +1758,6 @@ async def scan_filesystem_stream(dry_run: bool = False):
 
             # Quarantine found orphans, with progress events streamed to client
             total_found = len(all_orphaned_orig) + len(all_orphaned_srt)
-
-            def quarantine_progress(info):
-                progress_q.put(info)
 
             # Run quarantine in a thread so we can stream progress
             quarantine_q: thread_queue.Queue = thread_queue.Queue()
@@ -1741,6 +1768,7 @@ async def scan_filesystem_stream(dry_run: bool = False):
                     all_orphaned_srt,
                     dry_run=dry_run,
                     progress_callback=lambda info: quarantine_q.put(info),
+                    cancel_check=is_cancelled,
                 )
 
             q_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -1772,6 +1800,7 @@ async def scan_filesystem_stream(dry_run: bool = False):
             result = {
                 "phase": "done",
                 "success": True,
+                "cancelled": _scan_cancel.is_set(),
                 "orig_found": len(all_orphaned_orig),
                 "srt_found": len(all_orphaned_srt),
                 "total_found": total_found,
@@ -1794,6 +1823,14 @@ async def scan_filesystem_stream(dry_run: bool = False):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/api/orphan-cleanup/scan-filesystem/cancel")
+async def cancel_scan() -> dict:
+    """Cancel an in-progress deep scan operation."""
+    _scan_cancel.set()
+    logger.info("Deep scan cancellation requested")
+    return {"success": True, "message": "Cancel signal sent"}
 
 
 @app.get("/api/quarantine")

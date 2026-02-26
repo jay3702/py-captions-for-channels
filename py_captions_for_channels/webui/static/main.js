@@ -2329,15 +2329,19 @@ async function deepScanForOrphans() {
       statusEl.style.color = '#4a9eff';
     }
     
-    // Show progress panel
+    // Show progress panel and cancel button
+    const scanCancelBtn = document.getElementById('scan-cancel-btn');
     if (progressEl) {
       progressEl.style.display = 'block';
       statusLabelEl.textContent = 'Enumerating folders...';
       counterEl.textContent = '0 / 0';
       barEl.style.width = '0%';
+      barEl.parentElement.style.display = '';
+      folderEl.style.display = '';
       folderEl.textContent = '—';
       folderEl.title = '';
       orphansEl.textContent = 'Orphans found: 0';
+      if (scanCancelBtn) { scanCancelBtn.style.display = 'inline-block'; scanCancelBtn.textContent = 'Cancel Scan'; }
     }
     
     const response = await fetch('/api/orphan-cleanup/scan-filesystem/stream');
@@ -2408,8 +2412,10 @@ async function deepScanForOrphans() {
     if (progressEl) {
       if (barEl) barEl.parentElement.style.display = 'none';
       if (folderEl) folderEl.style.display = 'none';
-      if (statusLabelEl) statusLabelEl.textContent = 'Scan complete';
-      if (statusLabelEl) statusLabelEl.style.color = '#6c6';
+      if (scanCancelBtn) scanCancelBtn.style.display = 'none';
+      const wasCancelled = finalResult && finalResult.cancelled;
+      if (statusLabelEl) statusLabelEl.textContent = wasCancelled ? 'Scan cancelled' : 'Scan complete';
+      if (statusLabelEl) statusLabelEl.style.color = wasCancelled ? '#f90' : '#6c6';
       // Keep orphansEl and counterEl visible with final counts
       // Hide the whole panel after a delay
       setTimeout(() => {
@@ -2425,8 +2431,16 @@ async function deepScanForOrphans() {
       const pathsScanned = finalResult.scanned_paths || 0;
       const skippedCount = finalResult.skipped || 0;
       const failedCount = totalFound - totalCount - skippedCount;
+      const wasCancelled = finalResult.cancelled || false;
       
-      if (totalFound > 0) {
+      if (wasCancelled) {
+        let msg = `⚠ Deep scan cancelled.\n\nScanned ${pathsScanned} path(s)\nFound ${totalFound} orphaned file(s) before cancellation`;
+        if (totalCount > 0) {
+          msg += `\n\nQuarantined ${totalCount} file(s) before stopping:\n• ${origCount} .orig file(s)\n• ${srtCount} .srt file(s)`;
+        }
+        alert(msg);
+        if (totalCount > 0) await loadQuarantineFiles();
+      } else if (totalFound > 0) {
         let msg = `✓ Deep scan complete!\n\nScanned ${pathsScanned} path(s)\nFound ${totalFound} orphaned file(s)\n\nQuarantined ${totalCount} file(s):\n• ${origCount} .orig file(s)\n• ${srtCount} .srt file(s)`;
         if (skippedCount > 0) {
           msg += `\n\n${skippedCount} file(s) already quarantined or no longer on disk`;
@@ -2444,8 +2458,9 @@ async function deepScanForOrphans() {
       }
       
       if (statusEl) {
-        statusEl.innerHTML = `<strong>Scan (History):</strong> Detects orphans from recordings you processed. <strong>Deep Scan:</strong> Last scan found ${totalFound}, quarantined ${totalCount} file(s)`;
-        statusEl.style.color = '#6c6';
+        const label = wasCancelled ? 'cancelled' : 'complete';
+        statusEl.innerHTML = `<strong>Scan (History):</strong> Detects orphans from recordings you processed. <strong>Deep Scan:</strong> Last scan ${label} — found ${totalFound}, quarantined ${totalCount} file(s)`;
+        statusEl.style.color = wasCancelled ? '#f90' : '#6c6';
       }
     } else if (!finalResult) {
       throw new Error('Stream ended without results');
@@ -2779,6 +2794,16 @@ async function cancelDelete() {
     if (cancelBtn) cancelBtn.textContent = 'Cancelling...';
   } catch (e) {
     console.error('Failed to cancel delete:', e);
+  }
+}
+
+async function cancelDeepScan() {
+  try {
+    await fetch('/api/orphan-cleanup/scan-filesystem/cancel', { method: 'POST' });
+    const cancelBtn = document.getElementById('scan-cancel-btn');
+    if (cancelBtn) cancelBtn.textContent = 'Cancelling...';
+  } catch (e) {
+    console.error('Failed to cancel deep scan:', e);
   }
 }
 

@@ -47,6 +47,7 @@ class QuarantineService:
         recording_path: Optional[str] = None,
         reason: str = "orphaned_by_pipeline",
         expiration_days: int = 30,
+        defer_commit: bool = False,
     ) -> Optional[QuarantineItem]:
         """Move a file to quarantine instead of deleting it.
 
@@ -96,7 +97,12 @@ class QuarantineService:
         file_size = original_path_obj.stat().st_size
 
         # Move the file first, then create DB record (avoids ghost records)
-        shutil.move(str(original_path), str(quarantine_path))
+        # Try os.rename first (instant on same filesystem), fall back to
+        # shutil.move (cross-device copy) if that fails.
+        try:
+            os.rename(str(original_path), str(quarantine_path))
+        except OSError:
+            shutil.move(str(original_path), str(quarantine_path))
 
         # Create database record after successful move
         expires_at = datetime.now(timezone.utc) + timedelta(days=expiration_days)
@@ -111,8 +117,9 @@ class QuarantineService:
             expires_at=expires_at,
         )
         self.db.add(item)
-        self.db.commit()
-        self.db.refresh(item)
+        if not defer_commit:
+            self.db.commit()
+            self.db.refresh(item)
 
         return item
 
@@ -145,8 +152,11 @@ class QuarantineService:
         # Create parent directory if needed
         original_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Move file back
-        shutil.move(str(quarantine_path), str(original_path))
+        # Move file back — try rename first (instant on same FS)
+        try:
+            os.rename(str(quarantine_path), str(original_path))
+        except OSError:
+            shutil.move(str(quarantine_path), str(original_path))
 
         # Update database
         item.status = "restored"

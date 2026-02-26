@@ -174,6 +174,7 @@ def find_orphaned_files_by_filesystem(
 def scan_filesystem_progressive(
     scan_paths: List[Dict],
     progress_callback: Optional[Callable[[Dict], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Tuple[List[Path], List[Path]]:
     """Scan filesystem paths for orphaned files with per-folder progress.
 
@@ -185,6 +186,7 @@ def scan_filesystem_progressive(
         progress_callback: Called with progress dict for each folder:
             {phase, folder, current, total, scan_path, scan_path_label,
              orphans_found}
+        cancel_check: Optional callable returning True to abort scan early.
 
     Returns:
         Tuple of (orphaned_orig_files, orphaned_srt_files)
@@ -199,6 +201,8 @@ def scan_filesystem_progressive(
     # Phase 1: enumerate all directories across all scan paths
     all_dirs: List[Tuple[str, str, str]] = []  # (dir_path, scan_path, label)
     for sp in scan_paths:
+        if cancel_check and cancel_check():
+            break
         sp_path = sp["path"]
         sp_label = sp.get("label") or sp_path
         if not os.path.exists(sp_path):
@@ -219,7 +223,13 @@ def scan_filesystem_progressive(
         )
 
     # Phase 2: scan each directory for orphaned files
+    cancelled = False
     for idx, (dirpath, sp_path, sp_label) in enumerate(all_dirs, start=1):
+        if cancel_check and cancel_check():
+            cancelled = True
+            LOG.info("Scan cancelled at folder %d/%d", idx, total_dirs)
+            break
+
         if progress_callback:
             progress_callback(
                 {
@@ -268,7 +278,7 @@ def scan_filesystem_progressive(
         progress_callback(
             {
                 "phase": "complete",
-                "message": "Scan complete",
+                "message": "Scan cancelled" if cancelled else "Scan complete",
                 "current": total_dirs,
                 "total": total_dirs,
                 "orphans_found": len(all_orphaned_orig) + len(all_orphaned_srt),
@@ -278,7 +288,7 @@ def scan_filesystem_progressive(
     LOG.info(
         f"Progressive scan found {len(all_orphaned_orig)} orphaned backup/temp "
         f"and {len(all_orphaned_srt)} orphaned .srt files "
-        f"across {total_dirs} folders"
+        f"across {total_dirs} folders" + (" (cancelled)" if cancelled else "")
     )
 
     return (all_orphaned_orig, all_orphaned_srt)
@@ -388,6 +398,8 @@ def quarantine_orphaned_files(
     srt_files: List[Path],
     dry_run: bool = False,
     progress_callback: Optional[Callable[[Dict], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+    commit_batch_size: int = 50,
 ) -> Tuple[int, int, int]:
     """Quarantine orphaned backup/temp and .srt files instead of deleting them.
 
@@ -401,6 +413,8 @@ def quarantine_orphaned_files(
         dry_run: If True, only log what would be quarantined without moving files
         progress_callback: Optional callback for reporting quarantine progress.
             Called with dict: {current, total, file, quarantined, skipped, failed}
+        cancel_check: Optional callable returning True to abort early.
+        commit_batch_size: Number of files to process before committing to DB.
 
     Returns:
         Tuple of (orig_quarantined_count, srt_quarantined_count, skipped_count)
@@ -426,6 +440,7 @@ def quarantine_orphaned_files(
 
     total_files = len(orig_files) + len(srt_files)
     current = 0
+    uncommitted = 0
 
     def _report_progress(filepath: str) -> None:
         if progress_callback:
@@ -441,8 +456,18 @@ def quarantine_orphaned_files(
                 }
             )
 
+    def _maybe_commit() -> None:
+        nonlocal uncommitted
+        uncommitted += 1
+        if uncommitted >= commit_batch_size:
+            db.commit()
+            uncommitted = 0
+
     # Quarantine backup/temp files (.orig, .cc4chan.*, .orig.mpg)
     for orig_file in orig_files:
+        if cancel_check and cancel_check():
+            LOG.info("Quarantine cancelled at %d/%d", current, total_files)
+            break
         current += 1
         try:
             if dry_run:
@@ -472,10 +497,12 @@ def quarantine_orphaned_files(
                     recording_path=recording_path,
                     reason="orphaned_by_pipeline",
                     expiration_days=QUARANTINE_EXPIRATION_DAYS,
+                    defer_commit=True,
                 )
                 if result is not None:
                     LOG.info(f"Quarantined orphaned {file_type}: {orig_file}")
                     orig_quarantined += 1
+                    _maybe_commit()
                 else:
                     orig_skipped += 1
         except Exception as e:
@@ -484,6 +511,9 @@ def quarantine_orphaned_files(
 
     # Quarantine .srt files
     for srt_file in srt_files:
+        if cancel_check and cancel_check():
+            LOG.info("Quarantine cancelled at %d/%d", current, total_files)
+            break
         current += 1
         try:
             if dry_run:
@@ -504,15 +534,21 @@ def quarantine_orphaned_files(
                     recording_path=recording_path,
                     reason="orphaned_by_pipeline",
                     expiration_days=QUARANTINE_EXPIRATION_DAYS,
+                    defer_commit=True,
                 )
                 if result is not None:
                     LOG.info(f"Quarantined orphaned .srt: {srt_file}")
                     srt_quarantined += 1
+                    _maybe_commit()
                 else:
                     srt_skipped += 1
         except Exception as e:
             srt_failed += 1
             LOG.error(f"Failed to quarantine {srt_file}: {e}")
+
+    # Final commit for any remaining uncommitted records
+    if not dry_run and uncommitted > 0:
+        db.commit()
 
     if orig_skipped or srt_skipped:
         LOG.info(
