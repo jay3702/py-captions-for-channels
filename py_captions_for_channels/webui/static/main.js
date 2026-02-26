@@ -2533,9 +2533,82 @@ function toggleScanPathsManager() {
     manager.style.display = 'block';
     btn.textContent = 'Hide';
     loadScanPaths();
+    loadFilesystemAnalysis();
   } else {
     manager.style.display = 'none';
     btn.textContent = 'Configure';
+  }
+}
+
+function _humanBytes(n) {
+  if (n == null) return 'unknown';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (Math.abs(n) >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(1)} ${units[i]}`;
+}
+
+async function loadFilesystemAnalysis() {
+  const el = document.getElementById('fs-analysis-content');
+  if (!el) return;
+  el.innerHTML = '<p style="margin:0;color:#888;">Analysing...</p>';
+
+  try {
+    const resp = await fetch('/api/config/filesystem-analysis');
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'Unknown error');
+
+    let html = '';
+
+    // Per-filesystem cards
+    if (data.filesystems && data.filesystems.length > 0) {
+      html += `<div style="margin-bottom:6px;color:#aaa;">
+        <strong>${data.total_filesystems}</strong> filesystem(s) detected across
+        <strong>${data.total_scan_paths}</strong> scan path(s)
+      </div>`;
+      for (const fs of data.filesystems) {
+        const freePct = fs.free_pct != null ? `${fs.free_pct}%` : '?';
+        const freeColor = (fs.free_pct != null && fs.free_pct < 10) ? '#f55' : '#6c6';
+        html += `<div style="padding:6px;margin-bottom:4px;background:#222;border-radius:3px;border-left:3px solid ${freeColor};">
+          <div style="color:#ccc;font-size:0.85em;margin-bottom:2px;">
+            <strong>Filesystem</strong> (st_dev=${fs.st_dev})
+            &nbsp;—&nbsp; <span style="color:${freeColor};">${freePct} free</span>
+            (${_humanBytes(fs.free_bytes)} of ${_humanBytes(fs.total_bytes)})
+          </div>
+          <div style="color:#888;font-size:0.8em;margin-bottom:2px;">
+            Quarantine: <span style="color:#4a9eff;">${escapeHtml(fs.quarantine_dir)}</span>
+          </div>
+          <div style="color:#666;font-size:0.75em;">
+            Scan paths: ${fs.scan_paths.map(p => escapeHtml(p)).join(', ')}
+          </div>
+        </div>`;
+      }
+    } else {
+      html += '<p style="margin:0;color:#888;">No scan paths configured.</p>';
+    }
+
+    // Fallback dir
+    html += `<div style="margin-top:6px;color:#666;font-size:0.8em;">
+      Fallback quarantine: <span style="color:#888;">${escapeHtml(data.fallback_quarantine_dir)}</span>
+      (st_dev=${data.fallback_st_dev || '?'})
+    </div>`;
+
+    // Warnings
+    if (data.warnings && data.warnings.length > 0) {
+      for (const w of data.warnings) {
+        html += `<div style="margin-top:6px;padding:6px;background:#3a2a00;border:1px solid #664;border-radius:3px;color:#fa0;font-size:0.8em;">
+          ⚠ ${escapeHtml(w)}
+        </div>`;
+      }
+    } else if (data.filesystems && data.filesystems.length > 0) {
+      html += `<div style="margin-top:6px;color:#6c6;font-size:0.8em;">
+        ✓ All scan paths have same-filesystem quarantine directories. Moves will be instant.
+      </div>`;
+    }
+
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = `<p style="margin:0;color:#f55;">Error: ${escapeHtml(err.message)}</p>`;
   }
 }
 

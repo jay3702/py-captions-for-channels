@@ -10,7 +10,7 @@
   <link rel="icon" type="image/x-icon" href="/static/channels_cc_favicon_big/favicon.ico?v=3">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/channels_cc_favicon_big/icon-180.png">
   <link rel="manifest" href="/static/channels_cc_favicon_big/site.webmanifest" />
-  <link rel="stylesheet" href="/static/style.css?v=1772130000" />
+  <link rel="stylesheet" href="/static/style.css?v=1772140000" />
   <link rel="stylesheet" href="/static/vendor/uplot.min.css" />
 </head>
 <body>
@@ -191,6 +191,17 @@
             <div id="scan-paths-list" style="max-height: 200px; overflow-y: auto;">
               <p style="color: #666; font-size: 0.85em;">Loading scan paths...</p>
             </div>
+
+            <!-- Filesystem topology analysis -->
+            <div id="fs-analysis" style="margin-top: 12px; padding: 10px; background: #1a1a1a; border-radius: 4px; border: 1px solid #333;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <h4 style="margin: 0; font-size: 0.85em; color: #aaa;">Filesystem Topology</h4>
+                <button class="btn-small" onclick="loadFilesystemAnalysis()">Refresh</button>
+              </div>
+              <div id="fs-analysis-content" style="font-size: 0.8em; color: #888;">
+                <p style="margin: 0;">Click Refresh to analyse filesystem layout.</p>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -368,6 +379,6 @@
     </div>
 
   <script src="/static/vendor/uplot.min.js"></script>
-  <script src="/static/main.js?v=1772130000"></script>
+  <script src="/static/main.js?v=1772140000"></script>
 </body>
 </html>

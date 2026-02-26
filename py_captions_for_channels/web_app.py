@@ -73,6 +73,29 @@ _delete_cancel = threading.Event()
 _scan_cancel = threading.Event()
 
 
+def _build_quarantine_service(db):
+    """Construct a QuarantineService with distributed filesystem support.
+
+    Registers all enabled scan paths so that quarantine operations route
+    files to the quarantine directory on the same filesystem (instant rename).
+    """
+    from py_captions_for_channels.config import QUARANTINE_DIR
+    from py_captions_for_channels.models import ScanPath
+    from py_captions_for_channels.services.filesystem_service import (
+        FilesystemService,
+    )
+    from py_captions_for_channels.services.quarantine_service import (
+        QuarantineService,
+    )
+
+    fs_service = FilesystemService(fallback_quarantine_dir=QUARANTINE_DIR)
+    scan_paths = db.query(ScanPath).filter(ScanPath.enabled == True).all()  # noqa: E712
+    for sp in scan_paths:
+        fs_service.register_path(sp.path)
+
+    return QuarantineService(db, QUARANTINE_DIR, filesystem_service=fs_service)
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and system monitor on application startup."""
@@ -1841,13 +1864,8 @@ async def get_quarantined_files() -> dict:
         List of quarantined files with metadata
     """
     try:
-        from py_captions_for_channels.config import QUARANTINE_DIR
-        from py_captions_for_channels.services.quarantine_service import (
-            QuarantineService,
-        )
-
         db = next(get_db())
-        service = QuarantineService(db, QUARANTINE_DIR)
+        service = _build_quarantine_service(db)
         items = service.get_quarantined_files()
         stats = service.get_quarantine_stats()
 
@@ -1886,13 +1904,8 @@ async def restore_quarantined_files(item_ids: list[int]) -> dict:
         Result with counts of restored and failed items
     """
     try:
-        from py_captions_for_channels.config import QUARANTINE_DIR
-        from py_captions_for_channels.services.quarantine_service import (
-            QuarantineService,
-        )
-
         db = next(get_db())
-        service = QuarantineService(db, QUARANTINE_DIR)
+        service = _build_quarantine_service(db)
 
         restored = 0
         failed = 0
@@ -1939,13 +1952,8 @@ async def delete_quarantined_files(item_ids: list[int]) -> dict:
 
     def generate():
         try:
-            from py_captions_for_channels.config import QUARANTINE_DIR
-            from py_captions_for_channels.services.quarantine_service import (
-                QuarantineService,
-            )
-
             db = next(get_db())
-            service = QuarantineService(db, QUARANTINE_DIR)
+            service = _build_quarantine_service(db)
 
             def cancel_check():
                 return _delete_cancel.is_set()
@@ -2019,13 +2027,8 @@ async def dedup_quarantine() -> dict:
         Deduplication results
     """
     try:
-        from py_captions_for_channels.config import QUARANTINE_DIR
-        from py_captions_for_channels.services.quarantine_service import (
-            QuarantineService,
-        )
-
         db = next(get_db())
-        service = QuarantineService(db, QUARANTINE_DIR)
+        service = _build_quarantine_service(db)
         result = service.deduplicate()
         return {"success": True, **result}
     except Exception as e:
@@ -2041,17 +2044,43 @@ async def get_quarantine_stats() -> dict:
         Statistics about quarantined files
     """
     try:
-        from py_captions_for_channels.config import QUARANTINE_DIR
-        from py_captions_for_channels.services.quarantine_service import (
-            QuarantineService,
-        )
-
         db = next(get_db())
-        service = QuarantineService(db, QUARANTINE_DIR)
+        service = _build_quarantine_service(db)
         return service.get_quarantine_stats()
     except Exception as e:
         logger.error(f"Failed to get quarantine stats: {e}", exc_info=True)
         return {"error": str(e)}
+
+
+@app.get("/api/config/filesystem-analysis")
+async def get_filesystem_analysis() -> dict:
+    """Analyse filesystem topology for quarantine performance.
+
+    Returns per-filesystem info, quarantine directory mapping,
+    disk usage, and warnings about cross-filesystem risks.
+    """
+    try:
+        from py_captions_for_channels.config import QUARANTINE_DIR
+        from py_captions_for_channels.models import ScanPath
+        from py_captions_for_channels.services.filesystem_service import (
+            FilesystemService,
+        )
+
+        db = next(get_db())
+        fs_service = FilesystemService(fallback_quarantine_dir=QUARANTINE_DIR)
+
+        scan_paths = (
+            db.query(ScanPath).filter(ScanPath.enabled == True).all()  # noqa: E712
+        )
+        for sp in scan_paths:
+            fs_service.register_path(sp.path)
+
+        analysis = fs_service.get_analysis()
+        analysis["success"] = True
+        return analysis
+    except Exception as e:
+        logger.error(f"Filesystem analysis failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/execution-history/info")

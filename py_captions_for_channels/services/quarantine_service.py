@@ -1,25 +1,64 @@
-"""Service layer for quarantine operations."""
+"""Service layer for quarantine operations.
+
+Supports distributed quarantine directories (one per filesystem) via
+an optional :class:`FilesystemService`.  When provided, each file is
+routed to the quarantine directory on its own filesystem so that
+``os.rename()`` always succeeds (instant move, no cross-device copy).
+"""
 
 import logging
 import os
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
 from ..models import QuarantineItem
+
+if TYPE_CHECKING:
+    from .filesystem_service import FilesystemService
 
 LOG = logging.getLogger(__name__)
 
 
 class QuarantineService:
-    """Service for managing quarantined orphaned files."""
+    """Service for managing quarantined orphaned files.
 
-    def __init__(self, db: Session, quarantine_dir: str):
+    Args:
+        db: SQLAlchemy session
+        quarantine_dir: Fallback quarantine directory (legacy single-dir mode)
+        filesystem_service: Optional distributed quarantine manager.
+            When provided, ``quarantine_file()`` routes each file to the
+            quarantine directory on its own filesystem.
+    """
+
+    def __init__(
+        self,
+        db: Session,
+        quarantine_dir: str,
+        filesystem_service: Optional["FilesystemService"] = None,
+    ):
         self.db = db
         self.quarantine_dir = Path(quarantine_dir)
         self.quarantine_dir.mkdir(parents=True, exist_ok=True)
+        self._fs_service = filesystem_service
+
+    def _resolve_quarantine_dir(self, original_path: str) -> Path:
+        """Return the quarantine directory for *original_path*.
+
+        Uses the :class:`FilesystemService` when available to find a
+        same-filesystem quarantine directory.  Otherwise falls back to
+        ``self.quarantine_dir``.
+        """
+        if self._fs_service is not None:
+            qdir = self._fs_service.quarantine_dir_for(original_path)
+            p = Path(qdir)
+            p.mkdir(parents=True, exist_ok=True)
+            return p
+        return self.quarantine_dir
 
     def is_already_quarantined(self, original_path: str) -> bool:
         """Check if a file is already quarantined (active record exists).
@@ -82,15 +121,17 @@ class QuarantineService:
             return None
 
         # Generate quarantine path with timestamp + microseconds to avoid collisions
+        # Route to same-filesystem quarantine dir when FilesystemService is available
+        target_dir = self._resolve_quarantine_dir(original_path)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
         filename = f"{timestamp}_{original_path_obj.name}"
-        quarantine_path = self.quarantine_dir / filename
+        quarantine_path = target_dir / filename
 
         # Ensure uniqueness if file already exists
         counter = 1
         while quarantine_path.exists():
             filename = f"{timestamp}_{counter}_{original_path_obj.name}"
-            quarantine_path = self.quarantine_dir / filename
+            quarantine_path = target_dir / filename
             counter += 1
 
         # Get file size before moving
