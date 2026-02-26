@@ -12,12 +12,11 @@ services:
       - TZ=${TZ:-}
       # Explicit server timezone used by app for formatting
       - SERVER_TZ=${SERVER_TZ:-}
-      - USE_MOCK=${USE_MOCK:-false}
-      - USE_POLLING=${USE_POLLING:-false}
-      - USE_WEBHOOK=${USE_WEBHOOK:-true}
+      - DISCOVERY_MODE=${DISCOVERY_MODE:-polling}
       - WEBHOOK_HOST=${WEBHOOK_HOST:-0.0.0.0}
       - WEBHOOK_PORT=${WEBHOOK_PORT:-9000}
       - WEB_UI_PORT=${WEB_UI_PORT:-8000}
+      - CHANNELS_DVR_URL=${CHANNELS_DVR_URL:-http://localhost:8089}
       - CHANNELS_API_URL=${CHANNELS_API_URL:-http://localhost:8089}
       - CHANNELWATCH_URL=${CHANNELWATCH_URL:-ws://localhost:8501/events}
       - API_TIMEOUT=${API_TIMEOUT:-10}
