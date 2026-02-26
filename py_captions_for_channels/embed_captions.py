@@ -54,11 +54,26 @@ def extract_channel_number(video_path):
     from py_captions_for_channels.channels_api import ChannelsAPI
     from py_captions_for_channels.config import CHANNELS_API_URL
 
-    # Normalize path: strip temporary/backup extensions (.orig, .tmp, .av.mp4, etc.)
-    # to ensure we look up the original recording path
+    # Normalize path: strip temporary/backup extensions to ensure we look up
+    # the original recording path.  Order matters — try the longest (most
+    # specific) suffixes first so a combined suffix like .cc4chan.orig.tmp is
+    # fully removed before a shorter suffix like .orig can match.
     path_str = str(video_path).replace("\\", "/")
-    # Remove common processing suffixes
-    for suffix in [".orig", ".tmp", ".av.mp4", ".muxed.mp4", ".temp.wav"]:
+    for suffix in [
+        ".cc4chan.orig.tmp",
+        ".cc4chan.orig",
+        ".cc4chan.av.mp4",
+        ".cc4chan.muxed.mp4",
+        ".cc4chan.temp.wav",
+        ".srt.cc4chan.tmp",
+        # Legacy patterns (pre-cc4chan)
+        ".orig.tmp",
+        ".orig",
+        ".av.mp4",
+        ".muxed.mp4",
+        ".temp.wav",
+        ".tmp",
+    ]:
         if path_str.endswith(suffix):
             path_str = path_str[: -len(suffix)]
             break
@@ -421,15 +436,24 @@ def preserve_original(mpg_path, log):
     The .orig file represents the pristine, unprocessed original.
     Once created, it must never be modified, even if the .mpg changes.
     """
-    orig_path = mpg_path + ".orig"
+    orig_path = mpg_path + ".cc4chan.orig"
     tmp_path = orig_path + ".tmp"
 
-    if not os.path.exists(orig_path):
+    # Also check for legacy .orig naming (migration support)
+    legacy_orig_path = mpg_path + ".orig"
+
+    if os.path.exists(legacy_orig_path) and not os.path.exists(orig_path):
+        # Rename legacy .orig to new naming convention
+        os.rename(legacy_orig_path, orig_path)
+        log.info(
+            f"Migrated legacy .orig to new naming: {legacy_orig_path} -> {orig_path}"
+        )
+    elif not os.path.exists(orig_path):
         log.info(f"Preserving original (first time): {mpg_path} -> {orig_path}")
         shutil.copy2(mpg_path, tmp_path)
         os.replace(tmp_path, orig_path)
     else:
-        log.info(f".orig already exists and will not be modified: {orig_path}")
+        log.info(f".cc4chan.orig already exists and will not be modified: {orig_path}")
 
 
 def srt_exists_and_valid(srt_path):
@@ -1262,7 +1286,7 @@ def main():
                         "File contains corrupted/problematic frames - "
                         "extracting audio to WAV first to avoid segfault"
                     )
-                    wav_path = f"{mpg_path}.temp.wav"
+                    wav_path = f"{mpg_path}.cc4chan.temp.wav"
                     try:
                         # Map specific audio stream for language-aware processing
                         audio_map = (
@@ -1369,7 +1393,7 @@ def main():
                                         "Codec error detected. Attempting "
                                         "workaround: extracting audio to WAV..."
                                     )
-                                    wav_path = f"{mpg_path}.temp.wav"
+                                    wav_path = f"{mpg_path}.cc4chan.temp.wav"
                                     try:
                                         # Map specific audio stream
                                         # for language-aware processing
@@ -1493,7 +1517,7 @@ def main():
                 log.info(f"Transcribed {segment_count} segments total")
 
                 # Write SRT file atomically
-                srt_tmp = srt_path + ".tmp"
+                srt_tmp = srt_path + ".cc4chan.tmp"
                 with open(srt_tmp, "w", encoding="utf-8") as f:
                     f.writelines(srt_lines)
                 os.replace(srt_tmp, srt_path)
@@ -1540,16 +1564,16 @@ def main():
         "file_copy",
         lambda: preserve_original(mpg_path, log),
         input_path=mpg_path,
-        output_path=mpg_path + ".orig",
+        output_path=mpg_path + ".cc4chan.orig",
         misc_label="Preserving original",
     )
 
     if not srt_exists_and_valid(srt_path):
         log.error("Missing or invalid SRT file.")
         sys.exit(1)
-    orig_path = mpg_path + ".orig"
-    temp_av = mpg_path + ".av.mp4"
-    temp_muxed = mpg_path + ".muxed.mp4"
+    orig_path = mpg_path + ".cc4chan.orig"
+    temp_av = mpg_path + ".cc4chan.av.mp4"
+    temp_muxed = mpg_path + ".cc4chan.muxed.mp4"
     # Step 1: Encode A/V only (behavior controlled by PRESERVE_ALL_AUDIO_TRACKS)
     run_step(
         "ffmpeg_encode",

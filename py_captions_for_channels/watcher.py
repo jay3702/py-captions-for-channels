@@ -330,17 +330,25 @@ async def process_manual_process_queue(state, pipeline, api, parser):
 
                 LOG.info("Manual processing: %s", path)
                 mpg_path = path
-                orig_path = path + ".orig"
+                orig_path = path + ".cc4chan.orig"
+                legacy_orig_path = path + ".orig"
                 srt_path = path.rsplit(".", 1)[0] + ".srt"
 
-                # 1. If .orig exists, restore it
+                # 1. If .cc4chan.orig or legacy .orig exists, restore it
                 if os.path.exists(orig_path):
                     LOG.info(
-                        "Restoring original from .orig: %s -> %s",
+                        "Restoring original from .cc4chan.orig: %s -> %s",
                         orig_path,
                         mpg_path,
                     )
                     shutil.copy2(orig_path, mpg_path)
+                elif os.path.exists(legacy_orig_path):
+                    LOG.info(
+                        "Restoring original from legacy .orig: %s -> %s",
+                        legacy_orig_path,
+                        mpg_path,
+                    )
+                    shutil.copy2(legacy_orig_path, mpg_path)
                 # If .orig does not exist, proceed with current .mpg (no subtitle check)
 
                 # 2. Remove existing .srt to force reprocessing

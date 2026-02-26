@@ -2167,10 +2167,13 @@ async def get_recordings() -> dict:
                         "success" if processed_exec.get("success") else "failed"
                     )
 
-            # Check if .orig backup file exists
+            # Check if .cc4chan.orig or legacy .orig backup file exists
             from pathlib import Path as FilePath
 
-            has_orig = FilePath(str(path) + ".orig").exists()
+            has_orig = (
+                FilePath(str(path) + ".cc4chan.orig").exists()
+                or FilePath(str(path) + ".orig").exists()
+            )
 
             formatted_recordings.append(
                 {
@@ -2334,11 +2337,18 @@ async def restore_recordings_from_backup(request: Request) -> dict:
                 from pathlib import Path as FilePath
 
                 video_path = FilePath(path)
-                orig_path = FilePath(str(path) + ".orig")
+                orig_path = FilePath(str(path) + ".cc4chan.orig")
+                legacy_orig_path = FilePath(str(path) + ".orig")
                 srt_path = video_path.with_suffix(".srt")
 
-                # Check if .orig exists
-                if not orig_path.exists():
+                # Check for .cc4chan.orig first, then legacy .orig
+                actual_orig = None
+                if orig_path.exists():
+                    actual_orig = orig_path
+                elif legacy_orig_path.exists():
+                    actual_orig = legacy_orig_path
+
+                if not actual_orig:
                     errors.append(f"{path}: No backup file found")
                     continue
 
@@ -2347,9 +2357,9 @@ async def restore_recordings_from_backup(request: Request) -> dict:
                     video_path.unlink()
                     logger.info(f"Deleted processed file: {video_path}")
 
-                # Restore .orig to .mpg
-                orig_path.rename(video_path)
-                logger.info(f"Restored backup {orig_path} to {video_path}")
+                # Restore backup to .mpg
+                actual_orig.rename(video_path)
+                logger.info(f"Restored backup {actual_orig} to {video_path}")
 
                 # Delete .srt file if it exists
                 if srt_path.exists():

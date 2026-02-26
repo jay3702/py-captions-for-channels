@@ -48,7 +48,7 @@ VIDEO_BASE="$(basename "$VIDEO_PATH" .mpg)"
 
 # We ALWAYS want captions at: <basename>.srt (no .mpg.srt nonsense)
 SRT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.srt"
-ORIG_PATH="${VIDEO_PATH}.orig"
+ORIG_PATH="${VIDEO_PATH}.cc4chan.orig"
 
 WHISPER_MODEL="${WHISPER_MODEL:-medium}"
 WHISPER_MODEL_DIR="${WHISPER_MODEL_DIR:-/app/data/whisper}"
@@ -64,9 +64,9 @@ PID="$$"
 TS="$(date +%s)"
 
 # Temp files in same directory as target for atomic replace
-TMP_AV_PATH="${VIDEO_DIR}/${VIDEO_BASE}.tmp.${TS}.${PID}.av.mp4"
-TMP_SRT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.tmp.${TS}.${PID}.clamped.srt"
-TMP_OUT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.tmp.${TS}.${PID}.final.mp4"
+TMP_AV_PATH="${VIDEO_DIR}/${VIDEO_BASE}.cc4chan.tmp.${TS}.${PID}.av.mp4"
+TMP_SRT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.cc4chan.tmp.${TS}.${PID}.clamped.srt"
+TMP_OUT_PATH="${VIDEO_DIR}/${VIDEO_BASE}.cc4chan.tmp.${TS}.${PID}.final.mp4"
 
 cleanup() {
   rm -f "$TMP_AV_PATH" "$TMP_SRT_PATH" "$TMP_OUT_PATH" 2>/dev/null || true

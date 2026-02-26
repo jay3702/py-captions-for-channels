@@ -44,8 +44,12 @@ class ChannelsAPI:
 
         # Find all .mpg files recursively
         for mpg_file in test_dir.rglob("*.mpg"):
-            # Skip backup files
-            if ".orig" in mpg_file.name or ".tmp" in mpg_file.name:
+            # Skip backup/temp files (both current and legacy naming)
+            if (
+                ".cc4chan." in mpg_file.name
+                or ".orig" in mpg_file.name
+                or ".tmp" in mpg_file.name
+            ):
                 continue
 
             # Get relative path and check if in tmp staging directory

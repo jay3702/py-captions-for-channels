@@ -34,20 +34,89 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 LOG = logging.getLogger(__name__)
 
+# Suffixes that identify cc4chan temporary/backup files.
+# Order matters: longer (more specific) suffixes first.
+CC4CHAN_TEMP_SUFFIXES = (
+    ".cc4chan.orig.tmp",
+    ".cc4chan.orig",
+    ".cc4chan.av.mp4",
+    ".cc4chan.muxed.mp4",
+    ".cc4chan.temp.wav",
+    ".srt.cc4chan.tmp",
+)
+
+# Legacy suffixes from earlier naming conventions
+LEGACY_TEMP_SUFFIXES = (
+    ".orig.tmp",
+    ".orig",
+)
+
+
+def _video_path_for_orphan(filepath: str) -> Optional[str]:
+    """Derive the expected video file path from a temp/backup file path.
+
+    Returns the path the original video *should* be at, or None if the
+    filename doesn't match any known pattern.
+
+    Handles:
+        *.cc4chan.orig      -> *            (new backup)
+        *.cc4chan.orig.tmp  -> *            (new backup tmp)
+        *.cc4chan.av.mp4    -> *            (new encoded A/V)
+        *.cc4chan.muxed.mp4 -> *            (new muxed output)
+        *.cc4chan.temp.wav  -> *            (new WAV extraction)
+        *.srt.cc4chan.tmp   -> *            (derives .srt path, not video)
+        *.orig              -> *            (legacy backup)
+        *.orig.tmp          -> *            (legacy backup tmp)
+        *.orig.mpg          -> *.mpg        (old-style renamed original)
+    """
+    # Check cc4chan patterns first (most specific)
+    for suffix in CC4CHAN_TEMP_SUFFIXES:
+        if filepath.endswith(suffix):
+            base = filepath[: -len(suffix)]
+            # .srt.cc4chan.tmp -> the video is the .srt stem, need media ext
+            if suffix == ".srt.cc4chan.tmp":
+                return None  # Caller should check media exts against stem
+            return base
+
+    # Legacy patterns
+    for suffix in LEGACY_TEMP_SUFFIXES:
+        if filepath.endswith(suffix):
+            return filepath[: -len(suffix)]
+
+    # Old-style *.orig.mpg  (stem ends with .orig, extension is .mpg)
+    if filepath.endswith(".orig.mpg"):
+        # recording.orig.mpg -> recording.mpg
+        return filepath[: -len(".orig.mpg")] + ".mpg"
+
+    return None
+
+
+def _is_cc4chan_temp_file(filename: str) -> bool:
+    """Return True if filename matches any cc4chan temp/backup pattern."""
+    return ".cc4chan." in filename
+
 
 def find_orphaned_files_by_filesystem(
     recordings_path: str,
 ) -> Tuple[List[Path], List[Path]]:
-    """Find .orig and .srt files without corresponding video files (filesystem scan).
+    """Find orphaned backup/temp and .srt files without corresponding video files.
+
+    Scans for:
+      - *.cc4chan.orig  (current backup naming)
+      - *.orig          (legacy backup naming)
+      - *.orig.mpg      (old-style renamed originals)
+      - *.cc4chan.*      (any cc4chan temp files left from interrupted runs)
+      - *.srt           (caption files without matching video)
 
     This method scans all files regardless of processing history.
-    Kept for future manual cleanup operations where user can review before deleting.
+    Kept for manual cleanup operations where user can review before deleting.
 
     Args:
         recordings_path: Path to DVR recordings directory
 
     Returns:
         Tuple of (orphaned_orig_files, orphaned_srt_files)
+        orphaned_orig_files includes all backup and temp files (not just .orig)
     """
     if not recordings_path or not os.path.exists(recordings_path):
         LOG.warning(f"Recordings path not found: {recordings_path}")
@@ -59,19 +128,29 @@ def find_orphaned_files_by_filesystem(
 
     from py_captions_for_channels.config import MEDIA_FILE_EXTENSIONS
 
-    # Find all .orig files (any <video>.orig pattern)
-    orig_files = list(recordings_dir.rglob("*.orig"))
+    # Find backup/temp files: cc4chan patterns, legacy .orig, and old .orig.mpg
+    orig_files = list(recordings_dir.rglob("*.cc4chan.*"))
+    orig_files += list(recordings_dir.rglob("*.orig"))
+    orig_files += list(recordings_dir.rglob("*.orig.mpg"))
+    # Deduplicate (a file could match multiple globs)
+    orig_files = list({f.resolve(): f for f in orig_files}.values())
+
     srt_files = list(recordings_dir.rglob("*.srt"))
 
-    LOG.debug(f"Scanning {len(orig_files)} .orig files and {len(srt_files)} .srt files")
+    LOG.debug(
+        f"Scanning {len(orig_files)} backup/temp files "
+        f"and {len(srt_files)} .srt files"
+    )
 
-    # Check .orig files
+    # Check backup/temp files
     for orig_file in orig_files:
-        # Original video should be at the path without .orig
-        video_path = orig_file.with_suffix("")  # Remove .orig suffix
-        if not video_path.exists():
+        video_path_str = _video_path_for_orphan(str(orig_file))
+        if video_path_str is None:
+            # Unknown pattern — skip
+            continue
+        if not os.path.exists(video_path_str):
             orphaned_orig.append(orig_file)
-            LOG.debug(f"Orphaned .orig: {orig_file} (missing {video_path})")
+            LOG.debug(f"Orphaned backup/temp: {orig_file} (missing {video_path_str})")
 
     # Check .srt files
     for srt_file in srt_files:
@@ -85,7 +164,7 @@ def find_orphaned_files_by_filesystem(
             LOG.debug(f"Orphaned .srt: {srt_file} (no matching video found)")
 
     LOG.info(
-        f"Found {len(orphaned_orig)} orphaned .orig files "
+        f"Found {len(orphaned_orig)} orphaned backup/temp files "
         f"and {len(orphaned_srt)} orphaned .srt files"
     )
 
@@ -165,11 +244,14 @@ def scan_filesystem_progressive(
             if not os.path.isfile(full):
                 continue
 
-            if entry.endswith(".orig"):
-                # .orig is always <video_file>.orig — strip .orig to
-                # get the expected video path
-                video_path = full[: -len(".orig")]
-                if not os.path.exists(video_path):
+            # Detect cc4chan temp/backup files, legacy .orig, and old .orig.mpg
+            if (
+                ".cc4chan." in entry
+                or entry.endswith(".orig")
+                or entry.endswith(".orig.mpg")
+            ):
+                video_path_str = _video_path_for_orphan(full)
+                if video_path_str and not os.path.exists(video_path_str):
                     all_orphaned_orig.append(Path(full))
 
             elif entry.endswith(".srt"):
@@ -194,7 +276,7 @@ def scan_filesystem_progressive(
         )
 
     LOG.info(
-        f"Progressive scan found {len(all_orphaned_orig)} orphaned .orig "
+        f"Progressive scan found {len(all_orphaned_orig)} orphaned backup/temp "
         f"and {len(all_orphaned_srt)} orphaned .srt files "
         f"across {total_dirs} folders"
     )
@@ -246,18 +328,40 @@ def find_orphaned_files() -> Tuple[List[Path], List[Path]]:
                 # Recording still exists, skip
                 continue
 
-            # Recording is missing — check for orphaned backup/caption files
-            # .orig is always <recording_path>.orig  (e.g. video.mpg.orig)
-            orig_path = Path(str(recording_path) + ".orig")
-            # .srt shares the stem but has .srt extension (e.g. video.srt)
-            srt_path = recording_path.with_suffix(".srt")
+            # Recording is missing — check for orphaned backup/caption/temp files
+            rec_str = str(recording_path)
 
-            if orig_path.exists():
-                orphaned_orig.append(orig_path)
+            # Check all cc4chan patterns (new naming)
+            for suffix in CC4CHAN_TEMP_SUFFIXES:
+                candidate = Path(rec_str + suffix)
+                if candidate.exists():
+                    orphaned_orig.append(candidate)
+                    LOG.debug(
+                        f"Orphaned {suffix}: {candidate} "
+                        f"(processed recording deleted: {recording_path})"
+                    )
+
+            # Legacy .orig backup (e.g. video.mpg.orig)
+            legacy_orig = Path(rec_str + ".orig")
+            if legacy_orig.exists():
+                orphaned_orig.append(legacy_orig)
                 LOG.debug(
-                    f"Orphaned .orig: {orig_path} "
+                    f"Orphaned legacy .orig: {legacy_orig} "
                     f"(processed recording deleted: {recording_path})"
                 )
+
+            # Old-style *.orig.mpg  (e.g. video.orig.mpg)
+            if rec_str.endswith(".mpg"):
+                old_orig_mpg = Path(rec_str[: -len(".mpg")] + ".orig.mpg")
+                if old_orig_mpg.exists():
+                    orphaned_orig.append(old_orig_mpg)
+                    LOG.debug(
+                        f"Orphaned legacy .orig.mpg: {old_orig_mpg} "
+                        f"(processed recording deleted: {recording_path})"
+                    )
+
+            # .srt shares the stem but has .srt extension (e.g. video.srt)
+            srt_path = recording_path.with_suffix(".srt")
 
             if srt_path.exists():
                 orphaned_srt.append(srt_path)
@@ -268,7 +372,7 @@ def find_orphaned_files() -> Tuple[List[Path], List[Path]]:
 
         LOG.info(
             f"History-based scan found {len(orphaned_orig)} orphaned "
-            f".orig files and {len(orphaned_srt)} orphaned .srt files "
+            f"backup/temp files and {len(orphaned_srt)} orphaned .srt files "
             f"from {len(processed_paths)} processed recordings"
         )
 
@@ -282,12 +386,13 @@ def find_orphaned_files() -> Tuple[List[Path], List[Path]]:
 def quarantine_orphaned_files(
     orig_files: List[Path], srt_files: List[Path], dry_run: bool = False
 ) -> Tuple[int, int]:
-    """Quarantine orphaned .orig and .srt files instead of deleting them.
+    """Quarantine orphaned backup/temp and .srt files instead of deleting them.
 
     Files are moved to quarantine with an expiration date, allowing restore if needed.
 
     Args:
-        orig_files: List of orphaned .orig files to quarantine
+        orig_files: List of orphaned backup/temp files to quarantine
+            (includes .cc4chan.orig, .orig, .orig.mpg, and .cc4chan.* temp files)
         srt_files: List of orphaned .srt files to quarantine
         dry_run: If True, only log what would be quarantined without moving files
 
@@ -311,12 +416,21 @@ def quarantine_orphaned_files(
     orig_failed = 0
     srt_failed = 0
 
-    # Quarantine .orig files
+    # Quarantine backup/temp files (.orig, .cc4chan.*, .orig.mpg)
     for orig_file in orig_files:
         try:
             if dry_run:
-                LOG.info(f"[DRY RUN] Would quarantine orphaned .orig: {orig_file}")
+                LOG.info(f"[DRY RUN] Would quarantine orphaned: {orig_file}")
             else:
+                # Determine file type label for quarantine record
+                name = str(orig_file)
+                if ".cc4chan." in name:
+                    file_type = "cc4chan_temp"
+                elif name.endswith(".orig.mpg"):
+                    file_type = "legacy_orig"
+                else:
+                    file_type = "orig"
+
                 # Try to find associated recording path
                 recording_path = None
                 if orig_file.parent.parent.is_dir():
@@ -325,12 +439,12 @@ def quarantine_orphaned_files(
 
                 service.quarantine_file(
                     original_path=str(orig_file),
-                    file_type="orig",
+                    file_type=file_type,
                     recording_path=recording_path,
                     reason="orphaned_by_pipeline",
                     expiration_days=QUARANTINE_EXPIRATION_DAYS,
                 )
-                LOG.info(f"Quarantined orphaned .orig: {orig_file}")
+                LOG.info(f"Quarantined orphaned {file_type}: {orig_file}")
             orig_quarantined += 1
         except Exception as e:
             orig_failed += 1
