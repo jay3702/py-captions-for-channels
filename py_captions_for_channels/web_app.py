@@ -1959,7 +1959,7 @@ async def delete_quarantined_files(item_ids: list[int]) -> dict:
                 cancelled,
             ) in service.delete_files_batch(
                 item_ids,
-                batch_size=50,
+                batch_size=200,
                 cancel_check=cancel_check,
             ):
                 last_progress = (current, total, deleted, failed, cancelled)
