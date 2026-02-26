@@ -5,7 +5,8 @@ import os
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ..models import QuarantineItem
 
@@ -200,7 +201,7 @@ class QuarantineService:
         if not include_expired:
             query = query.filter(QuarantineItem.expires_at > datetime.utcnow())
 
-        return query.order_by(QuarantineItem.created_at.desc()).all()
+        return query.order_by(QuarantineItem.original_path.asc()).all()
 
     def get_expired_files(self) -> List[QuarantineItem]:
         """Get all quarantined files past their expiration date.
@@ -232,6 +233,144 @@ class QuarantineService:
                 count += 1
 
         return count
+
+    def delete_files_batch(
+        self,
+        item_ids: List[int],
+        batch_size: int = 50,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ):
+        """Delete multiple quarantined files with batched DB commits.
+
+        Yields progress tuples as (current, total, deleted, failed, cancelled).
+
+        Args:
+            item_ids: List of QuarantineItem IDs to delete
+            batch_size: Number of items to process before committing
+            cancel_check: Called between items; return True to cancel
+
+        Yields:
+            Tuples of (current, total, deleted, failed, cancelled)
+        """
+        deleted = 0
+        failed = 0
+        cancelled = False
+        total = len(item_ids)
+        now = datetime.now(timezone.utc)
+
+        # Pre-fetch all items in one query
+        items = (
+            self.db.query(QuarantineItem).filter(QuarantineItem.id.in_(item_ids)).all()
+        )
+        item_map = {item.id: item for item in items}
+
+        for i, item_id in enumerate(item_ids):
+            # Check cancellation
+            if cancel_check and cancel_check():
+                cancelled = True
+                LOG.info(
+                    "Delete batch cancelled at %d/%d (deleted=%d)",
+                    i,
+                    total,
+                    deleted,
+                )
+                break
+
+            item = item_map.get(item_id)
+            if not item or item.status != "quarantined":
+                failed += 1
+                continue
+
+            try:
+                quarantine_path = Path(item.quarantine_path)
+                if quarantine_path.exists():
+                    os.remove(quarantine_path)
+
+                item.status = "deleted"
+                item.deleted_at = now
+                deleted += 1
+
+            except Exception as e:
+                failed += 1
+                LOG.error("Failed to delete item %d: %s", item_id, e)
+
+            # Batch commit
+            if (i + 1) % batch_size == 0:
+                self.db.commit()
+
+            # Yield progress every 10 items or on last item
+            if (i + 1) % 10 == 0 or i == total - 1:
+                yield (i + 1, total, deleted, failed, cancelled)
+
+        # Final commit for remaining items
+        self.db.commit()
+
+        # Yield final state
+        yield (total if not cancelled else i, total, deleted, failed, cancelled)
+
+    def deduplicate(self) -> dict:
+        """Remove duplicate quarantine entries (keep newest for each original_path).
+
+        Duplicates can arise from race conditions in concurrent scans.
+
+        Returns:
+            Dict with duplicates_removed count and details
+        """
+        # Find original_paths with more than one active quarantine record
+        dupes = (
+            self.db.query(
+                QuarantineItem.original_path,
+                func.count(QuarantineItem.id).label("cnt"),
+            )
+            .filter(QuarantineItem.status == "quarantined")
+            .group_by(QuarantineItem.original_path)
+            .having(func.count(QuarantineItem.id) > 1)
+            .all()
+        )
+
+        removed = 0
+        details = []
+
+        for original_path, count in dupes:
+            # Get all records for this path, newest first
+            records = (
+                self.db.query(QuarantineItem)
+                .filter(
+                    QuarantineItem.original_path == original_path,
+                    QuarantineItem.status == "quarantined",
+                )
+                .order_by(QuarantineItem.created_at.desc())
+                .all()
+            )
+
+            # Keep the first (newest) record, mark the rest as duplicates
+            for dup in records[1:]:
+                # If the quarantine file doesn't exist, just mark as deleted
+                quarantine_path = Path(dup.quarantine_path)
+                if quarantine_path.exists():
+                    try:
+                        os.remove(quarantine_path)
+                    except OSError as e:
+                        LOG.warning(
+                            "Could not remove duplicate quarantine file %s: %s",
+                            quarantine_path,
+                            e,
+                        )
+
+                dup.status = "deleted"
+                dup.deleted_at = datetime.now(timezone.utc)
+                removed += 1
+                details.append(f"Removed duplicate #{dup.id} for {original_path}")
+
+        if removed > 0:
+            self.db.commit()
+            LOG.info("Deduplicated quarantine: removed %d duplicate entries", removed)
+
+        return {
+            "duplicates_removed": removed,
+            "duplicate_paths": len(dupes),
+            "details": details,
+        }
 
     def get_quarantine_stats(self) -> dict:
         """Get statistics about quarantined files.

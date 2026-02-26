@@ -10,7 +10,7 @@
   <link rel="icon" type="image/x-icon" href="/static/channels_cc_favicon_big/favicon.ico?v=3">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/channels_cc_favicon_big/icon-180.png">
   <link rel="manifest" href="/static/channels_cc_favicon_big/site.webmanifest" />
-  <link rel="stylesheet" href="/static/style.css?v=1772119000" />
+  <link rel="stylesheet" href="/static/style.css?v=1772120000" />
   <link rel="stylesheet" href="/static/vendor/uplot.min.css" />
 </head>
 <body>
@@ -165,6 +165,7 @@
           <div style="margin-left:auto; display:flex; gap:8px;">
             <button class="btn-small" onclick="scanForOrphans()">Scan (History)</button>
             <button class="btn-small" onclick="deepScanForOrphans()">Deep Scan (Filesystem)</button>
+            <button class="btn-small" onclick="dedupQuarantine()">Dedup</button>
             <button class="btn-small" onclick="restoreSelected()">Restore Selected</button>
             <button class="btn-small btn-danger" onclick="deleteSelected()">Delete Selected</button>
           </div>
@@ -215,6 +216,21 @@
               Orphans found: 0
             </div>
           </div>
+
+          <!-- Delete progress display -->
+          <div id="delete-progress" style="display: none; margin-top: 10px; padding: 10px; background: #1a1a1a; border-radius: 4px; border: 1px solid #533;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span id="delete-status" style="color: #f55; font-size: 0.85em; font-weight: 500;">Deleting files...</span>
+              <span id="delete-counter" style="color: #888; font-size: 0.8em;">0 / 0</span>
+            </div>
+            <div style="width: 100%; height: 6px; background: #333; border-radius: 3px; overflow: hidden;">
+              <div id="delete-bar" style="height: 100%; width: 0%; background: #f55; border-radius: 3px; transition: width 0.15s ease;"></div>
+            </div>
+            <div style="margin-top: 6px; text-align: right;">
+              <button id="delete-cancel-btn" class="btn-small btn-danger" onclick="cancelDelete()" style="display: none;">Cancel Delete</button>
+            </div>
+          </div>
+
           <p style="margin: 0; color: #666; font-size: 0.85em;" id="quarantine-scan-status">
             <strong>Scan (History):</strong> Detects orphans from recordings you processed. <strong>Deep Scan:</strong> Scans configured paths for all orphaned files.
           </p>
@@ -349,6 +365,6 @@
     </div>
 
   <script src="/static/vendor/uplot.min.js"></script>
-  <script src="/static/main.js?v=1772119000"></script>
+  <script src="/static/main.js?v=1772120000"></script>
 </body>
 </html>

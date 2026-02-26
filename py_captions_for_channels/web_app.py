@@ -66,6 +66,9 @@ cleanup_task = None
 # where two scans quarantine the same files simultaneously)
 _scan_lock = threading.Lock()
 
+# Cancel flag for delete operations
+_delete_cancel = threading.Event()
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -1884,13 +1887,99 @@ async def restore_quarantined_files(item_ids: list[int]) -> dict:
 
 @app.post("/api/quarantine/delete")
 async def delete_quarantined_files(item_ids: list[int]) -> dict:
-    """Permanently delete selected files from quarantine.
+    """Permanently delete selected files from quarantine (streaming SSE).
+
+    Streams progress events so the UI can show real-time feedback
+    and supports cancellation via /api/quarantine/delete/cancel.
 
     Args:
         item_ids: List of QuarantineItem IDs to delete
 
     Returns:
-        Result with counts of deleted and failed items
+        SSE stream with progress and final result
+    """
+    _delete_cancel.clear()
+
+    def generate():
+        try:
+            from py_captions_for_channels.config import QUARANTINE_DIR
+            from py_captions_for_channels.services.quarantine_service import (
+                QuarantineService,
+            )
+
+            db = next(get_db())
+            service = QuarantineService(db, QUARANTINE_DIR)
+
+            def cancel_check():
+                return _delete_cancel.is_set()
+
+            last_progress = None
+            for (
+                current,
+                total,
+                deleted,
+                failed,
+                cancelled,
+            ) in service.delete_files_batch(
+                item_ids,
+                batch_size=50,
+                cancel_check=cancel_check,
+            ):
+                last_progress = (current, total, deleted, failed, cancelled)
+                event = {
+                    "phase": "deleting",
+                    "current": current,
+                    "total": total,
+                    "deleted": deleted,
+                    "failed": failed,
+                }
+                yield f"data: {json.dumps(event)}\n\n"
+
+            # Final result
+            if last_progress:
+                current, total, deleted, failed, cancelled = last_progress
+            else:
+                deleted, failed, cancelled = 0, 0, False
+
+            done_event = {
+                "phase": "done",
+                "success": True,
+                "deleted": deleted,
+                "failed": failed,
+                "cancelled": cancelled,
+                "total": len(item_ids),
+            }
+            yield f"data: {json.dumps(done_event)}\n\n"
+
+            logger.info(
+                "Delete batch: deleted=%d, failed=%d, cancelled=%s",
+                deleted,
+                failed,
+                cancelled,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to delete quarantined files: {e}", exc_info=True)
+            error_event = {"phase": "error", "message": str(e)}
+            yield f"data: {json.dumps(error_event)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/api/quarantine/delete/cancel")
+async def cancel_delete() -> dict:
+    """Cancel an in-progress delete operation."""
+    _delete_cancel.set()
+    logger.info("Delete cancellation requested")
+    return {"success": True, "message": "Cancel signal sent"}
+
+
+@app.post("/api/quarantine/dedup")
+async def dedup_quarantine() -> dict:
+    """Remove duplicate quarantine entries.
+
+    Returns:
+        Deduplication results
     """
     try:
         from py_captions_for_channels.config import QUARANTINE_DIR
@@ -1900,33 +1989,11 @@ async def delete_quarantined_files(item_ids: list[int]) -> dict:
 
         db = next(get_db())
         service = QuarantineService(db, QUARANTINE_DIR)
-
-        deleted = 0
-        failed = 0
-        errors = []
-
-        for item_id in item_ids:
-            try:
-                if service.delete_file(item_id):
-                    deleted += 1
-                else:
-                    failed += 1
-                    errors.append(f"Failed to delete item {item_id}")
-            except Exception as e:
-                failed += 1
-                errors.append(f"Item {item_id}: {str(e)}")
-
-        logger.info(f"Deleted {deleted} items from quarantine, {failed} failed")
-
-        return {
-            "success": True,
-            "deleted": deleted,
-            "failed": failed,
-            "errors": errors if errors else None,
-        }
+        result = service.deduplicate()
+        return {"success": True, **result}
     except Exception as e:
-        logger.error(f"Failed to delete quarantined files: {e}", exc_info=True)
-        return {"success": False, "error": str(e), "deleted": 0, "failed": 0}
+        logger.error(f"Failed to deduplicate quarantine: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/quarantine/stats")
