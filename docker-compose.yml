@@ -27,17 +27,21 @@ services:
       - KEEP_ORIGINAL=${KEEP_ORIGINAL:-true}
       - CAPTION_COMMAND=${CAPTION_COMMAND:-}
       
-      - STATE_FILE=${STATE_FILE:-/app/data/state.json}
+      # Data storage — all persistent data lives under DATA_DIR inside the
+      # container (/app/data by default).  The volume mount below controls
+      # where that maps on the host.  Individual paths can still be overridden.
+      - DATA_DIR=${DATA_DIR:-/app/data}
       - DRY_RUN=${DRY_RUN:-false}
       - PIPELINE_TIMEOUT=${PIPELINE_TIMEOUT:-7200}
       - STALE_EXECUTION_SECONDS=${STALE_EXECUTION_SECONDS:-7200}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_VERBOSITY=${LOG_VERBOSITY:-NORMAL}
-      - LOG_FILE=${LOG_FILE:-/app/logs/app.log}
     
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      # Host data directory → container /app/data
+      # Change the left side to point to a volume with ample disk space.
+      # Example: /tank/py-captions:/app/data
+      - ${HOST_DATA_DIR:-./data}:/app/data
       - ./py_captions_for_channels:/app/py_captions_for_channels
       - ./.env:/app/.env
       - /tank/AllMedia/Channels:/tank/AllMedia/Channels:rw
