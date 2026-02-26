@@ -609,7 +609,7 @@ body {
 
 .exec-list-compact {
   min-height: 60px;
-  max-height: 260px;
+  max-height: 150px;
   overflow-y: auto;
 }
 
