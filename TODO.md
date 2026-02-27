@@ -92,6 +92,26 @@ Simplify whitelist creation by letting users select desired/undesired recordings
 
 ## Post-v1 Features
 
+### Channels Files Audit (Experimental — Implemented)
+Cross-reference the Channels DVR `/dvr/files` API with the actual filesystem to detect discrepancies. Gated behind `CHANNELS_FILES_ENABLED=true`.
+
+**Current capabilities (v1):**
+- 3-phase audit: index API records → check for missing files → scan for orphaned files
+- SSE streaming progress with cancellation support
+- Summary cards, missing/orphaned/empty-folder tables in UI
+- Feature flag gating (`CHANNELS_FILES_ENABLED`)
+
+**Suggested future enhancements:**
+1. **File modification dates & sorting** — Add mtime to orphan records so users can correlate orphans with known events (disk failures, manual cleanups)
+2. **Grouping by show/folder** — Aggregate missing and orphaned counts per series/folder to identify which shows are most affected
+3. **Delete stale API records** — For confirmed-missing files, call `DELETE /dvr/files/{id}` to clean up Channels DVR's database
+4. **Quarantine orphaned files** — Integrate with the existing quarantine system to safely move orphans before permanent deletion
+5. **Scheduled/periodic audits** — Run audits on a timer (like orphan cleanup) and alert on new discrepancies
+6. **Export report** — CSV/JSON download of audit results for offline analysis
+7. **Size breakdown** — Show total disk usage per category (missing vs orphaned) and per-show sizes
+8. **Diff between runs** — Track audit results over time and highlight what changed since the last audit
+9. **Selective re-import** — For orphaned files that look like valid recordings, offer to re-register them with Channels DVR
+
 ### AI-Assisted Video Format Detection & Configuration
 Automatically detect and handle diverse video encoding formats using AI and a learning knowledge base.
 
