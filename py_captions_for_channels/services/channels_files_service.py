@@ -181,6 +181,10 @@ def audit_files(
         # Files on disk but NOT in the API
         extra = disk_files - api_filenames
         for name in sorted(extra):
+            # Skip companion files (.srt, .orig, .cc4chan.*) whose
+            # parent recording IS tracked by the API in this folder.
+            if _is_companion_of_api_file(name, api_filenames):
+                continue
             full = str(folder_path / name)
             try:
                 size = os.path.getsize(full)
@@ -264,6 +268,54 @@ def audit_files(
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
+# Suffixes appended to recording filenames by py-captions-for-channels.
+# Longest first so we strip the most specific match.
+_COMPANION_SUFFIXES = (
+    ".cc4chan.orig.tmp",
+    ".cc4chan.muxed.mp4",
+    ".cc4chan.temp.wav",
+    ".cc4chan.av.mp4",
+    ".cc4chan.orig",
+    ".srt.cc4chan.tmp",
+    ".srt",
+    ".orig.tmp",
+    ".orig",
+)
+
+
+def _is_companion_of_api_file(filename: str, api_filenames: Set[str]) -> bool:
+    """Return True if *filename* is a sidecar of an API-tracked file.
+
+    Strips known companion suffixes (.srt, .orig, .cc4chan.*) and checks
+    whether the resulting base name is in *api_filenames*.
+    """
+    for suffix in _COMPANION_SUFFIXES:
+        if filename.endswith(suffix):
+            base = filename[: -len(suffix)]
+            # base must be non-empty and match a real API file
+            if base and any(af.startswith(base) and af == base for af in api_filenames):
+                return True
+            # Also check with common media extensions appended
+            # e.g. "recording.mpg.srt" → base="recording.mpg"
+            # which is already the full filename — covered above.
+            # But "recording.srt" → base="recording" which needs
+            # an extension to match "recording.mpg"
+            if base:
+                for af in api_filenames:
+                    if af.startswith(base + "."):
+                        return True
+    # Catch-all for .cc4chan. in the name (temp files)
+    if ".cc4chan." in filename:
+        # Extract everything before .cc4chan.
+        base = filename.split(".cc4chan.")[0]
+        if base and base in api_filenames:
+            return True
+        if base:
+            for af in api_filenames:
+                if af.startswith(base + "."):
+                    return True
+    return False
 
 
 def _extract_title(rec: dict) -> str:
