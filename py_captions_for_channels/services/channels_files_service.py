@@ -21,6 +21,10 @@ import requests
 
 LOG = logging.getLogger(__name__)
 
+# Top-level Channels DVR folders to scan for orphaned files.
+# These are the standard content directories under the recordings root.
+SCAN_ROOTS = ("Imports", "Movies", "TV", "Video")
+
 
 def fetch_dvr_files(dvr_url: str, timeout: int = 30) -> List[dict]:
     """Fetch every file record from ``GET /dvr/files``.
@@ -108,6 +112,12 @@ def audit_files(
         # Normalize Windows-style backslashes from older API records
         rel_path = rel_path.replace("\\", "/")
 
+        # Imported files store their folder prefix separately
+        import_prefix = rec.get("ImportPath", "")
+        if import_prefix:
+            import_prefix = import_prefix.replace("\\", "/").rstrip("/")
+            rel_path = import_prefix + "/" + rel_path
+
         abs_path = str(recordings_root / rel_path)
         api_paths.add(abs_path)
         folder = str(Path(abs_path).parent)
@@ -156,6 +166,13 @@ def audit_files(
         if not rel_path:
             continue
         rel_path = rel_path.replace("\\", "/")
+
+        # Imported files store their folder prefix separately
+        import_prefix = rec.get("ImportPath", "")
+        if import_prefix:
+            import_prefix = import_prefix.replace("\\", "/").rstrip("/")
+            rel_path = import_prefix + "/" + rel_path
+
         abs_path = str(recordings_root / rel_path)
         folder = str(Path(abs_path).parent)
         deleted_folders[folder].add(Path(abs_path).name)
@@ -284,7 +301,82 @@ def audit_files(
                 "orphans": len(orphaned_files),
                 "message": (
                     f"Found {len(orphaned_files)} orphaned"
-                    f" file(s) in {total_folders} folders"
+                    f" file(s) in {total_folders} API folders"
+                ),
+            }
+        )
+
+    # ------------------------------------------------------------------
+    # Phase 3b — Walk top-level roots for unreferenced folders
+    # ------------------------------------------------------------------
+    # Phase 3 only visits folders that contain API-tracked files.
+    # Walk all known Channels DVR content roots to catch orphans in
+    # folders the API has no record of.
+    extra_folders_checked = 0
+    for root_name in SCAN_ROOTS:
+        root_dir = recordings_root / root_name
+        if not root_dir.is_dir():
+            continue
+        for dirpath, _dirnames, filenames in os.walk(str(root_dir)):
+            if cancel_check and cancel_check():
+                return _cancelled_result(
+                    total_folders + extra_folders_checked, total_folders
+                )
+            folder = str(Path(dirpath))
+            if folder in api_folders:
+                continue  # already processed in Phase 3
+
+            extra_folders_checked += 1
+            if not filenames:
+                # Track empty folders inside the roots too
+                empty_folders.append(folder)
+                continue
+
+            deleted_filenames_extra = deleted_folders.get(folder, set())
+            for name in sorted(filenames):
+                is_trash = name in deleted_filenames_extra or _is_companion_of_api_file(
+                    name, deleted_filenames_extra
+                )
+                full = os.path.join(folder, name)
+                try:
+                    size = os.path.getsize(full)
+                except OSError:
+                    size = None
+                orphaned_files.append(
+                    {
+                        "path": full,
+                        "rel_path": _make_relative(full, recordings_root),
+                        "folder": folder,
+                        "filename": name,
+                        "size_bytes": size,
+                        "trash": is_trash,
+                    }
+                )
+
+            if progress_callback and extra_folders_checked % 50 == 0:
+                progress_callback(
+                    {
+                        "phase": "scanning_roots",
+                        "current": extra_folders_checked,
+                        "total": extra_folders_checked,
+                        "orphans": len(orphaned_files),
+                        "message": (
+                            f"Scanning content roots:"
+                            f" {extra_folders_checked} extra folders"
+                        ),
+                    }
+                )
+
+    if extra_folders_checked and progress_callback:
+        progress_callback(
+            {
+                "phase": "scanning_roots",
+                "current": extra_folders_checked,
+                "total": extra_folders_checked,
+                "orphans": len(orphaned_files),
+                "message": (
+                    f"Scanned {extra_folders_checked} extra folders"
+                    f" outside API scope — {len(orphaned_files)} total orphans"
                 ),
             }
         )
@@ -303,7 +395,7 @@ def audit_files(
         "cancelled": False,
         "summary": {
             "api_file_count": len(api_records),
-            "api_folder_count": len(api_folders),
+            "api_folder_count": len(api_folders) + extra_folders_checked,
             "deleted_file_count": deleted_count,
             "missing_count": len(missing_files),
             "orphaned_count": len(orphaned_files),
@@ -319,11 +411,12 @@ def audit_files(
 
     LOG.info(
         "Channels Files audit complete: %d API files, %d deleted, %d missing, "
-        "%d orphaned, %d empty folders",
+        "%d orphaned (%d extra root folders), %d empty folders",
         len(api_records),
         deleted_count,
         len(missing_files),
         len(orphaned_files),
+        extra_folders_checked,
         len(empty_folders),
     )
 
