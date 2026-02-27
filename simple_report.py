@@ -37,12 +37,14 @@ if total > 0:
     print(f"  Success Rate:      {success_rate:.1f}%")
 
 # Get all successful executions with durations
-cursor.execute("""
+cursor.execute(
+    """
     SELECT started_at, elapsed_seconds, title
     FROM executions 
     WHERE status='completed' AND success=1 AND elapsed_seconds IS NOT NULL AND elapsed_seconds > 0
     ORDER BY started_at
-""")
+"""
+)
 execs = cursor.fetchall()
 
 if execs:

@@ -16,7 +16,8 @@ conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 
 # Get all successful executions with durations
-cursor.execute("""
+cursor.execute(
+    """
     SELECT started_at, elapsed_seconds, title
     FROM executions 
     WHERE status='completed' 
@@ -24,7 +25,8 @@ cursor.execute("""
       AND elapsed_seconds IS NOT NULL 
       AND elapsed_seconds > 0
     ORDER BY started_at
-""")
+"""
+)
 execs = cursor.fetchall()
 
 if not execs:
