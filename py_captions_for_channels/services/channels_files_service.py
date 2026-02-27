@@ -41,10 +41,33 @@ def fetch_dvr_files(dvr_url: str, timeout: int = 30) -> List[dict]:
     return files
 
 
+def fetch_deleted_files(dvr_url: str, timeout: int = 30) -> List[dict]:
+    """Fetch deleted/trashed file records from ``GET /dvr/files?deleted=true``.
+
+    These are files the DVR has soft-deleted but may still exist on disk.
+    Their paths should be treated as "known" to avoid false-positive orphans.
+
+    Args:
+        dvr_url: Channels DVR base URL (e.g. ``http://localhost:8089``)
+        timeout: HTTP request timeout in seconds
+
+    Returns:
+        List of deleted file dicts from the API.
+    """
+    url = f"{dvr_url.rstrip('/')}/dvr/files?deleted=true"
+    LOG.info("Fetching deleted/trashed DVR files from %s", url)
+    resp = requests.get(url, timeout=timeout)
+    resp.raise_for_status()
+    files = resp.json()
+    LOG.info("Channels DVR returned %d deleted file records", len(files))
+    return files
+
+
 def audit_files(
     dvr_files: List[dict],
     recordings_path: str,
     *,
+    deleted_files: Optional[List[dict]] = None,
     progress_callback: Optional[Callable[[dict], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
 ) -> dict:
@@ -53,6 +76,9 @@ def audit_files(
     Args:
         dvr_files: List of file dicts from ``/dvr/files``
         recordings_path: Absolute path to the DVR recordings root
+        deleted_files: Optional list of deleted/trashed file dicts from
+            ``/dvr/files?deleted=true``.  Their paths are added to the
+            "known" set so they are **not** flagged as orphans.
         progress_callback: Optional callback receiving progress dicts
         cancel_check: Optional callable; return True to abort early
 
@@ -117,6 +143,27 @@ def audit_files(
                 ),
             }
         )
+
+    # ------------------------------------------------------------------
+    # Phase 1b — Index deleted/trashed files
+    # ------------------------------------------------------------------
+    # Deleted files still on disk should NOT be counted as orphans.
+    # We add their paths to api_folders so Phase 3 considers them
+    # "known", but we do NOT add them to api_records so Phase 2
+    # won't report them as "missing" when they are eventually purged.
+    deleted_count = 0
+    for rec in deleted_files or []:
+        rel_path = rec.get("Path", "")
+        if not rel_path:
+            continue
+        rel_path = rel_path.replace("\\", "/")
+        abs_path = str(recordings_root / rel_path)
+        folder = str(Path(abs_path).parent)
+        api_folders[folder].add(Path(abs_path).name)
+        deleted_count += 1
+
+    if deleted_count:
+        LOG.info("Indexed %d deleted/trashed file paths into known set", deleted_count)
 
     # ------------------------------------------------------------------
     # Phase 2 — Check API files exist on disk
@@ -243,6 +290,7 @@ def audit_files(
         "summary": {
             "api_file_count": len(api_records),
             "api_folder_count": len(api_folders),
+            "deleted_file_count": deleted_count,
             "missing_count": len(missing_files),
             "orphaned_count": len(orphaned_files),
             "orphaned_total_bytes": total_orphan_bytes,
@@ -254,9 +302,10 @@ def audit_files(
     }
 
     LOG.info(
-        "Channels Files audit complete: %d API files, %d missing, "
+        "Channels Files audit complete: %d API files, %d deleted, %d missing, "
         "%d orphaned, %d empty folders",
         len(api_records),
+        deleted_count,
         len(missing_files),
         len(orphaned_files),
         len(empty_folders),

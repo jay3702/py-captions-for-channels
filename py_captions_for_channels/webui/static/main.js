@@ -3059,6 +3059,10 @@ function renderAuditResults(data) {
         <div style="font-size: 0.8em; color: #888;">Folders</div>
       </div>
       <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 1.6em; font-weight: 700; color: #888;">${s.deleted_file_count || 0}</div>
+        <div style="font-size: 0.8em; color: #888;">Deleted (Trash)</div>
+      </div>
+      <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
         <div style="font-size: 1.6em; font-weight: 700; color: ${s.missing_count ? '#f55' : '#4f4'};">${s.missing_count || 0}</div>
         <div style="font-size: 0.8em; color: #888;">Missing</div>
       </div>

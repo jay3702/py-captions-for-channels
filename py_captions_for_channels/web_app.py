@@ -2809,6 +2809,7 @@ async def channels_files_audit_stream():
 
     from py_captions_for_channels.services.channels_files_service import (
         audit_files,
+        fetch_deleted_files,
         fetch_dvr_files,
     )
 
@@ -2866,10 +2867,29 @@ async def channels_files_audit_stream():
             msg = json.dumps(
                 {
                     "phase": "fetching",
-                    "message": f"Retrieved {count} file records" " from API",
+                    "message": f"Retrieved {count} file records from API",
                 }
             )
             yield f"data: {msg}\n\n"
+
+            # Also fetch deleted/trashed files so they aren't
+            # flagged as orphans while still on disk.
+            deleted_files: list = []
+            try:
+                deleted_files = fetch_deleted_files(CHANNELS_DVR_URL, timeout=60)
+            except Exception as exc:
+                LOG.warning("Could not fetch deleted files: %s", exc)
+            if deleted_files:
+                msg = json.dumps(
+                    {
+                        "phase": "fetching",
+                        "message": (
+                            f"Retrieved {len(deleted_files)} deleted/"
+                            f"trashed file records from API"
+                        ),
+                    }
+                )
+                yield f"data: {msg}\n\n"
 
             if _audit_cancel.is_set():
                 done = json.dumps(
@@ -2896,6 +2916,7 @@ async def channels_files_audit_stream():
                 audit_files,
                 dvr_files,
                 DVR_RECORDINGS_PATH,
+                deleted_files=deleted_files,
                 progress_callback=on_progress,
                 cancel_check=is_cancelled,
             )
