@@ -26,7 +26,9 @@ from .config import (
     CAPTION_COMMAND,
     STALE_EXECUTION_SECONDS,
     CHANNELS_API_URL,
+    CHANNELS_DVR_URL,
     CHANNELWATCH_URL,
+    DVR_RECORDINGS_PATH,
     LOG_VERBOSITY,
     LOG_VERBOSITY_FILE,
     USE_MOCK,
@@ -35,6 +37,7 @@ from .config import (
     ORPHAN_CLEANUP_ENABLED,
     ORPHAN_CLEANUP_INTERVAL_HOURS,
     ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES,
+    CHANNELS_FILES_ENABLED,
 )
 from .state import StateBackend
 from .execution_tracker import build_manual_process_job_id, get_tracker
@@ -71,6 +74,10 @@ _delete_cancel = threading.Event()
 
 # Cancel flag for deep scan operations
 _scan_cancel = threading.Event()
+
+# Cancel flag for Channels Files audit
+_audit_cancel = threading.Event()
+_audit_lock = threading.Lock()
 
 
 def _build_quarantine_service(db):
@@ -2776,3 +2783,167 @@ async def shutdown_status() -> dict:
     except Exception as e:
         LOG.error("Error getting shutdown status: %s", e, exc_info=True)
         return {"error": str(e)}
+
+
+# =========================================================================
+# Channels Files Audit (Experimental)
+# =========================================================================
+
+
+@app.get("/api/channels-files/enabled")
+async def channels_files_enabled() -> dict:
+    """Return whether the Channels Files audit feature is enabled."""
+    return {"enabled": CHANNELS_FILES_ENABLED}
+
+
+@app.get("/api/channels-files/audit/stream")
+async def channels_files_audit_stream():
+    """Stream Channels Files audit progress via Server-Sent Events.
+
+    Fetches all file records from the Channels DVR API, then cross-
+    references them with the filesystem to find missing and orphaned
+    files.  Progress events are streamed in real time.
+    """
+    import concurrent.futures
+    import queue as thread_queue
+
+    from py_captions_for_channels.services.channels_files_service import (
+        audit_files,
+        fetch_dvr_files,
+    )
+
+    if not CHANNELS_FILES_ENABLED:
+
+        def _disabled():
+            evt = json.dumps(
+                {
+                    "phase": "error",
+                    "message": "Channels Files feature is not "
+                    "enabled. Set CHANNELS_FILES_ENABLED=true.",
+                }
+            )
+            yield f"data: {evt}\n\n"
+
+        return StreamingResponse(_disabled(), media_type="text/event-stream")
+
+    _audit_cancel.clear()
+
+    def generate():
+        if not _audit_lock.acquire(blocking=False):
+            evt = json.dumps(
+                {
+                    "phase": "error",
+                    "message": "An audit is already in progress."
+                    " Please wait for it to finish.",
+                }
+            )
+            yield f"data: {evt}\n\n"
+            return
+
+        try:
+            # Phase 0 — fetch file list from Channels DVR API
+            msg = json.dumps(
+                {
+                    "phase": "fetching",
+                    "message": "Fetching file list from " "Channels DVR API...",
+                }
+            )
+            yield f"data: {msg}\n\n"
+
+            try:
+                dvr_files = fetch_dvr_files(CHANNELS_DVR_URL, timeout=60)
+            except Exception as exc:
+                evt = json.dumps(
+                    {
+                        "phase": "error",
+                        "message": f"Failed to fetch DVR files: {exc}",
+                    }
+                )
+                yield f"data: {evt}\n\n"
+                return
+
+            count = len(dvr_files)
+            msg = json.dumps(
+                {
+                    "phase": "fetching",
+                    "message": f"Retrieved {count} file records" " from API",
+                }
+            )
+            yield f"data: {msg}\n\n"
+
+            if _audit_cancel.is_set():
+                done = json.dumps(
+                    {
+                        "phase": "done",
+                        "success": True,
+                        "cancelled": True,
+                    }
+                )
+                yield f"data: {done}\n\n"
+                return
+
+            # Run audit in background thread with progress streaming
+            progress_q: thread_queue.Queue = thread_queue.Queue()
+
+            def on_progress(info):
+                progress_q.put(info)
+
+            def is_cancelled():
+                return _audit_cancel.is_set()
+
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                audit_files,
+                dvr_files,
+                DVR_RECORDINGS_PATH,
+                progress_callback=on_progress,
+                cancel_check=is_cancelled,
+            )
+
+            # Drain progress events while audit runs
+            while not future.done():
+                try:
+                    info = progress_q.get(timeout=0.1)
+                    yield f"data: {json.dumps(info)}\n\n"
+                except thread_queue.Empty:
+                    continue
+
+            # Drain remaining events
+            while not progress_q.empty():
+                info = progress_q.get_nowait()
+                yield f"data: {json.dumps(info)}\n\n"
+
+            # Get final result
+            try:
+                result = future.result()
+            except Exception as exc:
+                evt = json.dumps({"phase": "error", "message": str(exc)})
+                yield f"data: {evt}\n\n"
+                executor.shutdown(wait=False)
+                return
+
+            executor.shutdown(wait=False)
+
+            # Stream final result
+            result["phase"] = "done"
+            yield f"data: {json.dumps(result)}\n\n"
+
+        finally:
+            _audit_lock.release()
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/channels-files/audit/cancel")
+async def cancel_channels_files_audit() -> dict:
+    """Cancel an in-progress Channels Files audit."""
+    _audit_cancel.set()
+    logger.info("Channels Files audit cancellation requested")
+    return {"success": True, "message": "Cancel signal sent"}

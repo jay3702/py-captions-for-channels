@@ -850,16 +850,14 @@ function stopLogWebSocket() {
 
 // --- Tab switching logic: activate WebSocket only for logs tab ---
 function switchTab(tabName) {
-  // Update tab buttons
+  // Update tab buttons — match by onclick attribute for dynamic tab support
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.classList.remove('active');
-  });
-  // Find and activate the button for this tab
-  const buttons = document.querySelectorAll('.tab-btn');
-  buttons.forEach((btn, index) => {
-    const expectedTabs = ['executions', 'glances', 'logs', 'quarantine'];
-    if (expectedTabs[index] === tabName) {
+    const onclick = btn.getAttribute('onclick') || '';
+    const match = onclick.match(/switchTab\(['"]([^'"]+)['"]\)/);
+    if (match && match[1] === tabName) {
       btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
     }
   });
   
@@ -2178,6 +2176,8 @@ window.addEventListener('DOMContentLoaded', () => {
   if (activeTab && activeTab.id === 'glances-tab') {
     startSystemMonitor();
   }
+  // Check if Channels Files experimental feature is enabled
+  checkChannelsFilesEnabled();
 });
 
 // =========================================
@@ -2898,6 +2898,255 @@ async function dedupQuarantine() {
     console.error('Dedup failed:', error);
     alert('Dedup failed: ' + error.message);
   }
+}
+
+
+// =========================================
+// Channels Files Audit (Experimental)
+// =========================================
+
+async function checkChannelsFilesEnabled() {
+  try {
+    const res = await fetch('/api/channels-files/enabled');
+    const data = await res.json();
+    if (data.enabled) {
+      const btn = document.getElementById('channels-files-tab-btn');
+      if (btn) btn.style.display = '';
+    }
+  } catch (e) {
+    console.log('Channels Files feature check failed:', e);
+  }
+}
+
+let _auditEventSource = null;
+
+function runChannelsFilesAudit() {
+  // Show progress, hide placeholder and previous results
+  const progressEl = document.getElementById('audit-progress');
+  const resultsEl = document.getElementById('audit-results');
+  const placeholderEl = document.getElementById('audit-placeholder');
+  const runBtn = document.getElementById('audit-run-btn');
+  const cancelBtn = document.getElementById('audit-cancel-btn');
+
+  if (progressEl) progressEl.style.display = '';
+  if (resultsEl) resultsEl.style.display = 'none';
+  if (placeholderEl) placeholderEl.style.display = 'none';
+  if (runBtn) runBtn.disabled = true;
+  if (cancelBtn) cancelBtn.style.display = '';
+
+  const statusEl = document.getElementById('audit-progress-status');
+  const counterEl = document.getElementById('audit-progress-counter');
+  const barEl = document.getElementById('audit-progress-bar');
+  const detailEl = document.getElementById('audit-progress-detail');
+
+  if (statusEl) statusEl.textContent = 'Connecting...';
+  if (counterEl) counterEl.textContent = '';
+  if (barEl) barEl.style.width = '0%';
+  if (detailEl) detailEl.textContent = '—';
+
+  _auditEventSource = new EventSource('/api/channels-files/audit/stream');
+
+  _auditEventSource.onmessage = function(event) {
+    let data;
+    try { data = JSON.parse(event.data); } catch (e) { return; }
+
+    if (data.phase === 'error') {
+      if (statusEl) { statusEl.textContent = 'Error'; statusEl.style.color = '#f55'; }
+      if (detailEl) detailEl.textContent = data.message || 'Unknown error';
+      _closeAuditStream();
+      return;
+    }
+
+    if (data.phase === 'fetching') {
+      if (statusEl) statusEl.textContent = 'Fetching API data...';
+      if (detailEl) detailEl.textContent = data.message || '';
+      return;
+    }
+
+    if (data.phase === 'indexing') {
+      if (statusEl) statusEl.textContent = 'Indexing API records';
+      if (data.total > 0) {
+        const pct = Math.round((data.current / data.total) * 100);
+        if (barEl) barEl.style.width = pct + '%';
+        if (counterEl) counterEl.textContent = `${data.current} / ${data.total}`;
+      }
+      if (detailEl) detailEl.textContent = data.message || '';
+      return;
+    }
+
+    if (data.phase === 'checking_missing') {
+      if (statusEl) statusEl.textContent = 'Checking for missing files';
+      if (data.total > 0) {
+        const pct = Math.round((data.current / data.total) * 100);
+        if (barEl) barEl.style.width = pct + '%';
+        if (counterEl) counterEl.textContent = `${data.current} / ${data.total}`;
+      }
+      if (detailEl) detailEl.textContent = data.message || '';
+      return;
+    }
+
+    if (data.phase === 'checking_orphans') {
+      if (statusEl) statusEl.textContent = 'Scanning for orphaned files';
+      if (data.total > 0) {
+        const pct = Math.round((data.current / data.total) * 100);
+        if (barEl) barEl.style.width = pct + '%';
+        if (counterEl) counterEl.textContent = `${data.current} / ${data.total}`;
+      }
+      if (detailEl) detailEl.textContent = data.message || '';
+      return;
+    }
+
+    if (data.phase === 'done') {
+      _closeAuditStream();
+      if (data.cancelled) {
+        if (statusEl) { statusEl.textContent = 'Cancelled'; statusEl.style.color = '#f90'; }
+        if (detailEl) detailEl.textContent = 'Audit was cancelled.';
+      } else {
+        if (statusEl) { statusEl.textContent = 'Complete'; statusEl.style.color = '#4f4'; }
+        if (barEl) barEl.style.width = '100%';
+      }
+      if (data.summary) {
+        renderAuditResults(data);
+      }
+      return;
+    }
+  };
+
+  _auditEventSource.onerror = function() {
+    _closeAuditStream();
+    if (statusEl) { statusEl.textContent = 'Connection lost'; statusEl.style.color = '#f55'; }
+  };
+}
+
+function _closeAuditStream() {
+  if (_auditEventSource) {
+    _auditEventSource.close();
+    _auditEventSource = null;
+  }
+  const runBtn = document.getElementById('audit-run-btn');
+  const cancelBtn = document.getElementById('audit-cancel-btn');
+  if (runBtn) runBtn.disabled = false;
+  if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
+async function cancelChannelsFilesAudit() {
+  try {
+    await fetch('/api/channels-files/audit/cancel', { method: 'POST' });
+    const cancelBtn = document.getElementById('audit-cancel-btn');
+    if (cancelBtn) cancelBtn.textContent = 'Cancelling...';
+  } catch (e) {
+    console.error('Failed to cancel audit:', e);
+  }
+}
+
+function renderAuditResults(data) {
+  const resultsEl = document.getElementById('audit-results');
+  if (!resultsEl) return;
+  resultsEl.style.display = '';
+
+  const s = data.summary || {};
+
+  // Summary cards
+  const summaryEl = document.getElementById('audit-summary');
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 1.6em; font-weight: 700; color: #4a9eff;">${s.api_file_count || 0}</div>
+        <div style="font-size: 0.8em; color: #888;">API Files</div>
+      </div>
+      <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 1.6em; font-weight: 700; color: #4a9eff;">${s.api_folder_count || 0}</div>
+        <div style="font-size: 0.8em; color: #888;">Folders</div>
+      </div>
+      <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 1.6em; font-weight: 700; color: ${s.missing_count ? '#f55' : '#4f4'};">${s.missing_count || 0}</div>
+        <div style="font-size: 0.8em; color: #888;">Missing</div>
+      </div>
+      <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 1.6em; font-weight: 700; color: ${s.orphaned_count ? '#f90' : '#4f4'};">${s.orphaned_count || 0}</div>
+        <div style="font-size: 0.8em; color: #888;">Orphaned</div>
+      </div>
+      <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 1.6em; font-weight: 700; color: #888;">${_formatBytes(s.orphaned_total_bytes || 0)}</div>
+        <div style="font-size: 0.8em; color: #888;">Orphan Size</div>
+      </div>
+      <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 1.6em; font-weight: 700; color: #888;">${s.empty_folder_count || 0}</div>
+        <div style="font-size: 0.8em; color: #888;">Empty Folders</div>
+      </div>
+    `;
+  }
+
+  // Missing files table
+  const missingSection = document.getElementById('audit-missing-section');
+  const missingCount = document.getElementById('audit-missing-count');
+  const missingList = document.getElementById('audit-missing-list');
+  if (data.missing_files && data.missing_files.length > 0) {
+    if (missingSection) missingSection.style.display = '';
+    if (missingCount) missingCount.textContent = data.missing_files.length;
+    if (missingList) {
+      missingList.innerHTML = data.missing_files.map(f => `
+        <tr>
+          <td style="white-space: nowrap;">${_esc(f.id || '—')}</td>
+          <td>${_esc(f.title || '—')}</td>
+          <td style="word-break: break-all; font-size: 0.85em; color: #aaa;">${_esc(f.path || f.abs_path || '—')}</td>
+          <td style="white-space: nowrap;">${f.created_at ? new Date(f.created_at * 1000).toLocaleDateString() : '—'}</td>
+        </tr>
+      `).join('');
+    }
+  } else {
+    if (missingSection) missingSection.style.display = 'none';
+  }
+
+  // Orphaned files table
+  const orphanedSection = document.getElementById('audit-orphaned-section');
+  const orphanedCount = document.getElementById('audit-orphaned-count');
+  const orphanedList = document.getElementById('audit-orphaned-list');
+  if (data.orphaned_files && data.orphaned_files.length > 0) {
+    if (orphanedSection) orphanedSection.style.display = '';
+    if (orphanedCount) orphanedCount.textContent = data.orphaned_files.length;
+    if (orphanedList) {
+      orphanedList.innerHTML = data.orphaned_files.map(f => `
+        <tr>
+          <td>${_esc(f.filename || '—')}</td>
+          <td style="word-break: break-all; font-size: 0.85em; color: #aaa;">${_esc(f.rel_path || f.path || '—')}</td>
+          <td style="white-space: nowrap;">${f.size_bytes != null ? _formatBytes(f.size_bytes) : '—'}</td>
+        </tr>
+      `).join('');
+    }
+  } else {
+    if (orphanedSection) orphanedSection.style.display = 'none';
+  }
+
+  // Empty folders table
+  const emptySection = document.getElementById('audit-empty-section');
+  const emptyCount = document.getElementById('audit-empty-count');
+  const emptyList = document.getElementById('audit-empty-list');
+  if (data.empty_folders && data.empty_folders.length > 0) {
+    if (emptySection) emptySection.style.display = '';
+    if (emptyCount) emptyCount.textContent = data.empty_folders.length;
+    if (emptyList) {
+      emptyList.innerHTML = data.empty_folders.map(f => `
+        <tr><td style="word-break: break-all; font-size: 0.85em; color: #aaa;">${_esc(f)}</td></tr>
+      `).join('');
+    }
+  } else {
+    if (emptySection) emptySection.style.display = 'none';
+  }
+}
+
+function _formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function _esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 

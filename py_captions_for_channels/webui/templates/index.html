@@ -10,7 +10,7 @@
   <link rel="icon" type="image/x-icon" href="/static/channels_cc_favicon_big/favicon.ico?v=3">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/channels_cc_favicon_big/icon-180.png">
   <link rel="manifest" href="/static/channels_cc_favicon_big/site.webmanifest" />
-  <link rel="stylesheet" href="/static/style.css?v=1772140000" />
+  <link rel="stylesheet" href="/static/style.css?v=1772200000" />
   <link rel="stylesheet" href="/static/vendor/uplot.min.css" />
 </head>
 <body>
@@ -72,6 +72,7 @@
           <button class="tab-btn" onclick="switchTab('glances')">System Monitor</button>
           <button class="tab-btn" onclick="switchTab('logs')">Full Logs</button>
           <button class="tab-btn" onclick="switchTab('quarantine')">Quarantine</button>
+          <button class="tab-btn" id="channels-files-tab-btn" onclick="switchTab('channels-files')" style="display:none">Channels Files</button>
         </div>
       </div>
       
@@ -272,6 +273,92 @@
           </table>
         </div>
       </div>
+
+      <!-- Channels Files Audit Tab (experimental, hidden unless enabled) -->
+      <div id="channels-files-tab" class="tab-content">
+        <div class="tab-header">
+          <small class="muted" id="channels-files-stats">Experimental — cross-reference DVR API with filesystem</small>
+          <div style="margin-left:auto; display:flex; gap:8px;">
+            <button class="btn-small" id="audit-run-btn" onclick="runChannelsFilesAudit()">Run Audit</button>
+            <button class="btn-small btn-danger" id="audit-cancel-btn" onclick="cancelChannelsFilesAudit()" style="display:none">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Audit progress display -->
+        <div id="audit-progress" style="display: none; padding: 10px; margin-bottom: 10px; background: #2a2a2a; border-radius: 4px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span id="audit-progress-status" style="color: #4a9eff; font-size: 0.85em; font-weight: 500;">Initializing...</span>
+            <span id="audit-progress-counter" style="color: #888; font-size: 0.8em;"></span>
+          </div>
+          <div style="width: 100%; height: 6px; background: #333; border-radius: 3px; overflow: hidden;">
+            <div id="audit-progress-bar" style="height: 100%; width: 0%; background: #4a9eff; border-radius: 3px; transition: width 0.15s ease;"></div>
+          </div>
+          <div id="audit-progress-detail" style="margin-top: 4px; color: #666; font-size: 0.75em;">—</div>
+        </div>
+
+        <!-- Audit results (shown after audit completes) -->
+        <div id="audit-results" style="display: none;">
+          <!-- Summary cards -->
+          <div id="audit-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 15px;"></div>
+
+          <!-- Missing files table -->
+          <div id="audit-missing-section" style="display: none; margin-bottom: 15px;">
+            <h3 style="margin: 0 0 8px 0; font-size: 0.95em; color: #f55;">Missing Files <span id="audit-missing-count" class="pill pill-muted">0</span></h3>
+            <p style="margin: 0 0 8px 0; color: #888; font-size: 0.8em;">Files the API says exist, but are not found on disk.</p>
+            <div class="table-container" style="max-height: 300px; overflow-y: auto;">
+              <table class="quarantine-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Path</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody id="audit-missing-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Orphaned files table -->
+          <div id="audit-orphaned-section" style="display: none; margin-bottom: 15px;">
+            <h3 style="margin: 0 0 8px 0; font-size: 0.95em; color: #f90;">Orphaned Files <span id="audit-orphaned-count" class="pill pill-muted">0</span></h3>
+            <p style="margin: 0 0 8px 0; color: #888; font-size: 0.8em;">Files on disk that are not tracked by the Channels DVR API.</p>
+            <div class="table-container" style="max-height: 300px; overflow-y: auto;">
+              <table class="quarantine-table">
+                <thead>
+                  <tr>
+                    <th>Filename</th>
+                    <th>Path</th>
+                    <th>Size</th>
+                  </tr>
+                </thead>
+                <tbody id="audit-orphaned-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Empty folders table -->
+          <div id="audit-empty-section" style="display: none;">
+            <h3 style="margin: 0 0 8px 0; font-size: 0.95em; color: #888;">Empty Folders <span id="audit-empty-count" class="pill pill-muted">0</span></h3>
+            <p style="margin: 0 0 8px 0; color: #888; font-size: 0.8em;">Recording folders with no matching media files.</p>
+            <div class="table-container" style="max-height: 200px; overflow-y: auto;">
+              <table class="quarantine-table">
+                <thead>
+                  <tr><th>Folder Path</th></tr>
+                </thead>
+                <tbody id="audit-empty-list"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Placeholder when no audit has run -->
+        <div id="audit-placeholder" style="padding: 40px; text-align: center; color: #666;">
+          <p style="font-size: 1.1em; margin-bottom: 8px;">No audit results yet</p>
+          <p style="font-size: 0.85em;">Click <strong>Run Audit</strong> to cross-reference the Channels DVR file database with the filesystem.</p>
+        </div>
+      </div>
     </section>
 
   </main>
@@ -379,6 +466,6 @@
     </div>
 
   <script src="/static/vendor/uplot.min.js"></script>
-  <script src="/static/main.js?v=1772140000"></script>
+  <script src="/static/main.js?v=1772200000"></script>
 </body>
 </html>

@@ -38,6 +38,9 @@ services:
       - STALE_EXECUTION_SECONDS=${STALE_EXECUTION_SECONDS:-7200}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_VERBOSITY=${LOG_VERBOSITY:-NORMAL}
+      
+      # Experimental features
+      - CHANNELS_FILES_ENABLED=${CHANNELS_FILES_ENABLED:-false}
     
     volumes:
       # Host data directory → container /app/data

@@ -220,3 +220,7 @@ MEDIA_FILE_EXTENSIONS = tuple(
     for ext in os.getenv("MEDIA_FILE_EXTENSIONS", ".mpg,.ts,.mkv,.mp4,.avi").split(",")
     if ext.strip()
 )
+
+# --- Experimental features ---
+# Channels Files audit: cross-reference DVR API with filesystem
+CHANNELS_FILES_ENABLED = get_env_bool("CHANNELS_FILES_ENABLED", False)
