@@ -3067,7 +3067,7 @@ function renderAuditResults(data) {
         <div style="font-size: 0.8em; color: #888;">Missing</div>
       </div>
       <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
-        <div style="font-size: 1.6em; font-weight: 700; color: ${s.orphaned_count ? '#f90' : '#4f4'};">${s.orphaned_count || 0}</div>
+        <div style="font-size: 1.6em; font-weight: 700; color: ${s.orphaned_count ? '#f90' : '#4f4'};">${s.orphaned_count || 0}${s.trashed_count ? ' <span style="font-size:0.55em;color:#888;">(' + s.trashed_count + ' trashed)</span>' : ''}</div>
         <div style="font-size: 0.8em; color: #888;">Orphaned</div>
       </div>
       <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; text-align: center;">
@@ -3106,18 +3106,12 @@ function renderAuditResults(data) {
   const orphanedSection = document.getElementById('audit-orphaned-section');
   const orphanedCount = document.getElementById('audit-orphaned-count');
   const orphanedList = document.getElementById('audit-orphaned-list');
+  // Stash raw data for filtering
+  window._auditOrphanedFiles = data.orphaned_files || [];
   if (data.orphaned_files && data.orphaned_files.length > 0) {
     if (orphanedSection) orphanedSection.style.display = '';
     if (orphanedCount) orphanedCount.textContent = data.orphaned_files.length;
-    if (orphanedList) {
-      orphanedList.innerHTML = data.orphaned_files.map(f => `
-        <tr>
-          <td>${_esc(f.filename || '—')}</td>
-          <td style="word-break: break-all; font-size: 0.85em; color: #aaa;">${_esc(f.rel_path || f.path || '—')}</td>
-          <td style="white-space: nowrap;">${f.size_bytes != null ? _formatBytes(f.size_bytes) : '—'}</td>
-        </tr>
-      `).join('');
-    }
+    _renderOrphanRows(data.orphaned_files);
   } else {
     if (orphanedSection) orphanedSection.style.display = 'none';
   }
@@ -3151,6 +3145,41 @@ function _esc(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function _renderOrphanRows(files) {
+  const tbody = document.getElementById('audit-orphaned-list');
+  if (!tbody) return;
+  tbody.innerHTML = files.map(f => {
+    const trashIcon = f.trash
+      ? '<span title="In DVR trash" style="color: #f90; font-size: 1.1em;">\uD83D\uDDD1</span>'
+      : '<span style="color: #555;">&mdash;</span>';
+    const rowStyle = f.trash ? 'opacity: 0.6;' : '';
+    return `
+      <tr data-trash="${f.trash ? '1' : '0'}" style="${rowStyle}">
+        <td style="text-align: center;">${trashIcon}</td>
+        <td>${_esc(f.filename || '\u2014')}</td>
+        <td style="word-break: break-all; font-size: 0.85em; color: #aaa;">${_esc(f.rel_path || f.path || '\u2014')}</td>
+        <td style="white-space: nowrap;">${f.size_bytes != null ? _formatBytes(f.size_bytes) : '\u2014'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function filterAuditOrphans() {
+  const showTrash = document.getElementById('audit-show-trash');
+  const files = window._auditOrphanedFiles || [];
+  if (!showTrash || showTrash.checked) {
+    _renderOrphanRows(files);
+  } else {
+    _renderOrphanRows(files.filter(f => !f.trash));
+  }
+  // Update displayed count
+  const countEl = document.getElementById('audit-orphaned-count');
+  const tbody = document.getElementById('audit-orphaned-list');
+  if (countEl && tbody) {
+    countEl.textContent = tbody.children.length;
+  }
 }
 
 

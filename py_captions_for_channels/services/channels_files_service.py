@@ -147,10 +147,9 @@ def audit_files(
     # ------------------------------------------------------------------
     # Phase 1b — Index deleted/trashed files
     # ------------------------------------------------------------------
-    # Deleted files still on disk should NOT be counted as orphans.
-    # We add their paths to api_folders so Phase 3 considers them
-    # "known", but we do NOT add them to api_records so Phase 2
-    # won't report them as "missing" when they are eventually purged.
+    # Build a *separate* index for deleted files so we can tag them as
+    # "trash" in the orphan list instead of silently hiding them.
+    deleted_folders: Dict[str, Set[str]] = defaultdict(set)
     deleted_count = 0
     for rec in deleted_files or []:
         rel_path = rec.get("Path", "")
@@ -159,11 +158,15 @@ def audit_files(
         rel_path = rel_path.replace("\\", "/")
         abs_path = str(recordings_root / rel_path)
         folder = str(Path(abs_path).parent)
-        api_folders[folder].add(Path(abs_path).name)
+        deleted_folders[folder].add(Path(abs_path).name)
+        # Also register the folder so Phase 3 walks it even if no
+        # active API files live there.
+        if folder not in api_folders:
+            api_folders[folder]  # touch to ensure defaultdict creates it
         deleted_count += 1
 
     if deleted_count:
-        LOG.info("Indexed %d deleted/trashed file paths into known set", deleted_count)
+        LOG.info("Indexed %d deleted/trashed file paths into trash set", deleted_count)
 
     # ------------------------------------------------------------------
     # Phase 2 — Check API files exist on disk
@@ -225,13 +228,21 @@ def audit_files(
             LOG.warning("Cannot list folder %s: %s", folder, exc)
             continue
 
-        # Files on disk but NOT in the API
+        # Files on disk but NOT in the active API set
+        deleted_filenames = deleted_folders.get(folder, set())
         extra = disk_files - api_filenames
         for name in sorted(extra):
             # Skip companion files (.srt, .orig, .cc4chan.*) whose
             # parent recording IS tracked by the API in this folder.
             if _is_companion_of_api_file(name, api_filenames):
                 continue
+
+            # Determine if this file (or its parent recording) is in
+            # the DVR trash — we still list it, but flag it.
+            is_trash = name in deleted_filenames or _is_companion_of_api_file(
+                name, deleted_filenames
+            )
+
             full = str(folder_path / name)
             try:
                 size = os.path.getsize(full)
@@ -244,6 +255,7 @@ def audit_files(
                     "folder": folder,
                     "filename": name,
                     "size_bytes": size,
+                    "trash": is_trash,
                 }
             )
 
@@ -283,6 +295,8 @@ def audit_files(
     total_orphan_bytes = sum(
         f["size_bytes"] for f in orphaned_files if f["size_bytes"] is not None
     )
+    trashed = [f for f in orphaned_files if f.get("trash")]
+    trashed_bytes = sum(f["size_bytes"] for f in trashed if f["size_bytes"] is not None)
 
     result = {
         "success": True,
@@ -294,6 +308,8 @@ def audit_files(
             "missing_count": len(missing_files),
             "orphaned_count": len(orphaned_files),
             "orphaned_total_bytes": total_orphan_bytes,
+            "trashed_count": len(trashed),
+            "trashed_total_bytes": trashed_bytes,
             "empty_folder_count": len(empty_folders),
         },
         "missing_files": missing_files,

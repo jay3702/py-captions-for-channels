@@ -323,11 +323,17 @@
           <!-- Orphaned files table -->
           <div id="audit-orphaned-section" style="display: none; margin-bottom: 15px;">
             <h3 style="margin: 0 0 8px 0; font-size: 0.95em; color: #f90;">Orphaned Files <span id="audit-orphaned-count" class="pill pill-muted">0</span></h3>
-            <p style="margin: 0 0 8px 0; color: #888; font-size: 0.8em;">Files on disk that are not tracked by the Channels DVR API.</p>
+            <p style="margin: 0 0 8px 0; color: #888; font-size: 0.8em;">Files on disk that are not tracked by the Channels DVR API.
+              <label style="margin-left: 16px; cursor: pointer; user-select: none;">
+                <input type="checkbox" id="audit-show-trash" checked onchange="filterAuditOrphans()" style="vertical-align: middle;">
+                <span style="vertical-align: middle;">Show trashed files</span>
+              </label>
+            </p>
             <div class="table-container" style="max-height: 300px; overflow-y: auto;">
               <table class="quarantine-table">
                 <thead>
                   <tr>
+                    <th style="width: 40px; text-align: center;">Trash</th>
                     <th>Filename</th>
                     <th>Path</th>
                     <th>Size</th>
