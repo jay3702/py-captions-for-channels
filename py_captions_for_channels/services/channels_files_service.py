@@ -79,6 +79,8 @@ def audit_files(
         rel_path = rec.get("Path", "")
         if not rel_path:
             continue
+        # Normalize Windows-style backslashes from older API records
+        rel_path = rel_path.replace("\\", "/")
 
         abs_path = str(recordings_root / rel_path)
         api_paths.add(abs_path)
