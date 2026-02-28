@@ -1649,19 +1649,19 @@ def main():
             step_elapsed = time.time() - step_start
             step_tracker.finish(step_name, status="completed")
             pipeline.stage_end(step_name, job_id)
-            log.info(f"STEP TIMING: {step_name} completed in {step_elapsed:.1f}s")
+            log.debug(f"STEP TIMING: {step_name} completed in {step_elapsed:.1f}s")
             return result
         except SystemExit:
             step_elapsed = time.time() - step_start
             step_tracker.finish(step_name, status="failed")
             pipeline.stage_end(step_name, job_id)
-            log.info(f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s")
+            log.debug(f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s")
             raise
         except Exception:
             step_elapsed = time.time() - step_start
             step_tracker.finish(step_name, status="failed")
             pipeline.stage_end(step_name, job_id)
-            log.info(f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s")
+            log.debug(f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s")
             raise
         finally:
             if misc_label:
