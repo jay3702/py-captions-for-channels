@@ -445,6 +445,46 @@ def detect_gpu_backend(log) -> GPUBackend:
     return cpu_backend
 
 
+# Audio codecs that can be muxed directly into an MP4 container
+# without re-encoding.  This covers virtually every broadcast source.
+_MP4_COMPATIBLE_AUDIO = frozenset(
+    ["aac", "ac3", "eac3", "mp3", "flac", "opus", "alac", "mp2"]
+)
+
+
+def _probe_audio_codecs(media_path: str, log) -> list:
+    """Return a list of audio codec names for all audio streams."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=codec_name",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(media_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+        codecs = [
+            line.strip().lower()
+            for line in result.stdout.strip().split("\n")
+            if line.strip()
+        ]
+        log.debug(f"Input audio codecs: {codecs}")
+        return codecs
+    except Exception as e:
+        log.warning(f"Failed to probe audio codecs: {e}")
+        return []
+
+
 def _probe_input_codec(video_path: str, log) -> str:
     """Return the video codec name of the *first* video stream (e.g. 'mpeg2video')."""
     try:
@@ -1171,12 +1211,35 @@ def encode_av_only(
             f"(PRESERVE_ALL_AUDIO_TRACKS=false, faster encoding)"
         )
 
+    # Determine audio codec strategy
+    from py_captions_for_channels.config import AUDIO_CODEC
+
+    audio_codecs = _probe_audio_codecs(mpg_orig, log)
+    all_mp4_ok = audio_codecs and all(c in _MP4_COMPATIBLE_AUDIO for c in audio_codecs)
+
+    if AUDIO_CODEC == "copy":
+        audio_codec_flags = ["-c:a", "copy"]
+        log.info("Audio: stream copy (AUDIO_CODEC=copy)")
+    elif AUDIO_CODEC == "aac":
+        audio_codec_flags = ["-c:a", "aac", "-b:a", "256k"]
+        log.info("Audio: re-encode to AAC 256k (AUDIO_CODEC=aac)")
+    else:  # auto
+        if all_mp4_ok:
+            audio_codec_flags = ["-c:a", "copy"]
+            log.info(
+                f"Audio: stream copy — source codecs {audio_codecs} "
+                f"are MP4-compatible (AUDIO_CODEC=auto)"
+            )
+        else:
+            audio_codec_flags = ["-c:a", "aac", "-b:a", "256k"]
+            log.info(
+                f"Audio: re-encode to AAC 256k — source codecs "
+                f"{audio_codecs} not all MP4-compatible (AUDIO_CODEC=auto)"
+            )
+
     audio_tail = (
-        [
-            "-c:a",
-            "aac",
-            "-b:a",
-            "256k",
+        audio_codec_flags
+        + [
             "-analyzeduration",
             "2147483647",
             "-probesize",
