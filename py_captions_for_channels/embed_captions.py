@@ -1610,12 +1610,12 @@ def main():
     if os.path.exists(orig_candidate):
         input_source = orig_candidate
         log.info(
-            f"Reprocessing: using .cc4chan.orig as source " f"(skipping restore copy)"
+            "Reprocessing: using .cc4chan.orig as source (skipping restore copy)"
         )
     elif os.path.exists(legacy_orig_candidate):
         input_source = legacy_orig_candidate
         log.info(
-            f"Reprocessing: using legacy .orig as source " f"(skipping restore copy)"
+            "Reprocessing: using legacy .orig as source (skipping restore copy)"
         )
     else:
         input_source = mpg_path  # First-time processing
