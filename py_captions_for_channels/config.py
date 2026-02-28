@@ -112,6 +112,13 @@ PRESERVE_ALL_AUDIO_TRACKS = os.getenv("PRESERVE_ALL_AUDIO_TRACKS", "1").lower() 
     "yes",
 )
 
+# Audio codec for the encode step
+# "auto"  - Copy audio if source codec is MP4-compatible (ac3, eac3, aac, mp3, flac,
+#            opus), otherwise re-encode to AAC.  Fastest option for broadcast sources.
+# "copy"  - Always stream-copy audio (fastest, but may fail if codec is incompatible)
+# "aac"   - Always re-encode to AAC 256 kbps (legacy behaviour, slowest)
+AUDIO_CODEC = os.getenv("AUDIO_CODEC", "auto").lower()
+
 # Hardware-accelerated decoding
 # "auto" - Detect best available: NVDEC → QSV → VAAPI → CPU (recommended)
 # "cuda" - Force NVIDIA NVDEC/CUVID hardware decode
