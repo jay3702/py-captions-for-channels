@@ -26,6 +26,7 @@ from py_captions_for_channels.config import (
     PRESERVE_ALL_AUDIO_TRACKS,
     NVENC_CQ,
     X264_CRF,
+    HWACCEL_DECODE,
 )
 from py_captions_for_channels.encoding_profiles import (
     get_whisper_parameters,
@@ -161,6 +162,189 @@ def detect_variable_frame_rate(video_path, log):
     except subprocess.CalledProcessError as e:
         log.warning(f"Failed to probe frame rate, assuming CFR: {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# Hardware-accelerated decoding (NVDEC/CUVID) detection
+# ---------------------------------------------------------------------------
+
+# Cache for CUVID capability detection (checked once per process)
+_cuvid_cache: dict = {}
+
+
+def _detect_cuvid_decoders() -> dict:
+    """Detect available CUVID hardware decoders.
+
+    Returns dict with keys like 'mpeg2_cuvid', 'h264_cuvid' → bool.
+    Results are cached for the lifetime of the process.
+    """
+    if _cuvid_cache:
+        return _cuvid_cache
+
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-decoders"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        for name in ("mpeg2_cuvid", "h264_cuvid", "hevc_cuvid"):
+            _cuvid_cache[name] = name in result.stdout
+    except Exception:
+        _cuvid_cache.setdefault("mpeg2_cuvid", False)
+        _cuvid_cache.setdefault("h264_cuvid", False)
+        _cuvid_cache.setdefault("hevc_cuvid", False)
+
+    return _cuvid_cache
+
+
+def _detect_yadif_cuda() -> bool:
+    """Check if ffmpeg has yadif_cuda filter for GPU deinterlacing."""
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-filters"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        return "yadif_cuda" in result.stdout
+    except Exception:
+        return False
+
+
+def _probe_input_codec(video_path: str, log) -> str:
+    """Return the video codec name of the *first* video stream (e.g. 'mpeg2video')."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_name",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+        codec = result.stdout.strip().lower()
+        log.debug(f"Input video codec: {codec}")
+        return codec
+    except Exception as e:
+        log.warning(f"Failed to probe input codec: {e}")
+        return "unknown"
+
+
+def _probe_field_order(video_path: str, log) -> str:
+    """Return field_order of the first video stream (e.g. 'tt', 'bb', 'progressive')."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=field_order",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+        field_order = result.stdout.strip().lower()
+        log.debug(f"Input field order: {field_order}")
+        return field_order
+    except Exception as e:
+        log.debug(f"Failed to probe field order: {e}")
+        return "unknown"
+
+
+def build_hwaccel_flags(input_path: str, log) -> list:
+    """Build hwaccel input flags for ffmpeg based on config + capabilities.
+
+    Returns a list of ffmpeg args to prepend *before* ``-i``, or an empty
+    list when hardware decode is not available / not configured.
+
+    When hardware decode is active and the source is interlaced, a
+    ``yadif_cuda`` video filter is appended to the returned list as well
+    (after a ``-vf`` flag) so the caller can splice it in.
+    """
+    if HWACCEL_DECODE == "off":
+        log.debug("Hardware decode disabled (HWACCEL_DECODE=off)")
+        return []
+
+    input_codec = _probe_input_codec(input_path, log)
+
+    # Map input codec to CUVID decoder name
+    cuvid_map = {
+        "mpeg2video": "mpeg2_cuvid",
+        "h264": "h264_cuvid",
+        "hevc": "hevc_cuvid",
+    }
+
+    cuvid_decoder = cuvid_map.get(input_codec)
+    if not cuvid_decoder:
+        log.info(f"No CUVID decoder for codec '{input_codec}' — using CPU decode")
+        return []
+
+    caps = _detect_cuvid_decoders()
+    has_decoder = caps.get(cuvid_decoder, False)
+
+    if not has_decoder:
+        if HWACCEL_DECODE == "cuda":
+            log.warning(
+                f"HWACCEL_DECODE=cuda but {cuvid_decoder} not available in ffmpeg"
+            )
+        else:
+            log.info(f"{cuvid_decoder} not available — falling back to CPU decode")
+        return []
+
+    # Build hwaccel flags: use generic -hwaccel cuda so ffmpeg picks the
+    # correct CUVID decoder automatically and keeps frames in GPU memory.
+    flags = [
+        "-hwaccel",
+        "cuda",
+        "-hwaccel_output_format",
+        "cuda",
+        "-c:v",
+        cuvid_decoder,
+    ]
+
+    # Check if source is interlaced — if so, add GPU deinterlace filter
+    field_order = _probe_field_order(input_path, log)
+    is_interlaced = field_order in ("tt", "bb", "tb", "bt")
+
+    if is_interlaced and _detect_yadif_cuda():
+        flags.extend(["-vf", "yadif_cuda=mode=send_frame:parity=auto:deint=all"])
+        log.info(
+            f"Hardware decode enabled: {cuvid_decoder} + yadif_cuda deinterlace "
+            f"(field_order={field_order})"
+        )
+    elif is_interlaced:
+        # Have interlaced source but no GPU deinterlace filter — fall back to
+        # CPU decode so the normal yadif filter (or ffmpeg default) can handle it.
+        log.info(
+            f"Source is interlaced ({field_order}) but yadif_cuda unavailable — "
+            f"CPU decode with software deinterlace"
+        )
+        return []
+    else:
+        log.info(f"Hardware decode enabled: {cuvid_decoder} (progressive source)")
+
+    return flags
 
 
 class StepTracker:
@@ -620,24 +804,49 @@ def encode_av_only(
         log.info("Using standard ffmpeg presets (OPTIMIZATION_MODE=standard)")
 
     # Build base command for NVENC (GPU encoding)
-    # Note: Hardware decode removed - adds overhead for MPEG-2 without benefit
+    # Attempt hardware-accelerated decoding (NVDEC/CUVID) to keep the
+    # entire decode→encode pipeline on the GPU, avoiding CPU bottleneck.
+    hwaccel_flags = build_hwaccel_flags(mpg_orig, log)
+    has_gpu_deinterlace = any("yadif_cuda" in str(f) for f in hwaccel_flags)
+
+    # When hwaccel includes yadif_cuda, a -vf filter is already set.
+    # Extract it so we can place it correctly in the command.
+    vf_flags = []
+    input_flags = []
+    for i, flag in enumerate(hwaccel_flags):
+        if flag == "-vf" and i + 1 < len(hwaccel_flags):
+            vf_flags = ["-vf", hwaccel_flags[i + 1]]
+        else:
+            if i > 0 and hwaccel_flags[i - 1] == "-vf":
+                continue  # Already captured as part of vf_flags
+            input_flags.append(flag)
+
     # Use VBR mode with constant quality parameter for best results
-    cmd_nvenc = [
-        "ffmpeg",
-        "-y",
-        "-progress",
-        "pipe:2",  # Enable progress reporting to stderr
-        "-i",
-        mpg_orig,
-        "-c:v",
-        "h264_nvenc",
-        "-preset",
-        nvenc_preset,
-        "-rc",
-        "vbr",
-        "-cq",
-        str(NVENC_CQ),
-    ]
+    cmd_nvenc = (
+        [
+            "ffmpeg",
+            "-y",
+            "-progress",
+            "pipe:2",  # Enable progress reporting to stderr
+        ]
+        + input_flags
+        + [
+            "-i",
+            mpg_orig,
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            nvenc_preset,
+            "-rc",
+            "vbr",
+            "-cq",
+            str(NVENC_CQ),
+        ]
+    )
+
+    # Add video filter (GPU deinterlace) if hwaccel detection provided one
+    if vf_flags:
+        cmd_nvenc.extend(vf_flags)
 
     # Add VFR handling if needed (critical for Chrome-captured content)
     if is_vfr:
@@ -675,11 +884,65 @@ def encode_av_only(
     log.info(f"Trying NVENC encode: {' '.join(cmd_nvenc)}")
     try:
         _run_ffmpeg_with_progress(
-            cmd_nvenc, video_duration, "Encoding (GPU)", log, job_id
+            cmd_nvenc,
+            video_duration,
+            "Encoding (GPU+hwaccel)" if input_flags else "Encoding (GPU)",
+            log,
+            job_id,
         )
         return
     except subprocess.CalledProcessError:
-        log.warning("NVENC failed, falling back to CPU (libx264)")
+        if input_flags:
+            # hwaccel NVENC failed — retry NVENC without hardware decode
+            log.warning(
+                "NVENC with hardware decode failed, retrying NVENC without hwaccel"
+            )
+            cmd_nvenc_sw = [
+                "ffmpeg",
+                "-y",
+                "-progress",
+                "pipe:2",
+                "-i",
+                mpg_orig,
+                "-c:v",
+                "h264_nvenc",
+                "-preset",
+                nvenc_preset,
+                "-rc",
+                "vbr",
+                "-cq",
+                str(NVENC_CQ),
+            ]
+            if is_vfr:
+                cmd_nvenc_sw.extend(["-vsync", "vfr"])
+            cmd_nvenc_sw.extend(
+                [
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "256k",
+                    "-analyzeduration",
+                    "2147483647",
+                    "-probesize",
+                    "2147483647",
+                ]
+                + audio_map
+                + [temp_av]
+            )
+            log.info(f"Trying NVENC (sw decode): {' '.join(cmd_nvenc_sw)}")
+            try:
+                _run_ffmpeg_with_progress(
+                    cmd_nvenc_sw,
+                    video_duration,
+                    "Encoding (GPU, sw decode)",
+                    log,
+                    job_id,
+                )
+                return
+            except subprocess.CalledProcessError:
+                log.warning("NVENC (sw decode) also failed, falling to CPU")
+        else:
+            log.warning("NVENC failed, falling back to CPU (libx264)")
 
     # Fallback to CPU with same VFR handling
     cmd_cpu = [

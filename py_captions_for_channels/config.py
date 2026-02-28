@@ -112,6 +112,14 @@ PRESERVE_ALL_AUDIO_TRACKS = os.getenv("PRESERVE_ALL_AUDIO_TRACKS", "1").lower() 
     "yes",
 )
 
+# Hardware-accelerated decoding (NVDEC/CUVID)
+# "auto" - Detect and use NVDEC if available (recommended)
+# "cuda" - Force CUDA hardware decode (fails if unavailable)
+# "off"  - Disable hardware decode, use CPU software decode
+# When enabled, MPEG-2 and H.264 input is decoded on the GPU (NVDEC),
+# keeping frames in GPU memory for NVENC encoding — avoids CPU bottleneck.
+HWACCEL_DECODE = os.getenv("HWACCEL_DECODE", "auto").lower()
+
 # Video encoding quality settings
 # NVENC_CQ: Constant Quality for NVIDIA GPU encoding (0-51, lower=better)
 #   18 = Near-transparent (high quality)
