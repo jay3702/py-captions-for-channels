@@ -466,7 +466,9 @@ def _probe_input_codec(video_path: str, log) -> str:
             text=True,
             check=True,
         )
-        codec = result.stdout.strip().lower()
+        # OTA MPEG-TS containers can have multiple video programs,
+        # causing ffprobe to return multiple lines — take only the first.
+        codec = result.stdout.strip().split("\n")[0].strip().lower()
         log.debug(f"Input video codec: {codec}")
         return codec
     except Exception as e:
@@ -495,7 +497,8 @@ def _probe_field_order(video_path: str, log) -> str:
             text=True,
             check=True,
         )
-        field_order = result.stdout.strip().lower()
+        # Take first line only — multi-program MPEG-TS may return multiple.
+        field_order = result.stdout.strip().split("\n")[0].strip().lower()
         log.debug(f"Input field order: {field_order}")
         return field_order
     except Exception as e:
