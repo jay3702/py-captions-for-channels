@@ -293,7 +293,7 @@ class ChannelsPollingSource:
                 # Update heartbeat in database
                 try:
                     heartbeat_service.beat("polling", "alive")
-                    LOG.info("Updated polling heartbeat")
+                    LOG.debug("Updated polling heartbeat")
                 except Exception as e:
                     LOG.warning("Failed to update polling heartbeat: %s", e)
 
@@ -513,14 +513,25 @@ class ChannelsPollingSource:
                     )
 
                 # Log polling summary
-                LOG.info(
-                    "Poll complete: checked %d recordings, skipped %d (cache), "
-                    "%d (already processed), yielded %d new",
-                    checked_count,
-                    skipped_cache_count,
-                    skipped_processed_count,
-                    yielded_count,
-                )
+                if yielded_count > 0:
+                    LOG.info(
+                        "Poll complete: checked %d recordings, "
+                        "skipped %d (cache), "
+                        "%d (already processed), yielded %d new",
+                        checked_count,
+                        skipped_cache_count,
+                        skipped_processed_count,
+                        yielded_count,
+                    )
+                else:
+                    LOG.debug(
+                        "Poll complete: checked %d recordings, "
+                        "skipped %d (cache), "
+                        "%d (already processed), yielded 0 new",
+                        checked_count,
+                        skipped_cache_count,
+                        skipped_processed_count,
+                    )
 
                 # Calculate smart wait time
                 smart_interval = self._get_smart_interval()
