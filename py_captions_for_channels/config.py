@@ -188,7 +188,8 @@ DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "py_captions.db"))
 # State file for tracking last processed timestamp
 STATE_FILE = os.getenv("STATE_FILE", os.path.join(DATA_DIR, "state.json"))
 
-# Channels DVR log path (for log-based source, if implemented)
+# Channels DVR log path (DEPRECATED — log-based source was never implemented)
+# Kept for backward compatibility; will be removed in a future release.
 LOG_PATH = os.getenv("LOG_PATH", "/var/log/channels-dvr.log")
 
 # Event source configuration
