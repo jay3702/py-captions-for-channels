@@ -655,7 +655,8 @@ class Pipeline:
                                 log.info(
                                     "optimization params: %s", "\n".join(opt_lines)
                                 )
-                            # Extract encoding-related logs (GPU backend, hwaccel, encode/fallback)
+                            # Extract encoding-related logs
+                            # (GPU backend, hwaccel, encode/fallback)
                             encoding_lines = [
                                 line
                                 for line in stdout.split("\n")
