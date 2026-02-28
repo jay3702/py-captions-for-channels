@@ -5,7 +5,6 @@ from functools import partial
 from dataclasses import dataclass
 from typing import Optional
 
-import shutil
 import os
 import subprocess
 import signal
@@ -329,29 +328,28 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     continue
 
                 LOG.info("Manual processing: %s", path)
-                mpg_path = path
                 orig_path = path + ".cc4chan.orig"
                 legacy_orig_path = path + ".orig"
                 srt_path = path.rsplit(".", 1)[0] + ".srt"
 
-                # 1. If .cc4chan.orig or legacy .orig exists, restore it
+                # embed_captions.py reads from .cc4chan.orig directly when it
+                # exists, so we no longer need to copy the multi-GB original
+                # back to .mpg.  Just log what source will be used.
                 if os.path.exists(orig_path):
                     LOG.info(
-                        "Restoring original from .cc4chan.orig: %s -> %s",
+                        "Reprocessing: .cc4chan.orig exists, embed_captions "
+                        "will read from it directly: %s",
                         orig_path,
-                        mpg_path,
                     )
-                    shutil.copy2(orig_path, mpg_path)
                 elif os.path.exists(legacy_orig_path):
                     LOG.info(
-                        "Restoring original from legacy .orig: %s -> %s",
+                        "Reprocessing: legacy .orig exists, embed_captions "
+                        "will read from it directly: %s",
                         legacy_orig_path,
-                        mpg_path,
                     )
-                    shutil.copy2(legacy_orig_path, mpg_path)
-                # If .orig does not exist, proceed with current .mpg (no subtitle check)
+                # If .orig does not exist, proceed with current .mpg
 
-                # 2. Remove existing .srt to force reprocessing
+                # Remove existing .srt to force reprocessing
                 if os.path.exists(srt_path):
                     LOG.info("Removing existing SRT for reprocessing: %s", srt_path)
                     os.remove(srt_path)

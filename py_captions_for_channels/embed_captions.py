@@ -1601,10 +1601,29 @@ def main():
     # from py_captions_for_channels.logging_config import set_verbosity
     # set_verbosity(args.verbosity)
 
+    # ---- Determine the actual source file to read from ----
+    # For reprocessing: if .cc4chan.orig exists, read from it directly.
+    # This avoids a multi-GB copy of the original back to .mpg.
+    # mpg_path remains the output identity (for Channels DVR, output paths, etc.).
+    orig_candidate = mpg_path + ".cc4chan.orig"
+    legacy_orig_candidate = mpg_path + ".orig"
+    if os.path.exists(orig_candidate):
+        input_source = orig_candidate
+        log.info(
+            f"Reprocessing: using .cc4chan.orig as source " f"(skipping restore copy)"
+        )
+    elif os.path.exists(legacy_orig_candidate):
+        input_source = legacy_orig_candidate
+        log.info(
+            f"Reprocessing: using legacy .orig as source " f"(skipping restore copy)"
+        )
+    else:
+        input_source = mpg_path  # First-time processing
+
     run_step(
         "file_stability",
-        lambda: wait_for_file_stability(mpg_path, log),
-        input_path=mpg_path,
+        lambda: wait_for_file_stability(input_source, log),
+        input_path=input_source,
         misc_label="Waiting for file stability",
     )
 
@@ -1620,7 +1639,7 @@ def main():
         )
 
         stream_selection = select_streams(
-            mpg_path,
+            input_source,
             audio_language=AUDIO_LANGUAGE,
             subtitle_language=subtitle_lang,
             fallback=LANGUAGE_FALLBACK,
@@ -1658,8 +1677,9 @@ def main():
             selected_language = "en"  # Default to English
             selected_audio_index = None  # Process all audio streams
 
-    # Check if file already has our subtitle track
-    if has_our_subtitles(mpg_path, log):
+    # Check if source file already has our subtitle track
+    # (only meaningful for first-time processing; reprocessing reads the original)
+    if input_source == mpg_path and has_our_subtitles(mpg_path, log):
         log.warning(
             f"File already has '{SUBTITLE_TRACK_NAME}' subtitle track! "
             "This indicates the file was already processed. "
@@ -1676,7 +1696,7 @@ def main():
         pipeline.stage_end("whisper", job_id)
     else:
         log.debug(f"Preparing Faster-Whisper model: {args.model}")
-        step_tracker.start("whisper", input_path=mpg_path, output_path=srt_path)
+        step_tracker.start("whisper", input_path=input_source, output_path=srt_path)
 
         def _run_whisper():
             def format_srt_timestamp(seconds):
@@ -1787,10 +1807,10 @@ def main():
                         log.info("Faster-Whisper model loaded with CPU fallback")
 
                 # Transcribe with progress tracking
-                log.debug(f"Transcribing audio from: {mpg_path}")
+                log.debug(f"Transcribing audio from: {input_source}")
 
                 # Get video duration for progress calculation
-                video_duration = probe_duration(mpg_path, log)
+                video_duration = probe_duration(input_source, log)
                 log.debug(
                     f"Video duration: {video_duration:.1f}s for progress tracking"
                 )
@@ -1799,7 +1819,9 @@ def main():
                 channel_number = extract_channel_number(mpg_path)
                 print(f"[OPTIMIZATION] Channel detected: {channel_number}", flush=True)
                 if OPTIMIZATION_MODE == "automatic":
-                    whisper_params = get_whisper_parameters(mpg_path, channel_number)
+                    whisper_params = get_whisper_parameters(
+                        input_source, channel_number
+                    )
                     beam_size = whisper_params.get("beam_size")
                     vad_ms = whisper_params.get("vad_parameters", {}).get(
                         "min_silence_duration_ms"
@@ -1830,9 +1852,9 @@ def main():
 
                 # Check if file can be safely decoded - if not, extract audio first
                 wav_path = None
-                use_wav_path = mpg_path  # Default to direct transcription
+                use_wav_path = input_source  # Default to direct transcription
 
-                if not validate_audio_decodability(mpg_path, log):
+                if not validate_audio_decodability(input_source, log):
                     log.warning(
                         "File contains corrupted/problematic frames - "
                         "extracting audio to WAV first to avoid segfault"
@@ -1852,7 +1874,7 @@ def main():
                                 "-err_detect",
                                 "ignore_err",  # Ignore decoding errors
                                 "-i",
-                                mpg_path,
+                                input_source,
                             ]
                             + audio_map
                             + [
@@ -1960,7 +1982,7 @@ def main():
                                                 "-err_detect",
                                                 "ignore_err",
                                                 "-i",
-                                                mpg_path,
+                                                input_source,
                                             ]
                                             + audio_map
                                             + [
