@@ -43,8 +43,11 @@ class WhisperProfile:
     beam_size: int = 5
     vad_filter: bool = True
     vad_min_silence_ms: int = 500
-    # ffmpeg encoding parameters
+    # ffmpeg encoding parameters — per-GPU presets
     nvenc_preset: str = "fast"  # NVENC presets: hp, fast, slow, hq
+    qsv_preset: str = "fast"  # QSV presets: veryfast, faster, fast, medium, slow
+    amf_quality: str = "balanced"  # AMF quality: speed, balanced, quality
+    vaapi_compression: int = 4  # VA-API compression level (0=fast .. 7=slow)
     x264_preset: str = (
         "fast"  # x264 presets: ultrafast, veryfast, faster, fast, medium, slow
     )
@@ -59,6 +62,9 @@ ENCODING_PROFILES = {
         vad_filter=True,
         vad_min_silence_ms=700,  # Broadcast audio is cleaner, can use longer silence
         nvenc_preset="hp",  # High performance - OTA is clean, encodes fast
+        qsv_preset="veryfast",  # Fast QSV for clean source
+        amf_quality="speed",  # Fast AMF for clean source
+        vaapi_compression=2,  # Low compression = faster
         x264_preset="veryfast",  # Fast CPU encoding for high quality source
     ),
     "ota_hd_30fps_stereo": WhisperProfile(
@@ -68,6 +74,9 @@ ENCODING_PROFILES = {
         vad_filter=True,
         vad_min_silence_ms=600,
         nvenc_preset="fast",  # Balanced preset
+        qsv_preset="fast",
+        amf_quality="balanced",
+        vaapi_compression=4,
         x264_preset="fast",
     ),
     "tve_hd_30fps_stereo": WhisperProfile(
@@ -77,6 +86,9 @@ ENCODING_PROFILES = {
         vad_filter=True,
         vad_min_silence_ms=500,  # Standard setting
         nvenc_preset="fast",  # Standard preset (current default)
+        qsv_preset="fast",
+        amf_quality="balanced",
+        vaapi_compression=4,
         x264_preset="fast",
     ),
     "tve_hd_60fps_stereo": WhisperProfile(
@@ -86,6 +98,9 @@ ENCODING_PROFILES = {
         vad_filter=True,
         vad_min_silence_ms=500,
         nvenc_preset="fast",
+        qsv_preset="fast",
+        amf_quality="balanced",
+        vaapi_compression=4,
         x264_preset="fast",
     ),
     "sd_content": WhisperProfile(
@@ -95,6 +110,9 @@ ENCODING_PROFILES = {
         vad_filter=True,
         vad_min_silence_ms=400,  # More aggressive for compressed audio
         nvenc_preset="hp",  # Fast encode for low quality
+        qsv_preset="veryfast",  # Fast QSV for SD
+        amf_quality="speed",  # Fast AMF for SD
+        vaapi_compression=2,
         x264_preset="faster",
     ),
 }
@@ -278,7 +296,7 @@ def get_ffmpeg_parameters(
         channel_number: Optional channel number for source detection
 
     Returns:
-        Dictionary with 'nvenc_preset' and 'x264_preset' keys
+        Dictionary with encoder preset keys for all GPU backends
     """
     try:
         signature = probe_encoding_signature(video_path, channel_number)
@@ -286,13 +304,22 @@ def get_ffmpeg_parameters(
 
         return {
             "nvenc_preset": profile.nvenc_preset,
+            "qsv_preset": profile.qsv_preset,
+            "amf_quality": profile.amf_quality,
+            "vaapi_compression": profile.vaapi_compression,
             "x264_preset": profile.x264_preset,
         }
 
     except Exception as e:
         LOG.warning(f"Failed to detect encoding profile: {e}, using defaults")
         # Return standard defaults
-        return {"nvenc_preset": "fast", "x264_preset": "fast"}
+        return {
+            "nvenc_preset": "fast",
+            "qsv_preset": "fast",
+            "amf_quality": "balanced",
+            "vaapi_compression": 4,
+            "x264_preset": "fast",
+        }
 
 
 def get_profile_summary() -> str:

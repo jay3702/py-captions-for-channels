@@ -112,20 +112,62 @@ PRESERVE_ALL_AUDIO_TRACKS = os.getenv("PRESERVE_ALL_AUDIO_TRACKS", "1").lower() 
     "yes",
 )
 
-# Hardware-accelerated decoding (NVDEC/CUVID)
-# "auto" - Detect and use NVDEC if available (recommended)
-# "cuda" - Force CUDA hardware decode (fails if unavailable)
-# "off"  - Disable hardware decode, use CPU software decode
-# When enabled, MPEG-2 and H.264 input is decoded on the GPU (NVDEC),
-# keeping frames in GPU memory for NVENC encoding — avoids CPU bottleneck.
+# Hardware-accelerated decoding
+# "auto" - Detect best available: NVDEC → QSV → VAAPI → CPU (recommended)
+# "cuda" - Force NVIDIA NVDEC/CUVID hardware decode
+# "qsv"  - Force Intel Quick Sync Video hardware decode
+# "vaapi" - Force VA-API hardware decode (Intel/AMD on Linux)
+# "off"  - Disable hardware decode, always use CPU software decode
+# When enabled, input video is decoded on the GPU's fixed-function hardware,
+# keeping frames in GPU memory for hardware encoding — avoids CPU bottleneck.
 HWACCEL_DECODE = os.getenv("HWACCEL_DECODE", "auto").lower()
 
+# GPU encoder selection (which hardware encoder to prefer)
+# "auto"   - Detect best available: NVENC → QSV → AMF → VAAPI → CPU
+# "nvenc"  - Force NVIDIA NVENC
+# "qsv"    - Force Intel Quick Sync Video encoder
+# "amf"    - Force AMD AMF encoder (Windows/Linux with AMDGPU-PRO)
+# "vaapi"  - Force VA-API encoder (Intel/AMD on Linux)
+# "cpu"    - Skip GPU encoding, use libx264 CPU encoder
+GPU_ENCODER = os.getenv("GPU_ENCODER", "auto").lower()
+
 # Video encoding quality settings
-# NVENC_CQ: Constant Quality for NVIDIA GPU encoding (0-51, lower=better)
+# NVENC_CQ: NVIDIA GPU constant quality (0-51, lower=better)
 #   18 = Near-transparent (high quality)
 #   23 = Good quality/size balance (default, matches pre-config encoder behavior)
 #   28 = Acceptable quality (faster encoding)
 NVENC_CQ = get_env_int("NVENC_CQ", 23)
+
+# QSV_PRESET: Intel Quick Sync Video speed preset
+# Options: veryfast, faster, fast, medium, slow, veryslow
+# Faster presets sacrifice quality for speed.
+# Default: fast (good balance for DVR recordings)
+QSV_PRESET = os.getenv("QSV_PRESET", "fast")
+
+# QSV_GLOBAL_QUALITY: Intel QSV global quality (1-51, lower=better)
+#   18 = Near-transparent (high quality)
+#   23 = Good quality/size balance (default)
+#   28 = Acceptable quality (faster encoding)
+QSV_GLOBAL_QUALITY = get_env_int("QSV_GLOBAL_QUALITY", 23)
+
+# AMF_QUALITY: AMD AMF quality preset
+# Options: speed, balanced, quality
+# Default: balanced
+AMF_QUALITY = os.getenv("AMF_QUALITY", "balanced")
+
+# AMF_QP: AMD AMF quantization parameter (0-51, lower=better)
+#   18 = Near-transparent quality
+#   23 = Good balance (default)
+#   28 = Acceptable quality
+AMF_QP = get_env_int("AMF_QP", 23)
+
+# VAAPI_QP: VA-API quantization parameter (0-51, lower=better)
+# Used for VAAPI encoder on Intel/AMD Linux
+VAAPI_QP = get_env_int("VAAPI_QP", 23)
+
+# VAAPI_DEVICE: VA-API render device path (Linux only)
+# Default: /dev/dri/renderD128
+VAAPI_DEVICE = os.getenv("VAAPI_DEVICE", "/dev/dri/renderD128")
 
 # X264_CRF: Constant Rate Factor for CPU encoding (0-51, lower=better)
 #   18 = Near-transparent (high quality)
