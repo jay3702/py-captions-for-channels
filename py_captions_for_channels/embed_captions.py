@@ -1649,25 +1649,19 @@ def main():
             step_elapsed = time.time() - step_start
             step_tracker.finish(step_name, status="completed")
             pipeline.stage_end(step_name, job_id)
-            log.info(
-                f"STEP TIMING: {step_name} completed in {step_elapsed:.1f}s"
-            )
+            log.info(f"STEP TIMING: {step_name} completed in {step_elapsed:.1f}s")
             return result
         except SystemExit:
             step_elapsed = time.time() - step_start
             step_tracker.finish(step_name, status="failed")
             pipeline.stage_end(step_name, job_id)
-            log.info(
-                f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s"
-            )
+            log.info(f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s")
             raise
         except Exception:
             step_elapsed = time.time() - step_start
             step_tracker.finish(step_name, status="failed")
             pipeline.stage_end(step_name, job_id)
-            log.info(
-                f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s"
-            )
+            log.info(f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s")
             raise
         finally:
             if misc_label:
@@ -1685,14 +1679,10 @@ def main():
     legacy_orig_candidate = mpg_path + ".orig"
     if os.path.exists(orig_candidate):
         input_source = orig_candidate
-        log.info(
-            "Reprocessing: using .cc4chan.orig as source (skipping restore copy)"
-        )
+        log.info("Reprocessing: using .cc4chan.orig as source (skipping restore copy)")
     elif os.path.exists(legacy_orig_candidate):
         input_source = legacy_orig_candidate
-        log.info(
-            "Reprocessing: using legacy .orig as source (skipping restore copy)"
-        )
+        log.info("Reprocessing: using legacy .orig as source (skipping restore copy)")
     else:
         input_source = mpg_path  # First-time processing
 
