@@ -27,6 +27,13 @@ from py_captions_for_channels.config import (
     NVENC_CQ,
     X264_CRF,
     HWACCEL_DECODE,
+    GPU_ENCODER,
+    QSV_PRESET,
+    QSV_GLOBAL_QUALITY,
+    AMF_QUALITY,
+    AMF_QP,
+    VAAPI_QP,
+    VAAPI_DEVICE,
 )
 from py_captions_for_channels.encoding_profiles import (
     get_whisper_parameters,
@@ -165,53 +172,278 @@ def detect_variable_frame_rate(video_path, log):
 
 
 # ---------------------------------------------------------------------------
-# Hardware-accelerated decoding (NVDEC/CUVID) detection
+# Multi-GPU hardware acceleration detection and command building
+# ---------------------------------------------------------------------------
+# Supported backends:
+#   NVIDIA  — NVDEC (CUVID) decode + NVENC encode  (fully implemented)
+#   Intel   — QSV decode + QSV encode               (stubbed / untested)
+#   AMD     — VAAPI decode + AMF/VAAPI encode        (stubbed / untested)
+#
+# Detection order (when HWACCEL_DECODE=auto / GPU_ENCODER=auto):
+#   1. NVIDIA CUVID/NVENC  (most common in transcoding servers)
+#   2. Intel QSV           (common in NUCs and integrated GPUs)
+#   3. VA-API              (universal Linux API — Intel iGPU, AMD dGPU)
+#   4. CPU software        (always-available fallback)
 # ---------------------------------------------------------------------------
 
-# Cache for CUVID capability detection (checked once per process)
-_cuvid_cache: dict = {}
+from dataclasses import dataclass
+from typing import Optional, List
 
 
-def _detect_cuvid_decoders() -> dict:
-    """Detect available CUVID hardware decoders.
+@dataclass
+class GPUBackend:
+    """Describes a detected GPU hardware acceleration backend."""
 
-    Returns dict with keys like 'mpeg2_cuvid', 'h264_cuvid' → bool.
-    Results are cached for the lifetime of the process.
+    name: str  # "nvidia", "qsv", "vaapi", "amf", "cpu"
+    hwaccel_type: str  # ffmpeg -hwaccel value ("cuda", "qsv", "vaapi", "")
+    encoder: str  # ffmpeg -c:v value ("h264_nvenc", "h264_qsv", etc.)
+    # Decoder map: input_codec → ffmpeg decoder name
+    decoders: dict  # e.g. {"mpeg2video": "mpeg2_cuvid", "h264": "h264_cuvid"}
+    deinterlace_filter: str  # e.g. "yadif_cuda", "deinterlace_qsv", "yadif"
+    hwaccel_output_format: str  # e.g. "cuda", "qsv", "vaapi", ""
+    # Extra input flags (e.g. ["-hwaccel_device", "/dev/dri/renderD128"])
+    extra_input_flags: list
+    available: bool = False
+
+
+# ---- Capability cache (populated once per process) ----
+_ffmpeg_caps_cache: dict = {}
+
+
+def _query_ffmpeg_capabilities() -> dict:
+    """Query ffmpeg for available encoders, decoders, and filters.
+
+    Returns a dict with keys: 'encoders', 'decoders', 'filters' — each a str
+    of the raw ffmpeg output for substring checks.
+    Results are cached for the process lifetime.
     """
-    if _cuvid_cache:
-        return _cuvid_cache
+    if _ffmpeg_caps_cache:
+        return _ffmpeg_caps_cache
 
-    try:
-        result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-decoders"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
+    for key, flag in [
+        ("encoders", "-encoders"),
+        ("decoders", "-decoders"),
+        ("filters", "-filters"),
+    ]:
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-hide_banner", flag],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+            _ffmpeg_caps_cache[key] = result.stdout
+        except Exception:
+            _ffmpeg_caps_cache[key] = ""
+
+    return _ffmpeg_caps_cache
+
+
+def _detect_nvidia_backend() -> GPUBackend:
+    """Detect NVIDIA NVENC/NVDEC capabilities."""
+    caps = _query_ffmpeg_capabilities()
+
+    decoders = {}
+    for codec, dec_name in [
+        ("mpeg2video", "mpeg2_cuvid"),
+        ("h264", "h264_cuvid"),
+        ("hevc", "hevc_cuvid"),
+    ]:
+        if dec_name in caps.get("decoders", ""):
+            decoders[codec] = dec_name
+
+    has_encoder = "h264_nvenc" in caps.get("encoders", "")
+    has_deint = "yadif_cuda" in caps.get("filters", "")
+
+    return GPUBackend(
+        name="nvidia",
+        hwaccel_type="cuda",
+        encoder="h264_nvenc",
+        decoders=decoders,
+        deinterlace_filter=(
+            "yadif_cuda=mode=send_frame:parity=auto:deint=all" if has_deint else ""
+        ),
+        hwaccel_output_format="cuda",
+        extra_input_flags=[],
+        available=has_encoder and len(decoders) > 0,
+    )
+
+
+def _detect_qsv_backend() -> GPUBackend:
+    """Detect Intel Quick Sync Video capabilities.
+
+    QSV requires Intel GPU with media driver. Available on most Intel CPUs
+    with integrated graphics (HD/UHD/Iris) and Intel Arc discrete GPUs.
+    """
+    caps = _query_ffmpeg_capabilities()
+
+    decoders = {}
+    for codec, dec_name in [
+        ("mpeg2video", "mpeg2_qsv"),
+        ("h264", "h264_qsv"),
+        ("hevc", "hevc_qsv"),
+    ]:
+        if dec_name in caps.get("decoders", ""):
+            decoders[codec] = dec_name
+
+    has_encoder = "h264_qsv" in caps.get("encoders", "")
+    has_deint = "deinterlace_qsv" in caps.get("filters", "")
+
+    return GPUBackend(
+        name="qsv",
+        hwaccel_type="qsv",
+        encoder="h264_qsv",
+        decoders=decoders,
+        deinterlace_filter="deinterlace_qsv" if has_deint else "",
+        hwaccel_output_format="qsv",
+        extra_input_flags=[],
+        available=has_encoder and len(decoders) > 0,
+    )
+
+
+def _detect_vaapi_backend() -> GPUBackend:
+    """Detect VA-API capabilities (Intel iGPU / AMD dGPU on Linux).
+
+    VA-API is the universal Linux hardware video API. Works with:
+    - Intel iGPU (via intel-media-va-driver or i965-va-driver)
+    - AMD dGPU (via mesa / AMDGPU-PRO)
+    Requires /dev/dri/renderD128 (or configured VAAPI_DEVICE).
+    """
+    caps = _query_ffmpeg_capabilities()
+
+    decoders = {}
+    # VA-API uses the generic hwaccel mechanism; ffmpeg's -hwaccel vaapi
+    # handles decoding without explicit per-codec decoder names.  However,
+    # we still check for the encoder to confirm VA-API is functional.
+    # For decode, VA-API uses the built-in decoders with -hwaccel vaapi.
+    # We'll map codecs that VA-API commonly supports.
+    for codec in ("mpeg2video", "h264", "hevc"):
+        # VA-API decode is handled by -hwaccel vaapi (no _vaapi decoder names)
+        # We just note which codecs are generally supported
+        decoders[codec] = codec  # placeholder — hwaccel vaapi handles it
+
+    has_encoder = "h264_vaapi" in caps.get("encoders", "")
+    has_deint = "deinterlace_vaapi" in caps.get("filters", "")
+
+    return GPUBackend(
+        name="vaapi",
+        hwaccel_type="vaapi",
+        encoder="h264_vaapi",
+        decoders=decoders if has_encoder else {},
+        deinterlace_filter="deinterlace_vaapi" if has_deint else "",
+        hwaccel_output_format="vaapi",
+        extra_input_flags=["-hwaccel_device", VAAPI_DEVICE],
+        available=has_encoder,
+    )
+
+
+def _detect_amf_backend() -> GPUBackend:
+    """Detect AMD AMF (Advanced Media Framework) capabilities.
+
+    AMF is AMD's proprietary encoding API. Available on:
+    - Windows: via AMD Adrenalin drivers
+    - Linux: via AMDGPU-PRO driver (not open-source mesa)
+    Note: AMF encoding only — decode typically uses VA-API on Linux.
+    """
+    caps = _query_ffmpeg_capabilities()
+
+    has_encoder = "h264_amf" in caps.get("encoders", "")
+
+    # AMF is encode-only; decode is typically handled by VA-API or CPU.
+    # For hwaccel decode on AMD, we fall back to VAAPI.
+    return GPUBackend(
+        name="amf",
+        hwaccel_type="",  # AMF doesn't have its own hwaccel decode type
+        encoder="h264_amf",
+        decoders={},  # AMF is encode-only
+        deinterlace_filter="",
+        hwaccel_output_format="",
+        extra_input_flags=[],
+        available=has_encoder,
+    )
+
+
+# ---- Cached backend detection result ----
+_detected_backend: Optional[GPUBackend] = None
+
+
+def detect_gpu_backend(log) -> GPUBackend:
+    """Auto-detect the best available GPU backend.
+
+    Detection order: NVIDIA → QSV → VAAPI → AMF → CPU.
+    Results are cached for the process lifetime.
+
+    If GPU_ENCODER is set to a specific value (not 'auto'), that backend
+    is returned directly (with available=True assumed — failure will be
+    caught at encode time with a fallback to CPU).
+    """
+    global _detected_backend
+    if _detected_backend is not None:
+        return _detected_backend
+
+    # If user forced a specific encoder, build and return that backend
+    forced_map = {
+        "nvenc": _detect_nvidia_backend,
+        "qsv": _detect_qsv_backend,
+        "vaapi": _detect_vaapi_backend,
+        "amf": _detect_amf_backend,
+    }
+    if GPU_ENCODER != "auto" and GPU_ENCODER != "cpu":
+        detector = forced_map.get(GPU_ENCODER)
+        if detector:
+            backend = detector()
+            if backend.available:
+                log.info(f"GPU encoder forced: {backend.name} ({backend.encoder})")
+            else:
+                log.warning(
+                    f"GPU_ENCODER={GPU_ENCODER} requested but not available in ffmpeg"
+                )
+            _detected_backend = backend
+            return backend
+
+    if GPU_ENCODER == "cpu":
+        cpu_backend = GPUBackend(
+            name="cpu",
+            hwaccel_type="",
+            encoder="libx264",
+            decoders={},
+            deinterlace_filter="yadif",
+            hwaccel_output_format="",
+            extra_input_flags=[],
+            available=True,
         )
-        for name in ("mpeg2_cuvid", "h264_cuvid", "hevc_cuvid"):
-            _cuvid_cache[name] = name in result.stdout
-    except Exception:
-        _cuvid_cache.setdefault("mpeg2_cuvid", False)
-        _cuvid_cache.setdefault("h264_cuvid", False)
-        _cuvid_cache.setdefault("hevc_cuvid", False)
+        log.info("GPU encoding disabled (GPU_ENCODER=cpu), using libx264")
+        _detected_backend = cpu_backend
+        return cpu_backend
 
-    return _cuvid_cache
+    # Auto-detection: try each backend in priority order
+    for detect_fn, label in [
+        (_detect_nvidia_backend, "NVIDIA NVENC"),
+        (_detect_qsv_backend, "Intel QSV"),
+        (_detect_vaapi_backend, "VA-API"),
+        (_detect_amf_backend, "AMD AMF"),
+    ]:
+        backend = detect_fn()
+        if backend.available:
+            log.info(f"Auto-detected GPU backend: {label} ({backend.encoder})")
+            _detected_backend = backend
+            return backend
 
-
-def _detect_yadif_cuda() -> bool:
-    """Check if ffmpeg has yadif_cuda filter for GPU deinterlacing."""
-    try:
-        result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-filters"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        return "yadif_cuda" in result.stdout
-    except Exception:
-        return False
+    # No GPU backend found — fall back to CPU
+    cpu_backend = GPUBackend(
+        name="cpu",
+        hwaccel_type="",
+        encoder="libx264",
+        decoders={},
+        deinterlace_filter="yadif",
+        hwaccel_output_format="",
+        extra_input_flags=[],
+        available=True,
+    )
+    log.info("No GPU encoder detected, using CPU (libx264)")
+    _detected_backend = cpu_backend
+    return cpu_backend
 
 
 def _probe_input_codec(video_path: str, log) -> str:
@@ -279,70 +511,105 @@ def build_hwaccel_flags(input_path: str, log) -> list:
     list when hardware decode is not available / not configured.
 
     When hardware decode is active and the source is interlaced, a
-    ``yadif_cuda`` video filter is appended to the returned list as well
+    GPU deinterlace video filter is appended to the returned list as well
     (after a ``-vf`` flag) so the caller can splice it in.
+
+    Supports: NVIDIA CUVID, Intel QSV, VA-API (Intel/AMD).
     """
     if HWACCEL_DECODE == "off":
         log.debug("Hardware decode disabled (HWACCEL_DECODE=off)")
         return []
 
+    backend = detect_gpu_backend(log)
+
+    # If the backend has no hwaccel decode support, skip
+    if not backend.hwaccel_type or not backend.decoders:
+        log.debug(f"Backend '{backend.name}' has no hardware decode — using CPU decode")
+        return []
+
+    # Check if user forced a specific hwaccel type
+    hwaccel_type_map = {
+        "cuda": "cuda",
+        "qsv": "qsv",
+        "vaapi": "vaapi",
+    }
+    if HWACCEL_DECODE != "auto":
+        forced_type = hwaccel_type_map.get(HWACCEL_DECODE)
+        if forced_type and forced_type != backend.hwaccel_type:
+            log.warning(
+                f"HWACCEL_DECODE={HWACCEL_DECODE} but detected backend is "
+                f"'{backend.name}' ({backend.hwaccel_type}) — attempting forced type"
+            )
+            # For forced HWACCEL_DECODE, try to use the corresponding backend
+            forced_backends = {
+                "cuda": _detect_nvidia_backend,
+                "qsv": _detect_qsv_backend,
+                "vaapi": _detect_vaapi_backend,
+            }
+            detector = forced_backends.get(forced_type)
+            if detector:
+                forced_backend = detector()
+                if forced_backend.available and forced_backend.decoders:
+                    backend = forced_backend
+                else:
+                    log.warning(
+                        f"Forced hwaccel '{forced_type}' not available — "
+                        f"using detected backend"
+                    )
+
     input_codec = _probe_input_codec(input_path, log)
 
-    # Map input codec to CUVID decoder name
-    cuvid_map = {
-        "mpeg2video": "mpeg2_cuvid",
-        "h264": "h264_cuvid",
-        "hevc": "hevc_cuvid",
-    }
-
-    cuvid_decoder = cuvid_map.get(input_codec)
-    if not cuvid_decoder:
-        log.info(f"No CUVID decoder for codec '{input_codec}' — using CPU decode")
+    # Check if this backend has a decoder for our input codec
+    decoder = backend.decoders.get(input_codec)
+    if not decoder:
+        log.info(
+            f"Backend '{backend.name}' has no decoder for '{input_codec}' "
+            f"— using CPU decode"
+        )
         return []
 
-    caps = _detect_cuvid_decoders()
-    has_decoder = caps.get(cuvid_decoder, False)
+    # Build hwaccel flags
+    flags = ["-hwaccel", backend.hwaccel_type]
 
-    if not has_decoder:
-        if HWACCEL_DECODE == "cuda":
-            log.warning(
-                f"HWACCEL_DECODE=cuda but {cuvid_decoder} not available in ffmpeg"
-            )
-        else:
-            log.info(f"{cuvid_decoder} not available — falling back to CPU decode")
-        return []
+    if backend.hwaccel_output_format:
+        flags.extend(["-hwaccel_output_format", backend.hwaccel_output_format])
 
-    # Build hwaccel flags: use generic -hwaccel cuda so ffmpeg picks the
-    # correct CUVID decoder automatically and keeps frames in GPU memory.
-    flags = [
-        "-hwaccel",
-        "cuda",
-        "-hwaccel_output_format",
-        "cuda",
-        "-c:v",
-        cuvid_decoder,
-    ]
+    # Add any extra input flags (e.g. -hwaccel_device for VAAPI)
+    flags.extend(backend.extra_input_flags)
+
+    # For NVIDIA CUVID, we specify the decoder explicitly
+    if backend.name == "nvidia":
+        flags.extend(["-c:v", decoder])
+    # For QSV, specify the QSV decoder
+    elif backend.name == "qsv":
+        flags.extend(["-c:v", decoder])
+    # For VAAPI, ffmpeg handles decoder selection via -hwaccel vaapi
+    # (no explicit -c:v needed)
 
     # Check if source is interlaced — if so, add GPU deinterlace filter
     field_order = _probe_field_order(input_path, log)
     is_interlaced = field_order in ("tt", "bb", "tb", "bt")
 
-    if is_interlaced and _detect_yadif_cuda():
-        flags.extend(["-vf", "yadif_cuda=mode=send_frame:parity=auto:deint=all"])
+    if is_interlaced and backend.deinterlace_filter:
+        flags.extend(["-vf", backend.deinterlace_filter])
         log.info(
-            f"Hardware decode enabled: {cuvid_decoder} + yadif_cuda deinterlace "
+            f"Hardware decode enabled: {backend.name} ({decoder}) + "
+            f"{backend.deinterlace_filter.split('=')[0]} deinterlace "
             f"(field_order={field_order})"
         )
     elif is_interlaced:
-        # Have interlaced source but no GPU deinterlace filter — fall back to
-        # CPU decode so the normal yadif filter (or ffmpeg default) can handle it.
+        # Interlaced source but no GPU deinterlace filter — fall back to
+        # CPU decode so software yadif can handle it.
         log.info(
-            f"Source is interlaced ({field_order}) but yadif_cuda unavailable — "
-            f"CPU decode with software deinterlace"
+            f"Source is interlaced ({field_order}) but {backend.name} has no GPU "
+            f"deinterlace filter — CPU decode with software deinterlace"
         )
         return []
     else:
-        log.info(f"Hardware decode enabled: {cuvid_decoder} (progressive source)")
+        log.info(
+            f"Hardware decode enabled: {backend.name} ({decoder}) "
+            f"(progressive source)"
+        )
 
     return flags
 
@@ -761,10 +1028,72 @@ def validate_and_trim_srt(srt_path, max_end_time, log):
     log.info(f"Trimmed SRT to {max_end_time:.2f}s for Android compatibility.")
 
 
+def _build_gpu_encoder_args(backend: "GPUBackend", ffmpeg_params: dict) -> list:
+    """Build the encoder-specific ffmpeg arguments for a given GPU backend.
+
+    Returns a list like ["-c:v", "h264_nvenc", "-preset", "fast", "-rc", "vbr", ...].
+    """
+    if backend.name == "nvidia":
+        preset = ffmpeg_params.get("nvenc_preset", "fast")
+        return [
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            preset,
+            "-rc",
+            "vbr",
+            "-cq",
+            str(NVENC_CQ),
+        ]
+    elif backend.name == "qsv":
+        preset = ffmpeg_params.get("qsv_preset", QSV_PRESET)
+        return [
+            "-c:v",
+            "h264_qsv",
+            "-preset",
+            preset,
+            "-global_quality",
+            str(QSV_GLOBAL_QUALITY),
+        ]
+    elif backend.name == "amf":
+        quality = ffmpeg_params.get("amf_quality", AMF_QUALITY)
+        return [
+            "-c:v",
+            "h264_amf",
+            "-quality",
+            quality,
+            "-qp_i",
+            str(AMF_QP),
+            "-qp_p",
+            str(AMF_QP),
+        ]
+    elif backend.name == "vaapi":
+        return [
+            "-c:v",
+            "h264_vaapi",
+            "-qp",
+            str(VAAPI_QP),
+        ]
+    else:
+        # CPU fallback
+        preset = ffmpeg_params.get("x264_preset", "fast")
+        return [
+            "-c:v",
+            "libx264",
+            "-preset",
+            preset,
+            "-crf",
+            str(X264_CRF),
+        ]
+
+
 def encode_av_only(
     mpg_orig, temp_av, log, job_id=None, source_path=None, audio_stream_index=None
 ):
-    """Step 1: Encode video (NVENC if available, else CPU), copy audio, no subs.
+    """Step 1: Encode video (GPU if available, else CPU), copy audio, no subs.
+
+    Tries GPU encoders in priority order (NVENC → QSV → AMF → VAAPI) based
+    on the detected backend, with automatic fallback to CPU libx264.
 
     Args:
         mpg_orig: Path to .orig file to encode
@@ -787,28 +1116,34 @@ def encode_av_only(
     print(f"[OPTIMIZATION] ffmpeg channel detected: {channel_number}")
     if OPTIMIZATION_MODE == "automatic":
         ffmpeg_params = get_ffmpeg_parameters(mpg_orig, channel_number)
-        nvenc_preset = ffmpeg_params["nvenc_preset"]
-        x264_preset = ffmpeg_params["x264_preset"]
         log.info(
             f"Using automatic ffmpeg presets (channel={channel_number}): "
-            f"nvenc={nvenc_preset}, x264={x264_preset}"
+            f"{ffmpeg_params}"
         )
         print(
             f"[OPTIMIZATION] Using automatic ffmpeg: "
-            f"nvenc={nvenc_preset}, x264={x264_preset}"
+            f"nvenc={ffmpeg_params.get('nvenc_preset')}, "
+            f"x264={ffmpeg_params.get('x264_preset')}"
         )
     else:
         # Standard mode: use hardcoded presets (current default)
-        nvenc_preset = "fast"
-        x264_preset = "fast"
+        ffmpeg_params = {
+            "nvenc_preset": "fast",
+            "qsv_preset": "fast",
+            "amf_quality": "balanced",
+            "vaapi_compression": 4,
+            "x264_preset": "fast",
+        }
         log.info("Using standard ffmpeg presets (OPTIMIZATION_MODE=standard)")
 
-    # Build base command for NVENC (GPU encoding)
-    # Attempt hardware-accelerated decoding (NVDEC/CUVID) to keep the
+    # Detect GPU backend
+    backend = detect_gpu_backend(log)
+
+    # Attempt hardware-accelerated decoding (NVDEC/QSV/VAAPI) to keep the
     # entire decode→encode pipeline on the GPU, avoiding CPU bottleneck.
     hwaccel_flags = build_hwaccel_flags(mpg_orig, log)
 
-    # When hwaccel includes yadif_cuda, a -vf filter is already set.
+    # When hwaccel includes a deinterlace filter, a -vf flag is already set.
     # Extract it so we can place it correctly in the command.
     vf_flags = []
     input_flags = []
@@ -820,37 +1155,6 @@ def encode_av_only(
                 continue  # Already captured as part of vf_flags
             input_flags.append(flag)
 
-    # Use VBR mode with constant quality parameter for best results
-    cmd_nvenc = (
-        [
-            "ffmpeg",
-            "-y",
-            "-progress",
-            "pipe:2",  # Enable progress reporting to stderr
-        ]
-        + input_flags
-        + [
-            "-i",
-            mpg_orig,
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            nvenc_preset,
-            "-rc",
-            "vbr",
-            "-cq",
-            str(NVENC_CQ),
-        ]
-    )
-
-    # Add video filter (GPU deinterlace) if hwaccel detection provided one
-    if vf_flags:
-        cmd_nvenc.extend(vf_flags)
-
-    # Add VFR handling if needed (critical for Chrome-captured content)
-    if is_vfr:
-        cmd_nvenc.extend(["-vsync", "vfr"])
-
     # Determine audio stream mapping based on configuration
     if PRESERVE_ALL_AUDIO_TRACKS or audio_stream_index is None:
         # Default: preserve all audio tracks for language options
@@ -859,14 +1163,13 @@ def encode_av_only(
             log.info("Preserving all audio tracks (PRESERVE_ALL_AUDIO_TRACKS=true)")
     else:
         # Performance mode: filter to only selected language track
-        # Use absolute stream index (not relative within audio streams)
         audio_map = ["-map", "0:v", "-map", f"0:{audio_stream_index}"]
         log.info(
             f"Filtering to audio stream {audio_stream_index} "
             f"(PRESERVE_ALL_AUDIO_TRACKS=false, faster encoding)"
         )
 
-    cmd_nvenc.extend(
+    audio_tail = (
         [
             "-c:a",
             "aac",
@@ -880,75 +1183,79 @@ def encode_av_only(
         + audio_map
         + [temp_av]
     )
-    log.info(f"Trying NVENC encode: {' '.join(cmd_nvenc)}")
-    try:
-        _run_ffmpeg_with_progress(
-            cmd_nvenc,
-            video_duration,
-            "Encoding (GPU+hwaccel)" if input_flags else "Encoding (GPU)",
-            log,
-            job_id,
+
+    # ---- Try GPU encode (with hwaccel decode) ----
+    if backend.name != "cpu":
+        encoder_args = _build_gpu_encoder_args(backend, ffmpeg_params)
+        cmd_gpu = (
+            ["ffmpeg", "-y", "-progress", "pipe:2"]
+            + input_flags
+            + ["-i", mpg_orig]
+            + encoder_args
         )
-        return
-    except subprocess.CalledProcessError:
+
+        # Add video filter (GPU deinterlace) if hwaccel detection provided one
+        if vf_flags:
+            cmd_gpu.extend(vf_flags)
+        if is_vfr:
+            cmd_gpu.extend(["-vsync", "vfr"])
+        cmd_gpu.extend(audio_tail)
+
+        step_label = (
+            f"Encoding ({backend.name.upper()}+hwaccel)"
+            if input_flags
+            else f"Encoding ({backend.name.upper()})"
+        )
+        log.info(f"Trying {backend.name.upper()} encode: {' '.join(cmd_gpu)}")
+        try:
+            _run_ffmpeg_with_progress(cmd_gpu, video_duration, step_label, log, job_id)
+            return
+        except subprocess.CalledProcessError:
+            log.warning(f"{backend.name.upper()} encode failed")
+
+        # ---- Retry GPU encode WITHOUT hwaccel decode ----
         if input_flags:
-            # hwaccel NVENC failed — retry NVENC without hardware decode
             log.warning(
-                "NVENC with hardware decode failed, retrying NVENC without hwaccel"
+                f"{backend.name.upper()} with hwaccel decode failed, "
+                f"retrying without hardware decode"
             )
-            cmd_nvenc_sw = [
+            cmd_gpu_sw = [
                 "ffmpeg",
                 "-y",
                 "-progress",
                 "pipe:2",
                 "-i",
                 mpg_orig,
-                "-c:v",
-                "h264_nvenc",
-                "-preset",
-                nvenc_preset,
-                "-rc",
-                "vbr",
-                "-cq",
-                str(NVENC_CQ),
-            ]
+            ] + encoder_args
             if is_vfr:
-                cmd_nvenc_sw.extend(["-vsync", "vfr"])
-            cmd_nvenc_sw.extend(
-                [
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "256k",
-                    "-analyzeduration",
-                    "2147483647",
-                    "-probesize",
-                    "2147483647",
-                ]
-                + audio_map
-                + [temp_av]
+                cmd_gpu_sw.extend(["-vsync", "vfr"])
+            cmd_gpu_sw.extend(audio_tail)
+
+            log.info(
+                f"Trying {backend.name.upper()} (sw decode): " f"{' '.join(cmd_gpu_sw)}"
             )
-            log.info(f"Trying NVENC (sw decode): {' '.join(cmd_nvenc_sw)}")
             try:
                 _run_ffmpeg_with_progress(
-                    cmd_nvenc_sw,
+                    cmd_gpu_sw,
                     video_duration,
-                    "Encoding (GPU, sw decode)",
+                    f"Encoding ({backend.name.upper()}, sw decode)",
                     log,
                     job_id,
                 )
                 return
             except subprocess.CalledProcessError:
-                log.warning("NVENC (sw decode) also failed, falling to CPU")
-        else:
-            log.warning("NVENC failed, falling back to CPU (libx264)")
+                log.warning(
+                    f"{backend.name.upper()} (sw decode) also failed, "
+                    f"falling to CPU"
+                )
 
-    # Fallback to CPU with same VFR handling
+    # ---- CPU fallback (libx264) ----
+    x264_preset = ffmpeg_params.get("x264_preset", "fast")
     cmd_cpu = [
         "ffmpeg",
         "-y",
         "-progress",
-        "pipe:2",  # Enable progress reporting to stderr
+        "pipe:2",
         "-i",
         mpg_orig,
         "-c:v",
@@ -961,28 +1268,8 @@ def encode_av_only(
 
     if is_vfr:
         cmd_cpu.extend(["-vsync", "vfr"])
+    cmd_cpu.extend(audio_tail)
 
-    # Determine audio stream mapping (same logic as NVENC path)
-    if PRESERVE_ALL_AUDIO_TRACKS or audio_stream_index is None:
-        audio_map = ["-map", "0:v", "-map", "0:a?"]
-    else:
-        # Use absolute stream index (not relative within audio streams)
-        audio_map = ["-map", "0:v", "-map", f"0:{audio_stream_index}"]
-
-    cmd_cpu.extend(
-        [
-            "-c:a",
-            "aac",
-            "-b:a",
-            "256k",
-            "-analyzeduration",
-            "2147483647",
-            "-probesize",
-            "2147483647",
-        ]
-        + audio_map
-        + [temp_av]
-    )
     log.info(f"Trying CPU encode: {' '.join(cmd_cpu)}")
     try:
         _run_ffmpeg_with_progress(
