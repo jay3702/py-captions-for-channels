@@ -805,7 +805,7 @@ def validate_audio_decodability(path, log):
             path,
         ]
         result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
-        codec = result.stdout.strip().lower()
+        codec = result.stdout.split("\n")[0].strip().lower()
 
         # MPEG2 files: always use WAV extraction (corruption can be anywhere)
         if "mpeg2video" in codec:
@@ -1580,18 +1580,31 @@ def main():
         pipeline.stage_start(step_name, job_id, filename)
         if misc_label:
             update_misc_progress(job_id, 0.0, misc_label)
+        step_start = time.time()
         try:
             result = func()
+            step_elapsed = time.time() - step_start
             step_tracker.finish(step_name, status="completed")
             pipeline.stage_end(step_name, job_id)
+            log.info(
+                f"STEP TIMING: {step_name} completed in {step_elapsed:.1f}s"
+            )
             return result
         except SystemExit:
+            step_elapsed = time.time() - step_start
             step_tracker.finish(step_name, status="failed")
             pipeline.stage_end(step_name, job_id)
+            log.info(
+                f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s"
+            )
             raise
         except Exception:
+            step_elapsed = time.time() - step_start
             step_tracker.finish(step_name, status="failed")
             pipeline.stage_end(step_name, job_id)
+            log.info(
+                f"STEP TIMING: {step_name} failed after {step_elapsed:.1f}s"
+            )
             raise
         finally:
             if misc_label:
