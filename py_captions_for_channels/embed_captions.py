@@ -12,7 +12,9 @@ import time
 import shutil
 import subprocess
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 from py_captions_for_channels.logging.structured_logger import get_logger
 from py_captions_for_channels.database import get_db
 from py_captions_for_channels.progress_tracker import get_progress_tracker
@@ -185,9 +187,6 @@ def detect_variable_frame_rate(video_path, log):
 #   3. VA-API              (universal Linux API — Intel iGPU, AMD dGPU)
 #   4. CPU software        (always-available fallback)
 # ---------------------------------------------------------------------------
-
-from dataclasses import dataclass
-from typing import Optional, List
 
 
 @dataclass
