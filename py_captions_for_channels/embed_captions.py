@@ -807,7 +807,6 @@ def encode_av_only(
     # Attempt hardware-accelerated decoding (NVDEC/CUVID) to keep the
     # entire decode→encode pipeline on the GPU, avoiding CPU bottleneck.
     hwaccel_flags = build_hwaccel_flags(mpg_orig, log)
-    has_gpu_deinterlace = any("yadif_cuda" in str(f) for f in hwaccel_flags)
 
     # When hwaccel includes yadif_cuda, a -vf filter is already set.
     # Extract it so we can place it correctly in the command.
