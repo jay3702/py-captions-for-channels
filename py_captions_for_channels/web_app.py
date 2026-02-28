@@ -380,6 +380,19 @@ def _parse_env_file(file_path: Path) -> dict:
     Returns:
         Dict with settings grouped by category
     """
+    # Infrastructure path settings: managed via .env only,
+    # hidden from the web Settings UI to avoid accidental changes.
+    _SETTINGS_UI_HIDDEN = frozenset(
+        {
+            "DATA_DIR",
+            "HOST_DATA_DIR",
+            "DB_PATH",
+            "STATE_FILE",
+            "LOG_FILE",
+            "LOG_PATH",
+            "QUARANTINE_DIR",
+        }
+    )
     settings = {
         "channels_dvr": {},
         "channelwatch": {},
@@ -446,6 +459,11 @@ def _parse_env_file(file_path: Path) -> dict:
                             and not desc.startswith("Note:")
                         ):
                             current_description.append(desc)
+                        continue
+
+                    # Skip infrastructure path settings hidden from UI
+                    if key in _SETTINGS_UI_HIDDEN:
+                        current_description = []
                         continue
 
                     # Extract default from description
