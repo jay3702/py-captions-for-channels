@@ -2183,8 +2183,6 @@ async def cleanup_execution_history(cutoff_date: str = None) -> dict:
         Cleanup result with number of executions removed
     """
     try:
-        from py_captions_for_channels.models import OrphanCleanupHistory
-
         tracker = get_tracker()
 
         if cutoff_date:
@@ -2194,21 +2192,11 @@ async def cleanup_execution_history(cutoff_date: str = None) -> dict:
                 f"Manual execution history cleanup requested with cutoff: {cutoff}"
             )
         else:
-            # Use oldest cleanup date
-            db = next(get_db())
-            oldest_cleanup = (
-                db.query(OrphanCleanupHistory)
-                .order_by(OrphanCleanupHistory.cleanup_timestamp.asc())
-                .first()
+            # Use 30-day retention
+            cutoff = datetime.utcnow() - timedelta(days=30)
+            logger.info(
+                f"Using 30-day retention cutoff: {cutoff}"
             )
-
-            if oldest_cleanup:
-                cutoff = oldest_cleanup.cleanup_timestamp
-                logger.info(f"Using oldest cleanup date as cutoff: {cutoff}")
-            else:
-                # Fallback to 30 days ago
-                cutoff = datetime.utcnow() - timedelta(days=30)
-                logger.info(f"No cleanup history found, using 30-day default: {cutoff}")
 
         removed = tracker.clear_executions_before_date(cutoff)
 

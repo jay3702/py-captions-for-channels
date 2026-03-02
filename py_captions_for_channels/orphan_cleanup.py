@@ -692,26 +692,12 @@ def run_cleanup(dry_run: bool = False, cleanup_history: bool = True) -> dict:
                 db = next(get_db())
                 service = ExecutionService(db)
 
-                # Get the oldest orphan cleanup date (or use 30 days ago as fallback)
-                oldest_cleanup = (
-                    db.query(OrphanCleanupHistory)
-                    .order_by(OrphanCleanupHistory.cleanup_timestamp.asc())
-                    .first()
+                # Keep 30 days of execution history
+                cutoff_date = datetime.utcnow() - timedelta(days=30)
+                LOG.info(
+                    f"Cleaning execution history older than "
+                    f"{cutoff_date} (30-day retention)"
                 )
-
-                if oldest_cleanup:
-                    cutoff_date = oldest_cleanup.cleanup_timestamp
-                    LOG.info(
-                        f"Cleaning execution history older than "
-                        f"{cutoff_date} (oldest cleanup date)"
-                    )
-                else:
-                    # No cleanup history yet, use 30 days as default
-                    cutoff_date = datetime.utcnow() - timedelta(days=30)
-                    LOG.info(
-                        f"No cleanup history found, using 30-day "
-                        f"default cutoff: {cutoff_date}"
-                    )
 
                 executions_removed = service.clear_executions_before_date(cutoff_date)
                 result["executions_cleaned"] = executions_removed
