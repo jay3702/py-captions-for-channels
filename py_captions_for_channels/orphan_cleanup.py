@@ -686,26 +686,32 @@ def run_cleanup(dry_run: bool = False, cleanup_history: bool = True) -> dict:
             except Exception as e:
                 LOG.warning(f"Failed to record cleanup history: {e}")
 
-        # Clean up old execution history if requested
+        # Archive old execution history if requested
         if cleanup_history and not dry_run:
             try:
+                from .config import DATA_DIR
+
                 db = next(get_db())
                 service = ExecutionService(db)
 
-                # Keep 30 days of execution history
+                # Archive executions older than 30 days
                 cutoff_date = datetime.utcnow() - timedelta(days=30)
+                archive_dir = os.path.join(DATA_DIR, "archives")
                 LOG.info(
-                    f"Cleaning execution history older than "
+                    f"Archiving execution history older than "
                     f"{cutoff_date} (30-day retention)"
                 )
 
-                executions_removed = service.clear_executions_before_date(cutoff_date)
-                result["executions_cleaned"] = executions_removed
+                archive_result = service.archive_executions_before_date(
+                    cutoff_date, archive_dir
+                )
+                result["executions_archived"] = archive_result["archived"]
+                result["archive_file"] = archive_result.get("archive_file")
 
-                if executions_removed > 0:
+                if archive_result["archived"] > 0:
                     LOG.info(
-                        f"Cleaned up {executions_removed} execution "
-                        f"records older than {cutoff_date}"
+                        f"Archived {archive_result['archived']} execution "
+                        f"records to {archive_result['archive_file']}"
                     )
 
             except Exception as e:

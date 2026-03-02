@@ -1,6 +1,8 @@
 """Execution service for database-backed execution tracking."""
 
+import json
 import logging
+import os
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from sqlalchemy import asc, desc
@@ -517,6 +519,234 @@ class ExecutionService:
                 raise
 
         return removed
+
+    def _execution_to_archive_dict(self, execution: Execution) -> dict:
+        """Serialize an Execution and its steps for archival."""
+        steps = (
+            self.db.query(ExecutionStep)
+            .filter(ExecutionStep.execution_id == execution.id)
+            .all()
+        )
+        return {
+            "id": execution.id,
+            "title": execution.title,
+            "path": execution.path,
+            "status": execution.status,
+            "kind": execution.kind,
+            "job_number": execution.job_number,
+            "job_sequence": execution.job_sequence,
+            "started_at": (
+                execution.started_at.isoformat() if execution.started_at else None
+            ),
+            "completed_at": (
+                execution.completed_at.isoformat() if execution.completed_at else None
+            ),
+            "success": execution.success,
+            "error_message": execution.error_message,
+            "elapsed_seconds": execution.elapsed_seconds,
+            "input_size_bytes": execution.input_size_bytes,
+            "output_size_bytes": execution.output_size_bytes,
+            "cancel_requested": execution.cancel_requested,
+            "steps": [
+                {
+                    "step_name": s.step_name,
+                    "status": s.status,
+                    "started_at": (s.started_at.isoformat() if s.started_at else None),
+                    "completed_at": (
+                        s.completed_at.isoformat() if s.completed_at else None
+                    ),
+                    "input_path": s.input_path,
+                    "output_path": s.output_path,
+                    "step_metadata": s.step_metadata,
+                }
+                for s in steps
+            ],
+        }
+
+    def archive_executions_before_date(
+        self, cutoff_date: datetime, archive_dir: str
+    ) -> dict:
+        """Archive executions older than cutoff to a JSON file, then remove.
+
+        The archive is written to ``archive_dir`` with a filename like
+        ``executions_archive_2026-03-02T21-00-00Z.json``.  The file is
+        self-describing and can be restored with ``restore_archive()``.
+
+        Args:
+            cutoff_date: Archive executions with started_at before this date.
+            archive_dir: Directory to write the archive file into.
+
+        Returns:
+            dict with keys: archived, archive_file, cutoff_date
+        """
+        if cutoff_date.tzinfo is None:
+            cutoff_date = cutoff_date.replace(tzinfo=timezone.utc)
+
+        old_execs = (
+            self.db.query(Execution)
+            .filter(Execution.started_at < cutoff_date)
+            .order_by(Execution.started_at.asc())
+            .all()
+        )
+
+        if not old_execs:
+            return {"archived": 0, "archive_file": None}
+
+        # Serialize
+        records = [self._execution_to_archive_dict(e) for e in old_execs]
+
+        # Write archive file
+        os.makedirs(archive_dir, exist_ok=True)
+        ts_label = cutoff_date.strftime("%Y-%m-%dT%H-%M-%SZ")
+        filename = f"executions_archive_{ts_label}.json"
+        archive_path = os.path.join(archive_dir, filename)
+
+        archive_data = {
+            "format": "py-captions-execution-archive",
+            "version": 1,
+            "cutoff_date": cutoff_date.isoformat(),
+            "archived_at": datetime.now(timezone.utc).isoformat(),
+            "count": len(records),
+            "executions": records,
+        }
+
+        with open(archive_path, "w") as f:
+            json.dump(archive_data, f, indent=2, default=str)
+
+        LOG.info(f"Archived {len(records)} executions to {archive_path}")
+
+        # Delete from database (cascade deletes steps)
+        for execution in old_execs:
+            self.db.delete(execution)
+
+        try:
+            self.db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" not in error_msg:
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+                raise
+
+        return {
+            "archived": len(records),
+            "archive_file": archive_path,
+            "cutoff_date": cutoff_date.isoformat(),
+        }
+
+    @staticmethod
+    def restore_archive(archive_path: str, db: Session) -> dict:
+        """Restore executions from an archive file into the database.
+
+        Skips any execution whose ID already exists in the database.
+
+        Args:
+            archive_path: Path to the JSON archive file.
+            db: SQLAlchemy session to insert into.
+
+        Returns:
+            dict with keys: restored, skipped, archive_file
+        """
+        with open(archive_path, "r") as f:
+            archive_data = json.load(f)
+
+        fmt = archive_data.get("format")
+        if fmt != "py-captions-execution-archive":
+            raise ValueError(f"Unrecognised archive format: {fmt}")
+
+        records = archive_data.get("executions", [])
+        restored = 0
+        skipped = 0
+
+        for rec in records:
+            existing = db.query(Execution).filter(Execution.id == rec["id"]).first()
+            if existing:
+                skipped += 1
+                continue
+
+            started_at = (
+                datetime.fromisoformat(rec["started_at"])
+                if rec.get("started_at")
+                else datetime.now(timezone.utc)
+            )
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+
+            completed_at = None
+            if rec.get("completed_at"):
+                completed_at = datetime.fromisoformat(rec["completed_at"])
+                if completed_at.tzinfo is None:
+                    completed_at = completed_at.replace(tzinfo=timezone.utc)
+
+            execution = Execution(
+                id=rec["id"],
+                title=rec.get("title", "Unknown"),
+                path=rec.get("path"),
+                status=rec.get("status", "completed"),
+                kind=rec.get("kind"),
+                job_number=rec.get("job_number"),
+                job_sequence=rec.get("job_sequence"),
+                started_at=started_at,
+                completed_at=completed_at,
+                success=rec.get("success"),
+                error_message=rec.get("error_message"),
+                elapsed_seconds=rec.get("elapsed_seconds"),
+                input_size_bytes=rec.get("input_size_bytes"),
+                output_size_bytes=rec.get("output_size_bytes"),
+                cancel_requested=rec.get("cancel_requested", False),
+            )
+            db.add(execution)
+
+            for step_rec in rec.get("steps", []):
+                s_started = None
+                if step_rec.get("started_at"):
+                    s_started = datetime.fromisoformat(step_rec["started_at"])
+                    if s_started.tzinfo is None:
+                        s_started = s_started.replace(tzinfo=timezone.utc)
+
+                s_completed = None
+                if step_rec.get("completed_at"):
+                    s_completed = datetime.fromisoformat(step_rec["completed_at"])
+                    if s_completed.tzinfo is None:
+                        s_completed = s_completed.replace(tzinfo=timezone.utc)
+
+                step = ExecutionStep(
+                    execution_id=rec["id"],
+                    step_name=step_rec.get("step_name", "unknown"),
+                    status=step_rec.get("status", "completed"),
+                    started_at=s_started,
+                    completed_at=s_completed,
+                    input_path=step_rec.get("input_path"),
+                    output_path=step_rec.get("output_path"),
+                    step_metadata=step_rec.get("step_metadata"),
+                )
+                db.add(step)
+
+            restored += 1
+
+        try:
+            db.commit()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "no transaction" not in error_msg:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                raise
+
+        LOG.info(
+            f"Restored {restored} executions from {archive_path} "
+            f"({skipped} skipped as duplicates)"
+        )
+
+        return {
+            "restored": restored,
+            "skipped": skipped,
+            "archive_file": archive_path,
+        }
 
     # ExecutionStep methods
 

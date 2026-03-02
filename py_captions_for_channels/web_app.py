@@ -2173,41 +2173,133 @@ async def get_execution_history_info() -> dict:
 
 @app.post("/api/execution-history/cleanup")
 async def cleanup_execution_history(cutoff_date: str = None) -> dict:
-    """Clean up execution history older than a specified date.
+    """Archive execution history older than a specified date.
 
     Args:
         cutoff_date: ISO format date string (optional). If not provided,
-            uses oldest cleanup date.
+            uses 30-day retention.
 
     Returns:
-        Cleanup result with number of executions removed
+        Archive result with number of executions archived
     """
     try:
+        from py_captions_for_channels.config import DATA_DIR
+
         tracker = get_tracker()
 
         if cutoff_date:
             # Parse user-provided date
             cutoff = datetime.fromisoformat(cutoff_date.replace("Z", "+00:00"))
             logger.info(
-                f"Manual execution history cleanup requested with cutoff: {cutoff}"
+                f"Manual execution history archive requested with cutoff: {cutoff}"
             )
         else:
             # Use 30-day retention
             cutoff = datetime.utcnow() - timedelta(days=30)
-            logger.info(
-                f"Using 30-day retention cutoff: {cutoff}"
-            )
+            logger.info(f"Using 30-day retention cutoff: {cutoff}")
 
-        removed = tracker.clear_executions_before_date(cutoff)
+        archive_dir = os.path.join(DATA_DIR, "archives")
+        result = tracker.archive_executions_before_date(cutoff, archive_dir)
 
         return {
             "success": True,
-            "executions_removed": removed,
+            "executions_archived": result["archived"],
+            "archive_file": result.get("archive_file"),
             "cutoff_date": cutoff.isoformat() + "Z",
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
     except Exception as e:
-        logger.error(f"Failed to clean execution history: {e}", exc_info=True)
+        logger.error(f"Failed to archive execution history: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+
+@app.get("/api/execution-history/archives")
+async def list_execution_archives() -> dict:
+    """List available execution archive files."""
+    try:
+        from py_captions_for_channels.config import DATA_DIR
+
+        archive_dir = os.path.join(DATA_DIR, "archives")
+        if not os.path.isdir(archive_dir):
+            return {"archives": []}
+
+        archives = []
+        for name in sorted(os.listdir(archive_dir), reverse=True):
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(archive_dir, name)
+            try:
+                with open(path, "r") as f:
+                    import json as _json
+
+                    header = _json.load(f)
+                archives.append(
+                    {
+                        "filename": name,
+                        "count": header.get("count", 0),
+                        "cutoff_date": header.get("cutoff_date"),
+                        "archived_at": header.get("archived_at"),
+                        "size_bytes": os.path.getsize(path),
+                    }
+                )
+            except Exception:
+                archives.append(
+                    {
+                        "filename": name,
+                        "count": None,
+                        "error": "Could not read archive header",
+                    }
+                )
+
+        return {"archives": archives}
+    except Exception as e:
+        logger.error(f"Failed to list archives: {e}", exc_info=True)
+        return {"error": str(e)}
+
+
+@app.post("/api/execution-history/restore")
+async def restore_execution_archive(request: Request) -> dict:
+    """Restore executions from an archive file into the database.
+
+    Body: { "filename": "executions_archive_2026-03-02T21-00-00Z.json" }
+    """
+    try:
+        from py_captions_for_channels.config import DATA_DIR
+        from py_captions_for_channels.services.execution_service import (
+            ExecutionService,
+        )
+
+        body = await request.json()
+        filename = body.get("filename")
+        if not filename:
+            return {"success": False, "error": "filename is required"}
+
+        archive_dir = os.path.join(DATA_DIR, "archives")
+        archive_path = os.path.join(archive_dir, filename)
+
+        # Prevent path traversal
+        if not os.path.realpath(archive_path).startswith(os.path.realpath(archive_dir)):
+            return {"success": False, "error": "Invalid filename"}
+
+        if not os.path.isfile(archive_path):
+            return {"success": False, "error": f"Archive not found: {filename}"}
+
+        db = next(get_db())
+        result = ExecutionService.restore_archive(archive_path, db)
+
+        return {
+            "success": True,
+            "restored": result["restored"],
+            "skipped": result["skipped"],
+            "archive_file": filename,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+    except Exception as e:
+        logger.error(f"Failed to restore archive: {e}", exc_info=True)
         return {
             "success": False,
             "error": str(e),

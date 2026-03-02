@@ -422,6 +422,29 @@ class ExecutionTracker:
                 LOG.info("Removed %d execution(s) older than %s", removed, cutoff_date)
             return removed
 
+    def archive_executions_before_date(
+        self, cutoff_date: datetime, archive_dir: str
+    ) -> dict:
+        """Archive executions older than cutoff to JSON, then remove from DB.
+
+        Args:
+            cutoff_date: Archive executions with started_at before this date.
+            archive_dir: Directory to write the archive file into.
+
+        Returns:
+            dict with keys: archived, archive_file, cutoff_date
+        """
+        with self._get_service() as service:
+            result = service.archive_executions_before_date(cutoff_date, archive_dir)
+            if result["archived"] > 0:
+                LOG.info(
+                    "Archived %d execution(s) older than %s to %s",
+                    result["archived"],
+                    cutoff_date,
+                    result["archive_file"],
+                )
+            return result
+
 
 # Global instance
 _tracker: Optional[ExecutionTracker] = None
