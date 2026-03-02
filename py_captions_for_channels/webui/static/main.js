@@ -739,7 +739,7 @@ async function toggleWhitelist(checkbox, title) {
       checkbox.checked = !add; // revert
     } else {
       const action = add ? 'added to' : 'removed from';
-      alert(`"${title}" ${action} whitelist.\n\nTip: Edit the Recording Whitelist in Settings to make rules more or less specific (e.g. regex patterns, time/channel constraints).`);
+      alert(`"${title}" ${action} whitelist.`);
     }
   } catch (error) {
     console.error('Whitelist toggle failed:', error);
@@ -1150,6 +1150,9 @@ function renderSettingsUI(settings, whitelist) {
   html += `<textarea id="whitelist-editor" rows="10" style="width:100%; font-family: monospace; font-size: 12px;">${whitelist || ''}</textarea>`;
   html += `</div>`;
   html += `</div>`;
+
+  // Store original whitelist value for change detection
+  window._originalWhitelist = whitelist || '';
   
   if (html.length === 0) {
     container.innerHTML = '<p style="color: orange;">No settings found in response.</p>';
@@ -1214,7 +1217,13 @@ async function saveEnvSettings(event) {
       }
     }
     
-    alert('✓ Settings saved!\n\n.env changes require restart.\nWhitelist changes are active immediately.');
+    let msg = '✓ Settings saved!\n\n.env changes require restart.\nWhitelist changes are active immediately.';
+    const whitelistChanged = whitelistEditor
+      && whitelistEditor.value !== (window._originalWhitelist || '');
+    if (whitelistChanged) {
+      msg += '\n\nTip: Whitelist rules support regex patterns, time/channel constraints, and more.';
+    }
+    alert(msg);
     closeSettingsModal();
   } catch (err) {
     alert('✗ Failed to save settings: ' + err.message);
