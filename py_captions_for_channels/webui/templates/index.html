@@ -461,9 +461,12 @@
               <p style="text-align: center; color: var(--muted);">Loading settings...</p>
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; border-top: 1px solid var(--panel-border); padding-top: 20px;">
-              <button type="button" class="btn-secondary" onclick="closeSettingsModal()">Cancel</button>
-              <button type="submit" class="btn-primary">Save to .env</button>
+            <div style="display: flex; gap: 10px; margin-top: 20px; border-top: 1px solid var(--panel-border); padding-top: 20px; align-items: center;">
+              <button type="button" class="btn-small btn-danger" onclick="restartSystem()" title="Graceful restart: finishes current job, then restarts">Restart System</button>
+              <div style="margin-left: auto; display: flex; gap: 10px;">
+                <button type="button" class="btn-secondary" onclick="closeSettingsModal()">Cancel</button>
+                <button type="submit" class="btn-primary">Save to .env</button>
+              </div>
             </div>
           </form>
         </div>

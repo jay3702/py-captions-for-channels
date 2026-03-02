@@ -1282,6 +1282,25 @@ function closeSettingsModal() {
   }
 }
 
+async function restartSystem() {
+  if (!confirm('Restart the system?\n\nThe current job (if any) will finish first, then the application will restart.')) {
+    return;
+  }
+  try {
+    const response = await fetch('/api/shutdown/graceful', { method: 'POST' });
+    const result = await response.json();
+    if (result.error) {
+      alert('Restart failed: ' + result.error);
+    } else {
+      closeSettingsModal();
+      alert(result.message + '\n\nThe page will be unavailable briefly while the system restarts.');
+    }
+  } catch (error) {
+    console.error('Restart failed:', error);
+    alert('Restart failed: ' + error.message);
+  }
+}
+
 // Close settings modal on background click
 window.addEventListener('click', function(event) {
   const settingsModal = document.getElementById('settings-modal');
