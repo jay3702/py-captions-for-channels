@@ -2447,6 +2447,71 @@ async def get_recordings() -> dict:
         }
 
 
+@app.post("/api/whitelist/toggle")
+async def toggle_whitelist(request: Request) -> dict:
+    """Add or remove a title from the whitelist.
+
+    Body JSON: {"title": "Show Name", "add": true/false}
+
+    Returns:
+        Updated whitelist status for the title
+    """
+    try:
+        body = await request.json()
+        title = body.get("title", "").strip()
+        add = body.get("add", True)
+
+        if not title:
+            return {"error": "Title is required"}
+
+        db = next(get_db())
+        try:
+            settings_service = SettingsService(db)
+            whitelist_content = settings_service.get("whitelist", "")
+
+            # Parse existing lines (preserve comments and blanks)
+            lines = whitelist_content.split("\n") if whitelist_content else []
+
+            if add:
+                # Check if already present (exact match on non-comment lines)
+                existing = [
+                    ln.strip()
+                    for ln in lines
+                    if ln.strip() and not ln.strip().startswith("#")
+                ]
+                if title not in existing:
+                    lines.append(title)
+                    LOG.info("Added '%s' to whitelist", title)
+                else:
+                    LOG.info("'%s' already in whitelist", title)
+            else:
+                # Remove all exact matches (preserve comments/blanks)
+                new_lines = [ln for ln in lines if ln.strip() != title]
+                removed = len(lines) - len(new_lines)
+                lines = new_lines
+                LOG.info(
+                    "Removed '%s' from whitelist (%d line(s))",
+                    title,
+                    removed,
+                )
+
+            # Save back
+            new_content = "\n".join(lines)
+            settings_service.set("whitelist", new_content)
+
+            return {
+                "success": True,
+                "title": title,
+                "in_whitelist": add,
+            }
+        finally:
+            db.close()
+
+    except Exception as e:
+        LOG.error("Error toggling whitelist: %s", e, exc_info=True)
+        return {"error": str(e)}
+
+
 @app.get("/api/manual-process/candidates")
 async def get_manual_process_candidates() -> dict:
     """Get list of recordings that can be manually processed.

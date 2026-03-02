@@ -692,11 +692,9 @@ async function showManualProcessModal() {
           processedIcon = '<span style="color: #ef5350; font-size: 18px;" title="Processing failed">✗</span>';
         }
         
-        // Whitelist status: green checkmark if passes, empty if not
-        let whitelistIcon = '';
-        if (recording.passes_whitelist) {
-          whitelistIcon = '<span style="color: #4caf50; font-size: 18px;" title="Passes whitelist">✓</span>';
-        }
+        // Whitelist checkbox: interactive toggle
+        const whitelistChecked = recording.passes_whitelist ? 'checked' : '';
+        const whitelistCheckbox = `<input type="checkbox" ${whitelistChecked} onchange="toggleWhitelist(this, '${escapeAttr(recording.title)}')" title="Toggle whitelist for ${escapeAttr(recording.title)}">`;
         
         // Disable checkbox if recording is not yet completed
         const checkboxDisabled = !recording.completed ? 'disabled title="Recording in progress"' : '';
@@ -711,7 +709,7 @@ async function showManualProcessModal() {
             </td>
             <td style="padding: 8px; color: var(--muted); font-size: 0.85em;">${dateStr}</td>
             <td style="padding: 8px; text-align: center;">${processedIcon}</td>
-            <td style="padding: 8px; text-align: center;">${whitelistIcon}</td>
+            <td style="padding: 8px; text-align: center;">${whitelistCheckbox}</td>
           </tr>
         `;
       });
@@ -724,6 +722,29 @@ async function showManualProcessModal() {
   } catch (err) {
     listContainer.innerHTML = `<p class="muted">Error loading recordings: ${escapeHtml(err.message)}</p>`;
     console.error('Recordings fetch error:', err);
+  }
+}
+
+async function toggleWhitelist(checkbox, title) {
+  const add = checkbox.checked;
+  try {
+    const response = await fetch('/api/whitelist/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title, add: add })
+    });
+    const result = await response.json();
+    if (result.error) {
+      alert('Failed to update whitelist: ' + result.error);
+      checkbox.checked = !add; // revert
+    } else {
+      const action = add ? 'added to' : 'removed from';
+      alert(`"${title}" ${action} whitelist.\n\nTip: Edit the Recording Whitelist in Settings to make rules more or less specific (e.g. regex patterns, time/channel constraints).`);
+    }
+  } catch (error) {
+    console.error('Whitelist toggle failed:', error);
+    alert('Failed to update whitelist: ' + error.message);
+    checkbox.checked = !add; // revert
   }
 }
 
