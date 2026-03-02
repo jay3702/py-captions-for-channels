@@ -1289,10 +1289,9 @@ document.addEventListener('visibilitychange', () => {
     refreshNow();
     // If system monitor was running and data is stale, reset charts
     if (monitorCharts && isMonitorStale()) {
-      setTimeout(() => resetSystemMonitor(), 100);
-    } else if (monitorCharts) {
-      setTimeout(() => resizeMonitorCharts(), 100);
+      resetSystemMonitor();
     }
+    // ResizeObserver handles chart sizing automatically on restore
   }
 });
 
@@ -1352,6 +1351,7 @@ window.addEventListener('click', function(event) {
 let monitorCharts = null;
 let monitorInterval = null;
 let lastMonitorTimestamp = 0; // Wall-clock ms of last successful data point
+let monitorResizeObserver = null; // ResizeObserver for chart containers
 const MONITOR_STALE_MS = 10000; // 10 s gap → charts are stale
 const MONITOR_WINDOW_SEC = 300; // 5 minutes
 const MONITOR_MAX_POINTS = 300; // 5 minutes at 1Hz
@@ -1569,6 +1569,17 @@ function initSystemMonitor() {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => resizeMonitorCharts(), 250);
     });
+
+    // Use ResizeObserver for reliable resize after restore / tab-switch
+    if (!monitorResizeObserver) {
+      let roTimeout;
+      monitorResizeObserver = new ResizeObserver(() => {
+        clearTimeout(roTimeout);
+        roTimeout = setTimeout(() => resizeMonitorCharts(), 80);
+      });
+    }
+    const cpuContainer = cpuEl.closest('.chart-container');
+    if (cpuContainer) monitorResizeObserver.observe(cpuContainer);
   } catch (error) {
     console.error('Failed to create charts:', error);
     monitorCharts = null;
@@ -2228,7 +2239,8 @@ function startSystemMonitor() {
     return;
   }
   // Charts may have been created while container was hidden; fix sizing
-  setTimeout(() => resizeMonitorCharts(), 50);
+  // (ResizeObserver will also fire when container becomes visible)
+  requestAnimationFrame(() => resizeMonitorCharts());
   updateSystemMonitor();
   monitorInterval = setInterval(updateSystemMonitor, 1000); // 1Hz
   console.log('System monitor started');
@@ -2255,6 +2267,10 @@ function resetSystemMonitor() {
     monitorCharts = null;
   }
   chartHovering.clear();
+  // Disconnect observer (will be re-created in initSystemMonitor)
+  if (monitorResizeObserver) {
+    monitorResizeObserver.disconnect();
+  }
   // Reset max values
   chartMaxValues.cpu = 10;
   chartMaxValues.disk = 1;
