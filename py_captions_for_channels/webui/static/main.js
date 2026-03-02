@@ -1287,6 +1287,10 @@ window.addEventListener('focus', refreshNow);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     refreshNow();
+    // Resize monitor charts — canvas dimensions can go stale while hidden
+    if (monitorCharts) {
+      setTimeout(() => resizeMonitorCharts(), 100);
+    }
   }
 });
 
@@ -1350,6 +1354,41 @@ const MONITOR_MAX_POINTS = 300; // 5 minutes at 1Hz
 
 // Track which charts are being hovered
 const chartHovering = new Set();
+
+// Resize all monitor charts to fit their containers
+function resizeMonitorCharts() {
+  if (!monitorCharts) return;
+  const cpuEl = document.getElementById('chart-cpu');
+  const diskEl = document.getElementById('chart-disk');
+  const networkEl = document.getElementById('chart-network');
+  const gpuEl = document.getElementById('chart-gpu');
+  if (!cpuEl) return;
+
+  const cpuWidth = getChartWidth(cpuEl);
+  const diskWidth = getChartWidth(diskEl);
+  const networkWidth = getChartWidth(networkEl);
+
+  const forceCanvas = (chart, w) => {
+    if (chart && chart.root) {
+      const c = chart.root.querySelector('canvas');
+      if (c) c.style.width = w + 'px';
+    }
+  };
+
+  forceCanvas(monitorCharts.cpu, cpuWidth);
+  forceCanvas(monitorCharts.disk, diskWidth);
+  forceCanvas(monitorCharts.network, networkWidth);
+
+  monitorCharts.cpu.setSize({ width: cpuWidth, height: 130 });
+  monitorCharts.disk.setSize({ width: diskWidth, height: 130 });
+  monitorCharts.network.setSize({ width: networkWidth, height: 130 });
+
+  if (monitorCharts.gpu && gpuEl) {
+    const gpuWidth = getChartWidth(gpuEl);
+    forceCanvas(monitorCharts.gpu, gpuWidth);
+    monitorCharts.gpu.setSize({ width: gpuWidth, height: 130 });
+  }
+}
 
 // Snap a chart's cursor to the latest data point (shows current values in legend)
 function snapToLatest(chart) {
@@ -1524,47 +1563,7 @@ function initSystemMonitor() {
     let resizeTimeout;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(() => {
-        if (monitorCharts) {
-          // Calculate width for each chart from its container (not wrapper)
-          const cpuWidth = getChartWidth(cpuEl);
-          const diskWidth = getChartWidth(diskEl);
-          const networkWidth = getChartWidth(networkEl);
-          
-          console.log('Window resized. Container width:', cpuEl.closest('.chart-container').clientWidth);
-          console.log('Calculated chart width:', cpuWidth);
-          console.log('Current CPU chart width:', monitorCharts.cpu.width);
-          
-          // Force canvas elements to update their width attribute before setSize
-          if (monitorCharts.cpu.root) {
-            const cpuCanvas = monitorCharts.cpu.root.querySelector('canvas');
-            if (cpuCanvas) cpuCanvas.style.width = cpuWidth + 'px';
-          }
-          if (monitorCharts.disk.root) {
-            const diskCanvas = monitorCharts.disk.root.querySelector('canvas');
-            if (diskCanvas) diskCanvas.style.width = diskWidth + 'px';
-          }
-          if (monitorCharts.network.root) {
-            const networkCanvas = monitorCharts.network.root.querySelector('canvas');
-            if (networkCanvas) networkCanvas.style.width = networkWidth + 'px';
-          }
-          
-          monitorCharts.cpu.setSize({ width: cpuWidth, height: 130 });
-          monitorCharts.disk.setSize({ width: diskWidth, height: 130 });
-          monitorCharts.network.setSize({ width: networkWidth, height: 130 });
-          
-          if (monitorCharts.gpu && gpuEl) {
-            const gpuWidth = getChartWidth(gpuEl);
-            if (monitorCharts.gpu.root) {
-              const gpuCanvas = monitorCharts.gpu.root.querySelector('canvas');
-              if (gpuCanvas) gpuCanvas.style.width = gpuWidth + 'px';
-            }
-            monitorCharts.gpu.setSize({ width: gpuWidth, height: 130 });
-          }
-          
-          console.log('Charts resized. New CPU width:', monitorCharts.cpu.width);
-        }
-      }, 250); // Debounce resize events
+      resizeTimeout = setTimeout(() => resizeMonitorCharts(), 250);
     });
   } catch (error) {
     console.error('Failed to create charts:', error);
@@ -2217,6 +2216,8 @@ function startSystemMonitor() {
     console.error('Failed to initialize monitor charts');
     return;
   }
+  // Charts may have been created while container was hidden; fix sizing
+  setTimeout(() => resizeMonitorCharts(), 50);
   updateSystemMonitor();
   monitorInterval = setInterval(updateSystemMonitor, 1000); // 1Hz
   console.log('System monitor started');
