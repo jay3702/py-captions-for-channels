@@ -1287,8 +1287,10 @@ window.addEventListener('focus', refreshNow);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     refreshNow();
-    // Resize monitor charts — canvas dimensions can go stale while hidden
-    if (monitorCharts) {
+    // If system monitor was running and data is stale, reset charts
+    if (monitorCharts && isMonitorStale()) {
+      setTimeout(() => resetSystemMonitor(), 100);
+    } else if (monitorCharts) {
       setTimeout(() => resizeMonitorCharts(), 100);
     }
   }
@@ -1349,6 +1351,8 @@ window.addEventListener('click', function(event) {
 
 let monitorCharts = null;
 let monitorInterval = null;
+let lastMonitorTimestamp = 0; // Wall-clock ms of last successful data point
+const MONITOR_STALE_MS = 10000; // 10 s gap → charts are stale
 const MONITOR_WINDOW_SEC = 300; // 5 minutes
 const MONITOR_MAX_POINTS = 300; // 5 minutes at 1Hz
 
@@ -1596,6 +1600,7 @@ function updateSystemMonitor() {
       }
       
       const timestamp = metrics.timestamp;
+      lastMonitorTimestamp = Date.now();
       
       // Update CPU chart
       appendChartData(monitorCharts.cpu, timestamp, [metrics.cpu_percent]);
@@ -2208,7 +2213,13 @@ function updatePipelineActivityIndicator(pipeline) {
 }
 
 function startSystemMonitor() {
-  if (monitorInterval) return; // Already running
+  if (monitorInterval) {
+    // Already running — but check for stale data (e.g. tab switch after long idle)
+    if (isMonitorStale()) {
+      resetSystemMonitor();
+    }
+    return;
+  }
   
   console.log('Starting system monitor...');
   initSystemMonitor();
@@ -2228,6 +2239,39 @@ function stopSystemMonitor() {
     clearInterval(monitorInterval);
     monitorInterval = null;
   }
+}
+
+// Destroy and recreate charts to clear stale / gapped data
+function resetSystemMonitor() {
+  console.log('Resetting system monitor charts (stale data detected)');
+  stopSystemMonitor();
+  if (monitorCharts) {
+    // Destroy uPlot instances
+    ['cpu', 'disk', 'network', 'gpu'].forEach(key => {
+      if (monitorCharts[key]) {
+        monitorCharts[key].destroy();
+      }
+    });
+    monitorCharts = null;
+  }
+  chartHovering.clear();
+  // Reset max values
+  chartMaxValues.cpu = 10;
+  chartMaxValues.disk = 1;
+  chartMaxValues.network = 1;
+  chartMaxValues.gpu = 10;
+  // Clear container DOM so initSystemMonitor can rebuild
+  ['chart-cpu', 'chart-disk', 'chart-network', 'chart-gpu'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+  startSystemMonitor();
+}
+
+// Check if monitor data is stale (browser was hidden / throttled)
+function isMonitorStale() {
+  if (lastMonitorTimestamp === 0) return false;
+  return (Date.now() - lastMonitorTimestamp) > MONITOR_STALE_MS;
 }
 
 // Auto-start if System Monitor tab is default
