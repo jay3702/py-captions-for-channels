@@ -310,14 +310,14 @@ def find_orphaned_files() -> Tuple[List[Path], List[Path]]:
         Tuple of (orphaned_orig_files, orphaned_srt_files)
     """
     # Import here to avoid circular dependency
-    from py_captions_for_channels.web_app import state_backend
+    from py_captions_for_channels.execution_tracker import get_tracker
 
     orphaned_orig = []
     orphaned_srt = []
 
     try:
         # Get all processed recordings from history
-        executions = state_backend.get_executions(limit=10000)
+        executions = get_tracker().get_executions(limit=10000)
 
         processed_paths = set()
         for execution in executions:
@@ -589,11 +589,11 @@ def is_system_idle(threshold_minutes: int = 15) -> bool:
         True if system is idle, False otherwise
     """
     # Import here to avoid circular dependency
-    from py_captions_for_channels.web_app import state_backend
+    from py_captions_for_channels.execution_tracker import get_tracker
 
     try:
         # Check if there are any active executions
-        executions = state_backend.get_executions(limit=10)
+        executions = get_tracker().get_executions(limit=10)
 
         # If there are any running executions, not idle
         for execution in executions:
