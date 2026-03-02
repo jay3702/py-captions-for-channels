@@ -1645,9 +1645,11 @@ function updateSystemMonitor() {
               series: [
                 {},
                 { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)', points: {show: false} },
-                { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)', points: {show: false} }
+                { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)', points: {show: false} },
+                { label: 'Encode %', stroke: '#77dd77', width: 2, points: {show: false} },
+                { label: 'Decode %', stroke: '#ff6961', width: 2, points: {show: false} }
               ]
-            }, [[], [], []], gpuEl);
+            }, [[], [], [], [], []], gpuEl);
             
             console.log('GPU chart created successfully. Width:', monitorCharts.gpu.width);
             console.log('GPU chart element:', monitorCharts.gpu.root);
@@ -1672,7 +1674,9 @@ function updateSystemMonitor() {
           console.log('Appending GPU data:', metrics.gpu_util_percent, vramPct);
           appendChartData(monitorCharts.gpu, timestamp, [
             metrics.gpu_util_percent,
-            vramPct
+            vramPct,
+            metrics.gpu_enc_percent != null ? metrics.gpu_enc_percent : 0,
+            metrics.gpu_dec_percent != null ? metrics.gpu_dec_percent : 0
           ]);
         }
       } else {
@@ -1739,7 +1743,7 @@ async function loadHistoricalData() {
       // GPU (if available)
       if (metric.gpu_util_percent !== null) {
         if (!gpuData) {
-          gpuData = [[], [], []];
+          gpuData = [[], [], [], [], []];
         }
         hasGpuData = true;
         const vramPct = metric.gpu_mem_total_mb > 0
@@ -1748,6 +1752,8 @@ async function loadHistoricalData() {
         gpuData[0].push(ts);
         gpuData[1].push(metric.gpu_util_percent);
         gpuData[2].push(vramPct);
+        gpuData[3].push(metric.gpu_enc_percent != null ? metric.gpu_enc_percent : 0);
+        gpuData[4].push(metric.gpu_dec_percent != null ? metric.gpu_dec_percent : 0);
       }
     }
     
@@ -1830,7 +1836,9 @@ async function loadHistoricalData() {
             series: [
               {},
               { label: 'GPU %', stroke: '#5ce1e6', width: 2, fill: 'rgba(92, 225, 230, 0.1)', points: {show: false} },
-              { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)', points: {show: false} }
+              { label: 'VRAM %', stroke: '#ffb347', width: 2, fill: 'rgba(255, 179, 71, 0.1)', points: {show: false} },
+              { label: 'Encode %', stroke: '#77dd77', width: 2, points: {show: false} },
+              { label: 'Decode %', stroke: '#ff6961', width: 2, points: {show: false} }
             ]
           }, gpuData, gpuEl);
           
@@ -1838,6 +1846,8 @@ async function loadHistoricalData() {
           chartMaxValues.gpu = Math.max(
             ...gpuData[1],
             ...gpuData[2],
+            ...gpuData[3],
+            ...gpuData[4],
             10
           ) * 1.1;
           

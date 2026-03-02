@@ -27,6 +27,8 @@ class MetricPoint:
     gpu_util_percent: Optional[float] = None
     gpu_mem_used_mb: Optional[float] = None
     gpu_mem_total_mb: Optional[float] = None
+    gpu_enc_percent: Optional[float] = None
+    gpu_dec_percent: Optional[float] = None
 
 
 @dataclass
@@ -57,8 +59,14 @@ class GPUProvider:
     """Base class for GPU metric providers."""
 
     def get_metrics(self) -> Dict[str, Optional[float]]:
-        """Returns dict with util_percent, mem_used_mb, mem_total_mb."""
-        return {"util_percent": None, "mem_used_mb": None, "mem_total_mb": None}
+        """Return util, memory, encoder, and decoder metrics."""
+        return {
+            "util_percent": None,
+            "mem_used_mb": None,
+            "mem_total_mb": None,
+            "enc_percent": None,
+            "dec_percent": None,
+        }
 
     def is_available(self) -> bool:
         return False
@@ -102,10 +110,30 @@ class NvidiaNvmlProvider(GPUProvider):
             util = self.pynvml.nvmlDeviceGetUtilizationRates(self.handle)
             mem_info = self.pynvml.nvmlDeviceGetMemoryInfo(self.handle)
 
+            # NVENC/NVDEC utilization (dedicated hardware, not CUDA cores)
+            enc_percent = None
+            dec_percent = None
+            try:
+                enc_util, _enc_period = self.pynvml.nvmlDeviceGetEncoderUtilization(
+                    self.handle
+                )
+                enc_percent = float(enc_util)
+            except Exception:
+                pass
+            try:
+                dec_util, _dec_period = self.pynvml.nvmlDeviceGetDecoderUtilization(
+                    self.handle
+                )
+                dec_percent = float(dec_util)
+            except Exception:
+                pass
+
             return {
                 "util_percent": float(util.gpu),
                 "mem_used_mb": mem_info.used / (1024 * 1024),
                 "mem_total_mb": mem_info.total / (1024 * 1024),
+                "enc_percent": enc_percent,
+                "dec_percent": dec_percent,
             }
         except Exception as e:
             logger.warning(f"Failed to get NVIDIA NVML metrics: {e}")
@@ -152,7 +180,9 @@ class NvidiaSmiProvider(GPUProvider):
             result = subprocess.run(
                 [
                     "nvidia-smi",
-                    "--query-gpu=utilization.gpu,memory.used,memory.total",
+                    "--query-gpu=utilization.gpu,"
+                    "utilization.encoder,utilization.decoder,"
+                    "memory.used,memory.total",
                     "--format=csv,noheader,nounits",
                 ],
                 capture_output=True,
@@ -163,8 +193,10 @@ class NvidiaSmiProvider(GPUProvider):
                 parts = result.stdout.strip().split(",")
                 return {
                     "util_percent": float(parts[0].strip()),
-                    "mem_used_mb": float(parts[1].strip()),
-                    "mem_total_mb": float(parts[2].strip()),
+                    "enc_percent": float(parts[1].strip()),
+                    "dec_percent": float(parts[2].strip()),
+                    "mem_used_mb": float(parts[3].strip()),
+                    "mem_total_mb": float(parts[4].strip()),
                 }
         except Exception as e:
             logger.warning(f"Failed to get NVIDIA SMI metrics: {e}")
@@ -322,6 +354,8 @@ class SystemMonitor:
             gpu_util_percent=gpu_metrics["util_percent"],
             gpu_mem_used_mb=gpu_metrics["mem_used_mb"],
             gpu_mem_total_mb=gpu_metrics["mem_total_mb"],
+            gpu_enc_percent=gpu_metrics.get("enc_percent"),
+            gpu_dec_percent=gpu_metrics.get("dec_percent"),
         )
 
         # Add to buffer
