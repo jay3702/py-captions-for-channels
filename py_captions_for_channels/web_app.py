@@ -1032,8 +1032,15 @@ async def glances_proxy(path: str = ""):
     from fastapi.responses import Response
     import httpx
 
-    # Connect to Glances running in the main container via host IP
-    glances_url = f"http://192.168.3.150:61208/{path}"
+    # Connect to Glances (URL configured via GLANCES_URL env var)
+    from .config import GLANCES_URL
+
+    if not GLANCES_URL:
+        return Response(
+            content="Glances not configured. Set GLANCES_URL in .env",
+            status_code=503,
+        )
+    glances_url = f"{GLANCES_URL.rstrip('/')}/{path}"
 
     try:
         async with httpx.AsyncClient() as client:

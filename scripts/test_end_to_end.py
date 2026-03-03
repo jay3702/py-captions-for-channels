@@ -78,7 +78,7 @@ def main():
             )
 
             print(f"   Using WebhookSource on {WEBHOOK_HOST}:{WEBHOOK_PORT}")
-            print(f"   Configure ChannelWatch: json://192.168.5.113:{WEBHOOK_PORT}")
+            print(f"   Configure ChannelWatch: json://<your-ip>:{WEBHOOK_PORT}")
             source = ChannelWatchWebhookSource(host=WEBHOOK_HOST, port=WEBHOOK_PORT)
         else:
             print(f"? Unknown mode: {mode}")
@@ -159,7 +159,7 @@ def main():
         print("\nNext steps:")
         print("  - Set DRY_RUN=False in config.py to execute real commands")
         print("  - Set USE_MOCK=False, USE_WEBHOOK=True for production")
-        print("  - Deploy to niu for production use")
+        print("  - Deploy to your server for production use")
         print("=" * 70 + "\n")
 
     try:

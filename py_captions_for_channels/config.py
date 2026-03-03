@@ -64,6 +64,10 @@ CHANNELS_API_URL = os.getenv(
     "CHANNELS_API_URL", f"{CHANNELS_DVR_URL.rstrip('/')}/api/v1"
 )
 
+# Glances system monitor URL (e.g., http://localhost:61208)
+# Set to enable the System Monitor tab in the web UI
+GLANCES_URL = os.getenv("GLANCES_URL", "")
+
 # DVR recordings storage path (root directory where recordings are stored)
 DVR_RECORDINGS_PATH = os.getenv("DVR_RECORDINGS_PATH", "/recordings")
 

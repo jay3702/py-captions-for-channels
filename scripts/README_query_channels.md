@@ -12,7 +12,7 @@ Display recordings with default columns (title, created_at, duration, path):
 
 ```bash
 python scripts/query_channels_recordings.py
-python scripts/query_channels_recordings.py -w http://192.168.3.150:8000
+python scripts/query_channels_recordings.py -w http://your-server:8000
 ```
 
 ### Custom Columns
@@ -21,7 +21,7 @@ Specify which columns to display:
 
 ```bash
 python scripts/query_channels_recordings.py -c title,created_at,path
-python scripts/query_channels_recordings.py -w http://192.168.3.150:8000 -c title,aired_at,duration
+python scripts/query_channels_recordings.py -w http://your-server:8000 -c title,aired_at,duration
 ```
 
 ### CSV Export (for Excel)
@@ -30,7 +30,7 @@ Export to a CSV file that Excel can open:
 
 ```bash
 python scripts/query_channels_recordings.py -x -f recordings.csv
-python scripts/query_channels_recordings.py -w http://192.168.3.150:8000 -x -f output.csv -c title,path,created_at
+python scripts/query_channels_recordings.py -w http://your-server:8000 -x -f output.csv -c title,path,created_at
 ```
 
 ## Arguments
@@ -53,14 +53,14 @@ The script connects to the py-captions web app and retrieves the Channels DVR AP
 ## Examples
 
 ```bash
-# Query from Windows dev machine to deployed server
-python scripts/query_channels_recordings.py -w http://192.168.3.150:8000
+# Query from another machine to deployed server
+python scripts/query_channels_recordings.py -w http://your-server:8000
 
 # Export all recordings to CSV
-python scripts/query_channels_recordings.py -w http://192.168.3.150:8000 -x -f recordings.csv
+python scripts/query_channels_recordings.py -w http://your-server:8000 -x -f recordings.csv
 
 # Get specific columns
-python scripts/query_channels_recordings.py -w http://192.168.3.150:8000 -c title,duration,channel_number
+python scripts/query_channels_recordings.py -w http://your-server:8000 -c title,duration,channel_number
 ```
 
 ## Dependencies

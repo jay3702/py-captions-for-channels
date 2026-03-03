@@ -45,12 +45,12 @@ docker-compose logs -f
 
 ## Example Configurations
 
-### For niu deployment (same machine as DVR):
+### For local deployment (same machine as DVR):
 
 ```bash
 # .env file
 CHANNELS_API_URL=http://localhost:8089
-DVR_RECORDINGS_PATH=/tank/AllMedia/Channels
+DVR_RECORDINGS_PATH=/path/to/recordings
 CAPTION_COMMAND=/usr/local/bin/whisper --model medium {path}
 DRY_RUN=false
 ```

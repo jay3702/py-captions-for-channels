@@ -43,4 +43,4 @@ test-recordings/
 1. **Copy samples**: Get a few representative recordings (1-2 hours each)
 2. **Test changes**: Modify code and test with local files (no network latency)
 3. **Move files**: Move recordings in/out of directory to simulate new completions
-4. **Deploy**: Once tested locally, deploy to niu for network testing
+4. **Deploy**: Once tested locally, deploy to your server for network testing

@@ -14,6 +14,7 @@ Usage:
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -49,17 +50,18 @@ def main():
             )
 
             print("Running WEBHOOK source - listening on http://0.0.0.0:9000")
-            print("Configure ChannelWatch: json://192.168.5.113:9000")
+            print("Configure ChannelWatch: json://<your-ip>:9000")
             print("Press Ctrl+C to stop\n")
             source = ChannelWatchWebhookSource(host="0.0.0.0", port=9000)
 
         elif mode == "websocket":
             from py_captions_for_channels.channelwatch_source import ChannelWatchSource
 
+            ws_url = os.getenv("CHANNELWATCH_URL", "ws://localhost:8501/events")
             print("Running WEBSOCKET source (NOT compatible with ChannelWatch)")
-            print("This will attempt to connect to ws://192.168.3.150:8501/events")
+            print(f"This will attempt to connect to {ws_url}")
             print("Press Ctrl+C to stop\n")
-            source = ChannelWatchSource("ws://192.168.3.150:8501/events")
+            source = ChannelWatchSource(ws_url)
 
         else:
             print(f"Unknown mode: {mode}")

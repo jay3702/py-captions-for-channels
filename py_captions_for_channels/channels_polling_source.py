@@ -59,7 +59,7 @@ class ChannelsPollingSource:
         """Initialize polling source.
 
         Args:
-            api_url: Base URL of Channels DVR (e.g., http://192.168.3.150:8089)
+            api_url: Base URL of Channels DVR (e.g., http://your-server:8089)
             poll_interval_seconds: Base polling interval (default 2 minutes)
             limit: Maximum number of recent recordings to fetch per poll
             timeout: HTTP request timeout in seconds

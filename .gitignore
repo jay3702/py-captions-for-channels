@@ -31,6 +31,9 @@ pip-wheel-metadata/
 .env
 .env.local
 .env.production
+.env.dev
+.env.reference
+.env.niu*
 secrets.json
 state.json
 *.state.json
@@ -40,6 +43,7 @@ state.json
 
 # Local data and caches
 data/
+data-dev/
 tmp/
 *.tmp
 
@@ -71,3 +75,11 @@ verify_deployment.sh
 *.csv
 *_probe.json
 .env.niu*
+
+# Local deployment/dev-specific files
+docker-compose.local.yml
+docker-compose.dev.yml
+Dockerfile.local
+setup-dev.ps1
+setup-dev.sh
+wsl-docker-setup.sh

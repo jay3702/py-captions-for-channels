@@ -7,7 +7,7 @@ Usage:
     python query_channels_recordings.py -c title,created_at,path
     python query_channels_recordings.py -x -f recordings.csv
     python query_channels_recordings.py -x -f output.csv -c title,path
-    python query_channels_recordings.py -w http://192.168.3.150:8000
+    python query_channels_recordings.py -w http://localhost:8000
 """
 
 import argparse
@@ -208,7 +208,7 @@ Examples:
   %(prog)s -c title,created_at,path
   %(prog)s -x -f recordings.csv
   %(prog)s -x -f output.csv -c title,path
-  %(prog)s -w http://192.168.3.150:8000 -c title,path
+  %(prog)s -w http://localhost:8000 -c title,path
         """,
     )
 
