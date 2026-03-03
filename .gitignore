@@ -74,7 +74,6 @@ verify_deployment.sh
 *.tar
 *.csv
 *_probe.json
-.env.niu*
 
 # Local deployment/dev-specific files
 docker-compose.local.yml

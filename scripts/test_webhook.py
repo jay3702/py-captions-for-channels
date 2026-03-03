@@ -45,7 +45,7 @@ def main():
     async def test_webhook():
         """Start webhook server and print events."""
         print("Starting webhook server on http://0.0.0.0:9000")
-        print("Configure in ChannelWatch: webhook://192.168.3.150:9000")
+        print("Configure in ChannelWatch: webhook://<your-ip>:9000")
         print("Waiting for events... (Ctrl+C to stop)\n")
 
         source = ChannelWatchWebhookSource(host="0.0.0.0", port=9000)
