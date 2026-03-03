@@ -75,6 +75,10 @@ verify_deployment.sh
 *.csv
 *_probe.json
 
+# AI session files (keep local, never commit)
+doc/copilot/
+docs/copilot/
+
 # Local deployment/dev-specific files
 docker-compose.local.yml
 docker-compose.dev.yml
