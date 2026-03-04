@@ -11,12 +11,12 @@ Usage::
     )
 
     fs = FilesystemService(fallback_quarantine_dir="/app/data/quarantine")
-    fs.register_path("/tank/AllMedia/Channels")
+    fs.register_path("/mnt/media/Channels")
     fs.register_path("/mnt/library2/TV")
 
     # Get the right quarantine dir for a file
-    qdir = fs.quarantine_dir_for("/tank/AllMedia/Channels/TV/ep1/ep1.orig.mpg")
-    # → "/tank/AllMedia/Channels/.py-captions-quarantine"  (same FS, instant rename)
+    qdir = fs.quarantine_dir_for("/mnt/media/Channels/TV/ep1/ep1.orig.mpg")
+    # → "/mnt/media/Channels/.py-captions-quarantine"  (same FS, instant rename)
 """
 
 import logging

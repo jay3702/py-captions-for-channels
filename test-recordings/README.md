@@ -7,7 +7,7 @@ This directory is for local development and testing without requiring access to 
 1. Copy sample recordings from the Channels DVR server to this directory:
    ```bash
    # Example: Copy a few CNN News Central recordings
-   scp user@server:/tank/AllMedia/Channels/TV/CNN\ News\ Central/CNN\ News\ Central\ 2026-02-04-*.mpg \
+   scp user@server:/path/to/Channels/TV/CNN\ News\ Central/CNN\ News\ Central\ 2026-02-04-*.mpg \
        ./TV/CNN\ News\ Central/
    ```
 

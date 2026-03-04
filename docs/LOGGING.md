@@ -14,8 +14,8 @@ All log messages related to a specific recording are now prefixed with a job ID 
 
 For example:
 ```
-[CNN News Central @ 22:01:16] Running caption pipeline: /tank/AllMedia/Channels/CNN_News_Central.ts
-[CNN News Central @ 22:01:16] Caption pipeline completed for /tank/AllMedia/Channels/CNN_News_Central.ts
+[CNN News Central @ 22:01:16] Running caption pipeline: /recordings/CNN_News_Central.ts
+[CNN News Central @ 22:01:16] Caption pipeline completed for /recordings/CNN_News_Central.ts
 ```
 
 For reprocessed recordings, the marker includes `[REPROCESS]`:
@@ -63,7 +63,7 @@ python -m py_captions_for_channels
 Output:
 ```
 2026-01-19 22:01:16 [WARNING] py_captions_for_channels.webhook_source: Webhook validation failed for peer 192.168.1.100
-2026-01-19 22:01:17 [ERROR] py_captions_for_channels.pipeline: Caption pipeline failed for /tank/AllMedia/Channels/show.ts (exit code 1)
+2026-01-19 22:01:17 [ERROR] py_captions_for_channels.pipeline: Caption pipeline failed for /recordings/show.ts (exit code 1)
 ```
 
 ### Standard Operations (NORMAL)
@@ -77,10 +77,10 @@ python -m py_captions_for_channels
 Output:
 ```
 2026-01-19 22:01:16 [INFO] py_captions_for_channels.watcher: Processing reprocess queue: 1 items
-[CNN News Central @ 22:01:16] [INFO] py_captions_for_channels.watcher: Reprocessing: /tank/AllMedia/Channels/CNN_News_Central.ts
-[CNN News Central @ 22:01:16] [INFO] py_captions_for_channels.pipeline: Running caption pipeline: /tank/AllMedia/Channels/CNN_News_Central.ts
+[CNN News Central @ 22:01:16] [INFO] py_captions_for_channels.watcher: Reprocessing: /recordings/CNN_News_Central.ts
+[CNN News Central @ 22:01:16] [INFO] py_captions_for_channels.pipeline: Running caption pipeline: /recordings/CNN_News_Central.ts
 [CNN News Central @ 22:01:16] [INFO] py_captions_for_channels.pipeline: whisper output: Transcribed 1500 frames in 8.23s
-[CNN News Central @ 22:01:16] [INFO] py_captions_for_channels.pipeline: Caption pipeline completed for /tank/AllMedia/Channels/CNN_News_Central.ts
+[CNN News Central @ 22:01:16] [INFO] py_captions_for_channels.pipeline: Caption pipeline completed for /recordings/CNN_News_Central.ts
 ```
 
 ### Debugging/Development (VERBOSE)

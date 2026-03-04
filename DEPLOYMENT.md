@@ -101,7 +101,7 @@ NVIDIA_VISIBLE_DEVICES=all       # Set to device ID if multiple GPUs
 Edit `docker-compose.yml` to mount your recording volume:
 ```yaml
 volumes:
-  - /path/to/recordings:/tank/AllMedia/Channels:rw
+  - /path/to/recordings:/recordings:rw
   - ./data:/app/data
   - ./logs:/app/logs
 ```

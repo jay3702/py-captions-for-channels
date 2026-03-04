@@ -127,7 +127,7 @@ docker-compose up -d
 Check volume mount path:
 ```bash
 # In .env, make sure DVR_RECORDINGS_PATH matches your system
-# Example: DVR_RECORDINGS_PATH=/tank/AllMedia/Channels
+# Example: DVR_RECORDINGS_PATH=/path/to/Channels/recordings
 
 # Verify inside container
 docker exec -it py-captions-for-channels ls -la /recordings

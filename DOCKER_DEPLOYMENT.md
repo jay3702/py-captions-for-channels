@@ -33,7 +33,7 @@ docker run -d \
   --name py-captions \
   --network host \
   -v $(pwd)/data:/app/data \
-  -v /tank/AllMedia/Channels:/recordings:ro \
+  -v /path/to/Channels/recordings:/recordings:ro \
   -e USE_WEBHOOK=true \
   -e DRY_RUN=false \
   py-captions-for-channels
