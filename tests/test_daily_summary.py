@@ -51,9 +51,7 @@ def test_generate_daily_summary_no_executions():
     def mock_get_db():
         yield mock_db
 
-    with patch(
-        "py_captions_for_channels.daily_summary.get_db", mock_get_db
-    ):
+    with patch("py_captions_for_channels.daily_summary.get_db", mock_get_db):
         result = generate_daily_summary(datetime.now(timezone.utc))
     assert result is None
 
@@ -83,9 +81,7 @@ def test_generate_daily_summary_with_data():
     def mock_get_db():
         yield mock_db
 
-    with patch(
-        "py_captions_for_channels.daily_summary.get_db", mock_get_db
-    ):
+    with patch("py_captions_for_channels.daily_summary.get_db", mock_get_db):
         result = generate_daily_summary(now)
 
     assert result is not None
@@ -119,9 +115,7 @@ def test_generate_daily_summary_with_recovery():
     def mock_get_db():
         yield mock_db
 
-    with patch(
-        "py_captions_for_channels.daily_summary.get_db", mock_get_db
-    ):
+    with patch("py_captions_for_channels.daily_summary.get_db", mock_get_db):
         result = generate_daily_summary(now)
 
     assert "Recovered:  1" in result

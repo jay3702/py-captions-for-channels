@@ -42,9 +42,7 @@ def generate_daily_summary(target_date: datetime = None) -> str | None:
 
     # Build local-day boundaries in UTC
     local_dt = target_date.astimezone()
-    day_start = local_dt.replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    day_start = local_dt.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = day_start + timedelta(days=1)
     day_start_utc = day_start.astimezone(timezone.utc)
     day_end_utc = day_end.astimezone(timezone.utc)
@@ -83,16 +81,12 @@ def generate_daily_summary(target_date: datetime = None) -> str | None:
         if e.error_message and "recovered" in e.error_message.lower()
     ]
     pending = [
-        e
-        for e in executions
-        if e.status in ("pending", "discovered", "running")
+        e for e in executions if e.status in ("pending", "discovered", "running")
     ]
 
     # Timing stats (only for completed jobs with elapsed data)
     completed_with_time = [
-        e
-        for e in executions
-        if e.elapsed_seconds is not None and e.elapsed_seconds > 0
+        e for e in executions if e.elapsed_seconds is not None and e.elapsed_seconds > 0
     ]
     if completed_with_time:
         times = [e.elapsed_seconds for e in completed_with_time]
@@ -155,9 +149,7 @@ def emit_daily_summary(target_date: datetime = None):
 def _seconds_until_target(hour: int = 0, minute: int = 5) -> float:
     """Seconds from now until the next occurrence of local HH:MM."""
     now = datetime.now().astimezone()
-    target = now.replace(
-        hour=hour, minute=minute, second=0, microsecond=0
-    )
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
         target += timedelta(days=1)
     return (target - now).total_seconds()
@@ -172,8 +164,7 @@ async def daily_summary_loop(hour: int = 0, minute: int = 5):
         try:
             wait = _seconds_until_target(hour, minute)
             LOG.debug(
-                "Daily summary scheduled in %.0f seconds "
-                "(at %02d:%02d local)",
+                "Daily summary scheduled in %.0f seconds " "(at %02d:%02d local)",
                 wait,
                 hour,
                 minute,

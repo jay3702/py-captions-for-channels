@@ -82,9 +82,7 @@ class Pipeline:
         143: "SIGTERM",
     }
 
-    def _validate_crash_recovery(
-        self, recording_path: str, log
-    ) -> bool:
+    def _validate_crash_recovery(self, recording_path: str, log) -> bool:
         """Check if output was successfully produced despite a process crash.
 
         After a signal-based crash (e.g., SIGSEGV during process shutdown),
@@ -114,9 +112,7 @@ class Pipeline:
                 timeout=10,
             )
             if result.returncode != 0:
-                log.debug(
-                    "Crash recovery: ffprobe failed (rc=%d)", result.returncode
-                )
+                log.debug("Crash recovery: ffprobe failed (rc=%d)", result.returncode)
                 return False
 
             data = json.loads(result.stdout)
@@ -687,9 +683,7 @@ class Pipeline:
                         signal_name = self._SIGNAL_EXIT_CODES.get(
                             returncode, f"signal {signal_num}"
                         )
-                        if self._validate_crash_recovery(
-                            event.path, log
-                        ):
+                        if self._validate_crash_recovery(event.path, log):
                             log.warning(
                                 "Process crashed with %s (exit %d) after "
                                 "%.1fs, but output file is valid — "
@@ -704,9 +698,7 @@ class Pipeline:
                                     "stderr from crashed process: %s",
                                     stderr[:500],
                                 )
-                            output_files = self._collect_output_files(
-                                event.path
-                            )
+                            output_files = self._collect_output_files(event.path)
                             try:
                                 input_size = Path(event.path).stat().st_size
                             except Exception:
