@@ -1679,19 +1679,25 @@ def main():
     legacy_orig_candidate = mpg_path + ".orig"
     if os.path.exists(orig_candidate):
         input_source = orig_candidate
+        is_reprocessing = True
         log.info("Reprocessing: using .cc4chan.orig as source (skipping restore copy)")
     elif os.path.exists(legacy_orig_candidate):
         input_source = legacy_orig_candidate
+        is_reprocessing = True
         log.info("Reprocessing: using legacy .orig as source (skipping restore copy)")
     else:
         input_source = mpg_path  # First-time processing
+        is_reprocessing = False
 
-    run_step(
-        "file_stability",
-        lambda: wait_for_file_stability(input_source, log),
-        input_path=input_source,
-        misc_label="Waiting for file stability",
-    )
+    if is_reprocessing:
+        log.info("Skipping file stability check (source is a completed .orig backup)")
+    else:
+        run_step(
+            "file_stability",
+            lambda: wait_for_file_stability(input_source, log),
+            input_path=input_source,
+            misc_label="Waiting for file stability",
+        )
 
     # Detect and select audio/subtitle streams based on language preference
     log.debug(

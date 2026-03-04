@@ -1,8 +1,8 @@
 # py-captions-for-channels
 
-Automatic closed-caption generation for [Channels DVR](https://getchannels.com/) recordings using [OpenAI Whisper](https://github.com/openai/whisper).
+Automatic closed-caption generation for [Channels DVR](https://getchannels.com/) recordings using [Faster Whisper](https://github.com/SYSTRAN/faster-whisper).
 
-Monitors your DVR for completed recordings, transcribes them with Whisper AI on your NVIDIA GPU, and writes SRT caption files that Channels clients pick up automatically — no manual steps required.
+Monitors your DVR for completed recordings, transcribes them with Faster Whisper on your NVIDIA GPU, and writes SRT caption files that Channels clients pick up automatically — no manual steps required.
 
 <!-- Screenshot placeholder: web UI dashboard -->
 
@@ -13,9 +13,9 @@ Monitors your DVR for completed recordings, transcribes them with Whisper AI on 
 - **Web Dashboard** — Real-time status, execution history, settings, system/GPU monitoring, and manual reprocessing
 - **Smart Optimization** — Automatically tunes Whisper and ffmpeg parameters based on source type (OTA vs streaming)
 - **Show Whitelist** — Process only the shows you care about; interactive toggle from the web UI
-- **Fire TV / Android Support** — Optional MP4 transcoding with burned-in captions for clients that don't support SRT
+- **Fire TV / Android Support** — Optional MP4 transcoding with an embedded captions track for clients that don't support sidecar SRT files
 - **Idempotent** — Tracks processed recordings in a database to avoid duplicates
-- **Quarantine System** — Isolates problem files instead of retrying endlessly
+- **Quarantine System** — Cleans up orphaned `.srt` and `.orig` files after source media is deleted, conserving storage space
 - **Dry-Run Mode** — Test the full pipeline without modifying any files
 - **Docker Ready** — Single `docker-compose up` with NVIDIA GPU passthrough
 
@@ -27,7 +27,7 @@ Channels DVR ──recording complete──▶ py-captions-for-channels
                                         ├─ Fetch recording metadata (DVR API)
                                         ├─ Whisper AI transcription (GPU)
                                         ├─ Write .srt caption file
-                                        └─ (optional) Transcode to .mp4 with burned-in captions
+                                        └─ (optional) Transcode to .mp4 with embedded captions track
 ```
 
 Channels DVR clients (Apple TV, Roku, Fire TV, web) automatically detect `.srt` files placed alongside recordings.
@@ -39,13 +39,15 @@ Channels DVR clients (Apple TV, Roku, Fire TV, web) automatically detect `.srt` 
 - **Docker** with NVIDIA Container Toolkit (`nvidia-container-toolkit`)
 - **ChannelWatch** (optional, for webhook-based detection instead of polling)
 
-> **CPU-only operation** is possible but impractical for real-time use (~3-5x real-time vs 0.3-0.6x with GPU).
+> **CPU-only operation** is possible but significantly slower (~25 min per 1-hour recording vs 3-6 min with GPU).
 
-| Hardware | 30-min Recording | Daily Capacity |
-|----------|-----------------|----------------|
-| GTX 1660 Super (6GB) | ~15-18 min | 4-6 hours |
-| RTX 2060/2080 (8GB+) | ~8-12 min | 12-16+ hours |
-| RTX 3060/4060+ | ~6-9 min | 20+ hours |
+| Hardware | 1-hr OTA Recording | 1-hr TVE (Streaming) | Daily Capacity |
+|----------|-------------------|---------------------|----------------|
+| CPU only | ~25 min | ~20 min | Very limited |
+| RTX 2080 (11GB) | ~5-6 min | ~3-4 min | 20+ hours |
+| RTX 3060/4060+ | ~4-5 min | ~2-3 min | 24+ hours |
+
+> **Note:** OTA (over-the-air) recordings require MPEG2→H.264 transcoding, which adds time. TVE (streaming) recordings are already H.264 and only need captioning.
 
 See [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for detailed benchmarks and hardware guidance.
 
@@ -66,13 +68,13 @@ docker-compose up -d
 # http://your-server:8000
 ```
 
-The container builds FFmpeg with NVENC/NVDEC support, installs Whisper with CUDA, and starts the watcher + web UI automatically.
+The container builds FFmpeg with NVENC/NVDEC support, installs Faster Whisper with CUDA, and starts the watcher + web UI automatically.
 
 ### ChannelWatch Integration (Optional)
 
 For instant detection instead of polling:
 
-1. Open ChannelWatch: `http://YOUR_DVR_IP:8501`
+1. Open ChannelWatch: `http://YOUR_CHANNELWATCH_IP:8501`
 2. Go to **Settings → Notification Providers**
 3. Enable **Custom URL** and set: `json://YOUR_HOST_IP:9000`
 4. Set `DISCOVERY_MODE=webhook` in your `.env`
@@ -101,13 +103,17 @@ KEEP_ORIGINAL=true              # Archive original .mpg after transcoding
 DRY_RUN=false                   # Set true to test without modifying files
 ```
 
-### Whisper Model Selection
+### Faster Whisper Model Selection
 
-| Model | VRAM Required | Quality | Speed |
-|-------|-------------|---------|-------|
-| `base` | 4GB | Good | Fastest |
-| `medium` | 6GB | **Recommended** | Balanced |
-| `large` | 8GB | Best | Slowest |
+| Model | VRAM Required | Quality | Speed | Notes |
+|-------|-------------|---------|-------|-------|
+| `tiny` / `tiny.en` | ~1 GB | Basic | Fastest | Testing only |
+| `base` / `base.en` | ~1 GB | Good | Very fast | Light workloads |
+| `small` / `small.en` | ~2 GB | **Recommended** | Fast | Best speed/quality balance |
+| `medium` / `medium.en` | ~5 GB | Very good | Moderate | Higher accuracy |
+| `large-v3` | ~10 GB | Best | Slowest | Multilingual, highest accuracy |
+
+> `.en` models are English-only and faster/more accurate for English content. Use the non-`.en` variant for multilingual recordings.
 
 ## Documentation
 
@@ -137,15 +143,3 @@ python -m py_captions_for_channels   # Run watcher locally
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-
-- Completions (inline): provides AI code suggestions directly in the editor as you type. Ensure `GitHub Copilot` (Completions) is installed and signed in; accept suggestions with `Tab` or the UI accept control.
-- Chat (conversational): `GitHub Copilot Chat` is a separate pane for asking questions, requesting explanations, or referencing open files. Install the Chat extension if you want the chat UI.
-- Setup steps:
-  1. Extensions ? Manage Extensions ? confirm `GitHub Copilot` (Completions) is installed; install `GitHub Copilot Chat` if desired.
-  2. Restart Visual Studio if prompted.
-  3. Sign in: Extensions ? GitHub Copilot ? Sign in (use the GitHub account with Copilot access).
-  4. Open a code file and type to see inline suggestions; open `View ? Other Windows ? GitHub Copilot Chat` for chat.
-- Tips:
-  - Pushing the repository to GitHub improves suggestion quality because Copilot can use repository context.
-  - Both Completions and Chat can be active simultaneously; Chat can reference editor/workspace context when enabled.

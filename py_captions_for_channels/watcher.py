@@ -1007,6 +1007,12 @@ async def main():
     # Give the event loop a chance to schedule the task
     await asyncio.sleep(0)
 
+    # Start daily summary background task (runs at 00:05 local time)
+    from .daily_summary import daily_summary_loop
+
+    daily_summary_task = asyncio.ensure_future(daily_summary_loop())
+    LOG.info("Daily summary background task started (scheduled at 00:05 local)")
+
     # Background loop to process polling queue serially
     async def _polling_processor_loop():
         LOG.info("Starting polling processor background loop")
@@ -1346,3 +1352,4 @@ async def main():
         LOG.info("Event loop ended normally")
 
     manual_process_task.cancel()
+    daily_summary_task.cancel()

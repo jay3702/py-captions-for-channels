@@ -1,4 +1,5 @@
 from datetime import datetime
+from unittest.mock import patch
 
 from py_captions_for_channels.pipeline import Pipeline, PipelineResult
 from py_captions_for_channels.parser import ProcessingEvent
@@ -90,3 +91,63 @@ def test_pipeline_result_attributes():
     assert result.stdout == "output"
     assert result.stderr == "errors"
     assert result.command == "echo test"
+
+
+def test_pipeline_crash_recovery_on_sigsegv():
+    """Test that SIGSEGV (exit 139) is recovered when output file is valid."""
+    # exit 139 simulates SIGSEGV
+    pipeline = Pipeline("exit 139", dry_run=False)
+
+    event = ProcessingEvent(
+        timestamp=datetime.now(),
+        path="/tmp/dummy.mpg",
+        title="Test SIGSEGV Recovery",
+        source="mock",
+    )
+
+    # Mock _validate_crash_recovery to return True (output is valid)
+    with patch.object(pipeline, "_validate_crash_recovery", return_value=True):
+        result = pipeline.run(event)
+
+    assert result.success is True
+    assert result.returncode == 0
+
+
+def test_pipeline_crash_no_recovery_when_output_invalid():
+    """Test that SIGSEGV (exit 139) stays failed when output is NOT valid."""
+    pipeline = Pipeline("exit 139", dry_run=False)
+
+    event = ProcessingEvent(
+        timestamp=datetime.now(),
+        path="/tmp/dummy.mpg",
+        title="Test SIGSEGV No Recovery",
+        source="mock",
+    )
+
+    # Mock _validate_crash_recovery to return False (output missing/invalid)
+    with patch.object(pipeline, "_validate_crash_recovery", return_value=False):
+        result = pipeline.run(event)
+
+    assert result.success is False
+    assert result.returncode == 139
+
+
+def test_pipeline_no_recovery_for_normal_exit_codes():
+    """Test that non-signal exit codes (e.g. 1) are NOT recovered."""
+    pipeline = Pipeline("exit 1", dry_run=False)
+
+    event = ProcessingEvent(
+        timestamp=datetime.now(),
+        path="/tmp/dummy.mpg",
+        title="Test Normal Failure",
+        source="mock",
+    )
+
+    # Even if _validate_crash_recovery would return True, it shouldn't
+    # be called for exit code 1 (not a signal-based exit)
+    with patch.object(pipeline, "_validate_crash_recovery", return_value=True) as mock:
+        result = pipeline.run(event)
+
+    assert result.success is False
+    assert result.returncode == 1
+    mock.assert_not_called()
