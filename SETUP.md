@@ -26,9 +26,9 @@ DRY_RUN=true
 
 That's it for the minimum configuration. The system automatically discovers completed recordings by polling the Channels DVR API — no additional setup is needed.
 
-> An alternative webhook-based discovery mode using ChannelWatch is also supported. See [ADVANCED_SETUP.md](ADVANCED_SETUP.md#channelwatch-webhook-mode) for details.
+> An alternative webhook-based discovery mode using ChannelWatch is also supported. See [SETUP_ADVANCED.md](SETUP_ADVANCED.md#channelwatch-webhook-mode) for details.
 
-The caption command is **auto-detected** — you don't need to set it. See [ADVANCED_SETUP.md](ADVANCED_SETUP.md) for GPU tuning, custom caption commands, and other advanced options.
+The caption command is **auto-detected** — you don't need to set it. See [SETUP_ADVANCED.md](SETUP_ADVANCED.md) for GPU tuning, custom caption commands, and other advanced options.
 
 ## 2. Deploy
 
@@ -52,7 +52,7 @@ The fastest way to get started is from the **Recordings** view in the web dashbo
 
 This lets you build your initial whitelist by picking directly from real recordings on your DVR. Start with two or three shows you record frequently so you can observe the results quickly.
 
-To refine your whitelist later — edit entries, use partial matches, or add regex patterns — go to **Settings → Whitelist** in the web UI. For the full whitelist reference including regular expressions, channel filters, and time-based rules, see [ADVANCED_SETUP.md](ADVANCED_SETUP.md#whitelist--full-reference).
+To refine your whitelist later — edit entries, use partial matches, or add regex patterns — go to **Settings → Whitelist** in the web UI. For the full whitelist reference including regular expressions, channel filters, and time-based rules, see [SETUP_ADVANCED.md](SETUP_ADVANCED.md#whitelist--full-reference).
 
 > **Tip:** Every recording that arrives is checked against the whitelist. If no rule matches, it's silently skipped. You can always add more shows later.
 
@@ -120,6 +120,6 @@ Make sure `DVR_RECORDINGS_PATH` in `.env` matches the host path where your DVR s
 |------|-------------|
 | **Add shows** | Expand your whitelist from Recordings or Settings |
 | **Turn off dry-run** | Set `DRY_RUN=false` and restart |
-| **Advanced config** | See [ADVANCED_SETUP.md](ADVANCED_SETUP.md) for GPU, webhooks, whitelist regex, caption command customization |
+| **Advanced config** | See [SETUP_ADVANCED.md](SETUP_ADVANCED.md) for GPU, webhooks, whitelist regex, caption command customization |
 | **Full reference** | See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for complete deployment documentation |
 | **All settings** | See [.env.example](.env.example) for every configuration option |

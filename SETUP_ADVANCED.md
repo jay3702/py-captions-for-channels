@@ -1,6 +1,6 @@
 # Advanced Setup
 
-This guide covers topics beyond the [basic setup](SETUP.md): GPU configuration, custom caption commands, and the full capabilities of the whitelist system.
+This guide covers topics beyond the [Quick Setup Guide](SETUP.md): GPU configuration, custom caption commands, and the full capabilities of the whitelist system.
 
 ---
 
