@@ -198,8 +198,8 @@ LOG_PATH = os.getenv("LOG_PATH", "/var/log/channels-dvr.log")
 
 # Event source configuration
 # DISCOVERY_MODE: unified setting for event source ("polling", "webhook", "mock")
-# Default: "webhook"
-DISCOVERY_MODE = os.getenv("DISCOVERY_MODE", "webhook")
+# Default: "polling"
+DISCOVERY_MODE = os.getenv("DISCOVERY_MODE", "polling")
 
 # Set USE_* flags based on DISCOVERY_MODE for backward compatibility
 USE_MOCK = get_env_bool("USE_MOCK", DISCOVERY_MODE == "mock")

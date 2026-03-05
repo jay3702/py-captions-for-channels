@@ -24,7 +24,11 @@ DVR_RECORDINGS_PATH=/path/to/your/recordings
 DRY_RUN=true
 ```
 
-That's it for the minimum configuration. The caption command is **auto-detected** — you don't need to set it. See [ADVANCED_SETUP.md](ADVANCED_SETUP.md) for GPU tuning, custom caption commands, and other options.
+That's it for the minimum configuration. The system automatically discovers completed recordings by polling the Channels DVR API — no additional setup is needed.
+
+> An alternative webhook-based discovery mode using ChannelWatch is also supported. See [ADVANCED_SETUP.md](ADVANCED_SETUP.md#channelwatch-webhook-mode) for details.
+
+The caption command is **auto-detected** — you don't need to set it. See [ADVANCED_SETUP.md](ADVANCED_SETUP.md) for GPU tuning, custom caption commands, and other advanced options.
 
 ## 2. Deploy
 
@@ -39,14 +43,16 @@ Open the web dashboard at **http://YOUR_HOST_IP:8000**.
 
 **The whitelist controls which recordings get processed. Without it, nothing will be captioned.**
 
-The fastest way to bootstrap your whitelist is through the web dashboard:
+The fastest way to get started is from the **Recordings** view in the web dashboard:
 
-1. Open **Settings** in the web UI
-2. Scroll to the **Whitelist** section
-3. Add one show title per line — partial names work (e.g. `News` matches "NBC Nightly News", "CBS News", etc.)
-4. Save
+1. Open the dashboard and go to the **Recordings** section
+2. Browse the list of completed recordings from your DVR
+3. Each recording has a **whitelist checkbox** — check the box next to any show you want to caption
+4. The full title of each selected show is automatically added to your whitelist
 
-Start small: pick two or three shows you record frequently so you can observe the results quickly.
+This lets you build your initial whitelist by picking directly from real recordings on your DVR. Start with two or three shows you record frequently so you can observe the results quickly.
+
+To refine your whitelist later — edit entries, use partial matches, or add regex patterns — go to **Settings → Whitelist** in the web UI. For the full whitelist reference including regular expressions, channel filters, and time-based rules, see [ADVANCED_SETUP.md](ADVANCED_SETUP.md#whitelist--full-reference).
 
 > **Tip:** Every recording that arrives is checked against the whitelist. If no rule matches, it's silently skipped. You can always add more shows later.
 
@@ -74,22 +80,6 @@ docker-compose down && docker-compose up -d
 ```
 
 New recordings that match your whitelist will now be processed automatically.
-
----
-
-## ChannelWatch Configuration (Webhook Mode)
-
-If you're using webhook-based discovery (the default), configure ChannelWatch to send events:
-
-1. Open ChannelWatch: `http://YOUR_DVR_IP:8501`
-2. Go to **Settings → Notification Providers**
-3. Enable **Custom URL**
-4. Set **Custom Apprise URL**:
-   - Same machine: `json://localhost:9000`
-   - Remote machine: `json://YOUR_DOCKER_HOST_IP:9000`
-5. Save settings
-
-> Alternatively, set `DISCOVERY_MODE=polling` in `.env` to skip ChannelWatch entirely. Polling checks the DVR API periodically and requires no external setup.
 
 ---
 
@@ -122,22 +112,14 @@ docker exec -it py-captions-for-channels ls -la /recordings
 
 Make sure `DVR_RECORDINGS_PATH` in `.env` matches the host path where your DVR stores recordings.
 
-### Not receiving webhooks?
-
-```bash
-docker-compose logs -f | grep webhook
-netstat -tuln | grep 9000
-curl http://YOUR_DOCKER_HOST:9000
-```
-
 ---
 
 ## Next Steps
 
 | Step | Description |
 |------|-------------|
-| **Add shows** | Expand your whitelist as you gain confidence |
+| **Add shows** | Expand your whitelist from Recordings or Settings |
 | **Turn off dry-run** | Set `DRY_RUN=false` and restart |
-| **Advanced config** | See [ADVANCED_SETUP.md](ADVANCED_SETUP.md) for GPU, whitelist regex, caption command customization |
+| **Advanced config** | See [ADVANCED_SETUP.md](ADVANCED_SETUP.md) for GPU, webhooks, whitelist regex, caption command customization |
 | **Full reference** | See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for complete deployment documentation |
 | **All settings** | See [.env.example](.env.example) for every configuration option |

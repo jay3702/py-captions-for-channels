@@ -6,6 +6,7 @@ This guide covers topics beyond the [basic setup](SETUP.md): GPU configuration, 
 
 ## Table of Contents
 
+- [ChannelWatch (Webhook Mode)](#channelwatch-webhook-mode)
 - [Custom Caption Command](#custom-caption-command)
 - [GPU Configuration](#gpu-configuration)
 - [Whitelist — Full Reference](#whitelist--full-reference)
@@ -13,6 +14,55 @@ This guide covers topics beyond the [basic setup](SETUP.md): GPU configuration, 
   - [Regular Expressions](#regular-expressions)
   - [Channel and Time Filters](#channel-and-time-filters)
   - [Examples](#examples)
+
+---
+
+## ChannelWatch (Webhook Mode)
+
+By default, the system discovers completed recordings by **polling** the Channels DVR API. This requires no extra setup.
+
+An alternative is **webhook mode**, which uses [ChannelWatch](https://github.com/biscuitehh/ChannelWatch) to push recording events to the system in real time. This can be slightly faster (events arrive immediately instead of on the next poll cycle) but requires ChannelWatch to be installed and configured.
+
+### Enable Webhook Mode
+
+Set this in `.env`:
+
+```bash
+DISCOVERY_MODE=webhook
+```
+
+### Configure ChannelWatch
+
+1. Open ChannelWatch: `http://YOUR_DVR_IP:8501`
+2. Go to **Settings → Notification Providers**
+3. Enable **Custom URL**
+4. Set **Custom Apprise URL**:
+   - Same machine: `json://localhost:9000`
+   - Remote machine: `json://YOUR_DOCKER_HOST_IP:9000`
+5. Save settings
+
+### Webhook Server Settings
+
+```bash
+# Host to bind webhook server to (default: 0.0.0.0)
+WEBHOOK_HOST=0.0.0.0
+
+# Port for webhook server (default: 9000)
+WEBHOOK_PORT=9000
+```
+
+### Troubleshooting Webhooks
+
+```bash
+# Check logs for webhook activity
+docker-compose logs -f | grep webhook
+
+# Verify port is accessible
+netstat -tuln | grep 9000
+
+# Test from the DVR machine
+curl http://YOUR_DOCKER_HOST:9000
+```
 
 ---
 
