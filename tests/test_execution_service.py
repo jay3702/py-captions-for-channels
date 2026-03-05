@@ -162,7 +162,7 @@ class TestMarkStaleExecutions:
 
     def test_does_not_mark_recent_running(self, service):
         service.create_execution(job_id="fresh", title="New", status="running")
-        marked = service.mark_stale_executions(timeout_seconds=3600)
+        service.mark_stale_executions(timeout_seconds=3600)
         # The fresh one should NOT be marked stale
         ex = service.get_execution("fresh")
         assert ex.status == "running"

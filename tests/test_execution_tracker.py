@@ -1,7 +1,5 @@
 """Tests for ExecutionTracker — thread-safe wrapper around ExecutionService."""
 
-from datetime import datetime, timezone
-
 import pytest
 
 from py_captions_for_channels.execution_tracker import (

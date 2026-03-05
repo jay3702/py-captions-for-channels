@@ -1,7 +1,5 @@
 """Tests for channels_files_service — companion detection, audit helpers."""
 
-from pathlib import Path
-
 from py_captions_for_channels.services.channels_files_service import (
     _cancelled_result,
     _extract_title,

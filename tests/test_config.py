@@ -1,8 +1,5 @@
 """Tests for config module — env helpers and configuration loading."""
 
-import os
-import pytest
-
 from py_captions_for_channels.config import get_env_bool, get_env_int
 
 

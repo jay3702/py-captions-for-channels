@@ -1,7 +1,6 @@
 """Tests for JobNumberManager — incrementing counters with midnight reset."""
 
-from datetime import date, datetime, timezone
-from unittest.mock import patch
+from datetime import date
 
 import pytest
 

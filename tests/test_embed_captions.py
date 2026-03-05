@@ -1,8 +1,6 @@
 """Tests for embed_captions — extract_channel_number, GPUBackend, StepTracker."""
 
-import re
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from py_captions_for_channels.embed_captions import extract_channel_number
 

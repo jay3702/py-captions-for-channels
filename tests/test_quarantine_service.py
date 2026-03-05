@@ -1,6 +1,5 @@
 """Tests for QuarantineService — file quarantine, restore, and delete."""
 
-import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -132,7 +131,7 @@ class TestGetExpiredFiles:
         src = tmp_path / "expired.orig"
         src.write_text("data")
 
-        item = service.quarantine_file(
+        service.quarantine_file(
             str(src), "orig", expiration_days=0  # Expires immediately
         )
 

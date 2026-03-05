@@ -1,8 +1,6 @@
 """Tests for database module — session management and initialization."""
 
-import pytest
-
-from py_captions_for_channels.database import get_db, init_db, Base
+from py_captions_for_channels.database import get_db, init_db
 
 
 class TestGetDb:

@@ -24,7 +24,7 @@ class TestBeat:
 
     def test_second_beat_updates(self, service):
         service.beat("polling")
-        hb1 = service.get_heartbeat("polling")
+        service.get_heartbeat("polling")
         service.beat("polling", status="stale")
         hb2 = service.get_heartbeat("polling")
         assert hb2["status"] == "stale"

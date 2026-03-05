@@ -1,12 +1,8 @@
 """Tests for ProgressTracker — database-backed progress tracking."""
 
-from pathlib import Path
-
 import pytest
 
-from py_captions_for_channels.database import get_db
 from py_captions_for_channels.progress_tracker import ProgressTracker
-from py_captions_for_channels.services.progress_service import ProgressService
 
 
 @pytest.fixture
@@ -75,6 +71,6 @@ class TestProgressTracker:
         marker = tmp_path / ".progress_migrated"
         marker.touch()
 
-        tracker = ProgressTracker(legacy_file)
+        ProgressTracker(legacy_file)
         # Legacy file untouched, no migration
         assert legacy_file.exists()

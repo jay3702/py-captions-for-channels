@@ -1,15 +1,9 @@
 """Tests for orphan_cleanup module — file detection, quarantine, and scheduling."""
 
-import os
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from py_captions_for_channels.orphan_cleanup import (
-    CC4CHAN_TEMP_SUFFIXES,
-    LEGACY_TEMP_SUFFIXES,
     OrphanCleanupScheduler,
     _is_cc4chan_temp_file,
     _video_path_for_orphan,
