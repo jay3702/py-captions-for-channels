@@ -120,6 +120,7 @@ DRY_RUN=false                   # Set true to test without modifying files
 | Document | Description |
 |----------|-------------|
 | [SETUP.md](SETUP.md) | Quick setup walkthrough |
+| [ADVANCED_SETUP.md](ADVANCED_SETUP.md) | GPU, custom caption commands, whitelist regex |
 | [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) | Full Docker deployment guide |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Prerequisites and requirements |
 | [.env.example](.env.example) | All configuration options with descriptions |
