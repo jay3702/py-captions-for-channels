@@ -54,14 +54,14 @@ load_dotenv()
 DATA_DIR = os.getenv("DATA_DIR", "./data")
 
 # ChannelWatch WebSocket endpoint (usually not needed - webhooks preferred)
-CHANNELWATCH_URL = os.getenv("CHANNELWATCH_URL", "ws://localhost:8501/events")
+CHANNELWATCH_URL = os.getenv("CHANNELWATCH_URL") or "ws://localhost:8501/events"
 
 # Channels DVR server base URL
-CHANNELS_DVR_URL = os.getenv("CHANNELS_DVR_URL", "http://localhost:8089")
+CHANNELS_DVR_URL = os.getenv("CHANNELS_DVR_URL") or "http://localhost:8089"
 
 # Full Channels DVR API URL (defaults to DVR URL + /api/v1)
-CHANNELS_API_URL = os.getenv(
-    "CHANNELS_API_URL", f"{CHANNELS_DVR_URL.rstrip('/')}/api/v1"
+CHANNELS_API_URL = (
+    os.getenv("CHANNELS_API_URL") or f"{CHANNELS_DVR_URL.rstrip('/')}/api/v1"
 )
 
 # Glances system monitor URL (e.g., http://localhost:61208)
