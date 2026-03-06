@@ -3,10 +3,11 @@ services:
     image: ghcr.io/jay3702/py-captions-for-channels:latest
     container_name: py-captions-for-channels
     restart: unless-stopped
-    runtime: nvidia
+    runtime: ${DOCKER_RUNTIME:-runc}
     
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-}
+      # GPU: set DOCKER_RUNTIME=nvidia and NVIDIA_VISIBLE_DEVICES=all in .env
       # Set container timezone (recommended for local timestamp display)
       - TZ=${TZ:-}
       # Explicit server timezone used by app for formatting

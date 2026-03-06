@@ -623,7 +623,7 @@ body {
   overflow-y: auto;
   min-height: 300px;
   font-family: monospace;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .log-list li {

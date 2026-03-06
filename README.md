@@ -75,15 +75,18 @@ The pre-built image includes FFmpeg with NVENC/NVDEC support, Faster Whisper wit
 > docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 > ```
 
-### CPU-Only Mode (No GPU)
+### GPU Acceleration (Optional)
 
-If you don't have an NVIDIA GPU (or the NVIDIA Container Toolkit isn't installed), use the CPU override:
+`docker compose up -d` works on any machine. To enable NVIDIA GPU acceleration,
+add two lines to your `.env`:
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+```dotenv
+DOCKER_RUNTIME=nvidia
+NVIDIA_VISIBLE_DEVICES=all
 ```
 
-Everything works the same, just slower (~25 min per hour of recording vs 3-6 min with GPU).
+Requires the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+Without it, everything works the same on CPU — just slower (~6-10 min per hour of recording vs 2-4 min with GPU).
 
 ### ChannelWatch Integration (Optional)
 

@@ -183,13 +183,13 @@ nvidia-smi
 docker compose exec py-captions nvidia-smi
 ```
 
-### Enable GPU in docker-compose.yml
-The image already includes GPU support. Just ensure:
-```yaml
-runtime: nvidia
-environment:
-  - NVIDIA_VISIBLE_DEVICES=all
+### Enable GPU via .env
+The image includes GPU support. To activate it, add to your `.env`:
+```dotenv
+DOCKER_RUNTIME=nvidia
+NVIDIA_VISIBLE_DEVICES=all
 ```
+No override file needed — `docker compose up -d` picks these up automatically.
 
 ### Performance Expectations
 - **CPU (4 cores)**: ~6–10x realtime (1 hour video takes 6–10 minutes)
@@ -227,7 +227,7 @@ curl -X POST http://localhost:9000/ \
 # Verify nvidia-container-toolkit
 docker run --rm --runtime=nvidia nvidia/cuda:11.8.0-base nvidia-smi
 
-# Check docker-compose.yml has runtime: nvidia
+# Check .env has DOCKER_RUNTIME=nvidia and NVIDIA_VISIBLE_DEVICES=all
 ```
 
 ### Logs Not Writing
