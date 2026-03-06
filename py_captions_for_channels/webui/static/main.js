@@ -1217,7 +1217,7 @@ async function saveEnvSettings(event) {
       }
     }
     
-    let msg = '✓ Settings saved!\n\n.env changes require restart.\nWhitelist changes are active immediately.';
+    let msg = '✓ Settings saved!\n\nAll changes require a restart to take effect.';
     const whitelistChanged = whitelistEditor
       && whitelistEditor.value !== (window._originalWhitelist || '');
     if (whitelistChanged) {

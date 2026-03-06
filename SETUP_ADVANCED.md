@@ -263,7 +263,7 @@ Dateline;Friday;11.1,113
 Dateline;Friday;11.1,113;21:00
 ```
 
-> **Note on delayed captions:** Some programs — such as Dateline, 48 Hours, and 20/20 — have delayed (out-of-sync) captions only when they are first aired. Repeats and repackaged versions (e.g. "Dateline: Secrets Uncovered") always have synchronized captions. If you notice caption timing issues, the original broadcast airing is likely the cause. Channel and time filters can help you target only repeat airings if desired.
+> **Note on delayed captions:** Some programs — such as Dateline, 48 Hours, and 20/20 — have delayed (out-of-sync) captions only when they are first aired. Repeats and repackaged versions (e.g. "Dateline: Secrets Uncovered") always have synchronized captions. If you notice caption timing issues, the original broadcast airing is likely the cause. Channel and time filters can help you target only first airings if desired.
 
 ### Examples
 
@@ -293,4 +293,4 @@ News;Thursday;11.1;23:00
 News;Friday;11.1;23:00
 ```
 
-> **Tip:** Use the web UI's interactive whitelist checkboxes to quickly toggle individual shows without editing the file directly.
+> **Tip:** Use the Recordings dialog to quickly toggle individual shows without editing the whitelist setting directly. You can also use it to verify that all of the desired shows are whitelisted, and no others.
