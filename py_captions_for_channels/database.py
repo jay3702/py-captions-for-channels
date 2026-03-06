@@ -1,5 +1,6 @@
 """Database connection and session management."""
 
+import threading
 from pathlib import Path
 from typing import Generator
 from sqlalchemy import create_engine
@@ -54,20 +55,28 @@ def init_db():
     """Initialize database tables.
 
     Creates all tables defined in models if they don't exist.
-    Should be called on application startup.
+    Should be called on application startup.  Thread-safe: concurrent
+    calls (e.g. watcher + web app starting at the same time) are
+    serialised via a lock.
     """
-    # Import all models here to register them with Base
-    from . import models  # noqa: F401
+    _init_lock = getattr(init_db, "_lock", None)
+    if _init_lock is None:
+        init_db._lock = threading.Lock()
+        _init_lock = init_db._lock
 
-    # Ensure data directory exists
-    db_path = Path(DB_PATH)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with _init_lock:
+        # Import all models here to register them with Base
+        from . import models  # noqa: F401
 
-    # Create tables
-    Base.metadata.create_all(bind=engine)
+        # Ensure data directory exists
+        db_path = Path(DB_PATH)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Apply schema migrations for existing databases
-    _apply_migrations()
+        # Create tables (checkfirst=True is default but explicit for clarity)
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+
+        # Apply schema migrations for existing databases
+        _apply_migrations()
 
 
 def _apply_migrations():
