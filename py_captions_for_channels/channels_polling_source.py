@@ -20,6 +20,7 @@ from .database import get_db
 from .services.polling_cache_service import PollingCacheService
 from .services.heartbeat_service import HeartbeatService
 from .services.settings_service import SettingsService
+from .shutdown_control import get_shutdown_controller
 from .whitelist import Whitelist
 
 LOG = logging.getLogger(__name__)
@@ -110,6 +111,21 @@ class ChannelsPollingSource:
         else:
             # Poll every 5 minutes during quiet periods
             return 300
+
+    @staticmethod
+    async def _shutdown_aware_sleep(total_seconds: int) -> bool:
+        """Sleep in 2-second increments, checking for shutdown each time.
+
+        Returns True if shutdown was requested (caller should exit).
+        """
+        shutdown = get_shutdown_controller()
+        elapsed = 0
+        while elapsed < total_seconds:
+            if shutdown.is_shutdown_requested():
+                return True
+            await asyncio.sleep(min(2, total_seconds - elapsed))
+            elapsed += 2
+        return shutdown.is_shutdown_requested()
 
     def _calculate_next_completion(self, recordings: list) -> Optional[datetime]:
         """Calculate when the next recording is expected to complete.
@@ -602,7 +618,9 @@ class ChannelsPollingSource:
                         "No pending recordings, using smart interval: %ds", wait_time
                     )
 
-                await asyncio.sleep(wait_time)
+                if await self._shutdown_aware_sleep(wait_time):
+                    LOG.info("Shutdown requested during poll wait — exiting")
+                    return
 
             except requests.RequestException as e:
                 LOG.error("API polling failed: %s (retrying in 60s)", e)
@@ -610,7 +628,8 @@ class ChannelsPollingSource:
                     db.rollback()
                 except Exception:
                     pass
-                await asyncio.sleep(60)
+                if await self._shutdown_aware_sleep(60):
+                    return
 
             except Exception as e:
                 LOG.error(
@@ -622,4 +641,5 @@ class ChannelsPollingSource:
                     db.rollback()
                 except Exception:
                     pass
-                await asyncio.sleep(60)
+                if await self._shutdown_aware_sleep(60):
+                    return

@@ -10,6 +10,7 @@ Runs both the caption watcher and the web UI in a single process.
 import asyncio
 import logging
 import os
+import sys
 import threading
 
 import uvicorn
@@ -52,6 +53,10 @@ async def main():
 
     # Run the watcher in the main asyncio event loop
     await watcher_main()
+
+    # Watcher returned (shutdown requested) — exit so Docker can restart us
+    logger.info("Watcher exited — terminating process for restart")
+    sys.exit(0)
 
 
 if __name__ == "__main__":
