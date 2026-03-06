@@ -940,25 +940,19 @@ async def main():
     parser = Parser()
     state = StateBackend(STATE_FILE)
 
-    # Auto-detect caption command if not explicitly set
+    # Auto-detect caption command if not explicitly set.
+    # Always use embed_captions.py — it handles both SRT-only (default) and
+    # transcode mode (TRANSCODE_FOR_FIRETV=true) via Faster-Whisper.
+    # The old fallback to shell `whisper` CLI no longer exists in the image.
     caption_cmd = CAPTION_COMMAND
     if not caption_cmd or caption_cmd == 'echo "Would process: {path}"':
-        # Auto-detect based on TRANSCODE_FOR_FIRETV setting
         import sys
-        from .config import get_env_bool
 
-        if get_env_bool("TRANSCODE_FOR_FIRETV", False):
-            caption_cmd = (
-                f"{sys.executable} -m py_captions_for_channels.embed_captions "
-                "--input {path}"
-            )
-            print("Auto-detected: embed_captions (TRANSCODE_FOR_FIRETV=true)")
-        else:
-            caption_cmd = (
-                "whisper --model medium --output_format srt --output_dir "
-                '"$(dirname {path})" {path}'
-            )
-            print("Auto-detected: whisper (TRANSCODE_FOR_FIRETV=false)")
+        caption_cmd = (
+            f"{sys.executable} -m py_captions_for_channels.embed_captions "
+            "--input {path}"
+        )
+        LOG.info("Auto-detected caption command: embed_captions")
 
     pipeline = Pipeline(caption_cmd, dry_run=DRY_RUN)
 
