@@ -38,6 +38,7 @@ from .config import (
     ORPHAN_CLEANUP_INTERVAL_HOURS,
     ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES,
     CHANNELS_FILES_ENABLED,
+    translate_dvr_path,
 )
 from .state import StateBackend
 from .execution_tracker import build_manual_process_job_id, get_tracker
@@ -2657,7 +2658,10 @@ async def add_to_manual_process_queue(request: Request) -> dict:
         tracker = get_tracker()
 
         # Add paths to manual process queue with settings
-        for path in paths:
+        for raw_path in paths:
+            # Translate DVR server path to local/mount path (no-op if prefix
+            # mapping is not configured via DVR_PATH_PREFIX / LOCAL_PATH_PREFIX)
+            path = translate_dvr_path(raw_path)
             state_backend.mark_for_manual_process(
                 path, skip_caption_generation, log_verbosity
             )
@@ -2790,10 +2794,13 @@ async def remove_from_manual_process_queue(request: Request) -> dict:
     """
     try:
         data = await request.json()
-        path = data.get("path")
+        raw_path = data.get("path")
 
-        if not path:
+        if not raw_path:
             return {"error": "No path provided", "removed": False}
+
+        # Translate to local path (same mapping applied when the item was queued)
+        path = translate_dvr_path(raw_path)
 
         # Clear from state backend
         state_backend.clear_manual_process_request(path)
