@@ -11,7 +11,7 @@ import os
 import subprocess
 from datetime import datetime
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 
 def _git_short_sha() -> str:

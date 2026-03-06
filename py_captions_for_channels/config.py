@@ -59,10 +59,13 @@ CHANNELWATCH_URL = os.getenv("CHANNELWATCH_URL") or "ws://localhost:8501/events"
 # Channels DVR server base URL
 CHANNELS_DVR_URL = os.getenv("CHANNELS_DVR_URL") or "http://localhost:8089"
 
-# Full Channels DVR API URL (defaults to DVR URL + /api/v1)
-CHANNELS_API_URL = (
-    os.getenv("CHANNELS_API_URL") or f"{CHANNELS_DVR_URL.rstrip('/')}/api/v1"
-)
+# Channels DVR API base URL — kept for backward compatibility.
+# Code appends /api/v1/... to this value, so it should NOT include /api/v1.
+# If someone explicitly sets CHANNELS_API_URL with /api/v1, strip it.
+_raw_api_url = os.getenv("CHANNELS_API_URL") or CHANNELS_DVR_URL
+CHANNELS_API_URL = _raw_api_url.rstrip("/")
+if CHANNELS_API_URL.endswith("/api/v1"):
+    CHANNELS_API_URL = CHANNELS_API_URL[: -len("/api/v1")]
 
 # Glances system monitor URL (e.g., http://localhost:61208)
 # Set to enable the System Monitor tab in the web UI
