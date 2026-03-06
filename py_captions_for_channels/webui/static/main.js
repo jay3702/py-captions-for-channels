@@ -205,17 +205,28 @@ async function fetchStatus() {
       let activeRecordings = [];
       if (recordingsRes.ok) {
         const recordingsData = await recordingsRes.json();
+        const now = Date.now();
         activeRecordings = (recordingsData.recordings || [])
           .filter(rec => {
             // Only show recordings that are:
             // 1. Not completed
             // 2. Pass whitelist
-            // Note: We don't check inprogress field because Channels DVR API
-            // doesn't reliably set it to true for actively recording items
+            // 3. Plausibly still recording (created_at + duration + 30min buffer > now)
             const notCompleted = !rec.completed;
             const passesWhitelist = rec.passes_whitelist === true;
             
-            return notCompleted && passesWhitelist;
+            if (!notCompleted || !passesWhitelist) return false;
+            
+            // Time-based guard: if the recording should have ended by now
+            // (with a generous 30-minute buffer), it's stale, not active.
+            const createdAt = rec.created_at || 0;  // ms timestamp
+            const duration = (rec.duration || 0) * 1000;  // seconds -> ms
+            if (createdAt && duration) {
+              const expectedEnd = createdAt + duration + 30 * 60 * 1000;
+              if (expectedEnd < now) return false;
+            }
+            
+            return true;
           })
           .slice(0, 20); // Limit to avoid overwhelming UI
       }
