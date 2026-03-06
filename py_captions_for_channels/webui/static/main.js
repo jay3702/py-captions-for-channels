@@ -213,7 +213,8 @@ async function fetchStatus() {
             // 2. Pass whitelist
             // 3. Plausibly still recording (created_at + duration + 30min buffer > now)
             const notCompleted = !rec.completed;
-            const passesWhitelist = rec.passes_whitelist === true;
+            // When whitelist is disabled, all recordings pass; otherwise check the flag
+            const passesWhitelist = !recordingsData.whitelist_enabled || rec.passes_whitelist === true;
             
             if (!notCompleted || !passesWhitelist) return false;
             
@@ -704,7 +705,10 @@ async function showManualProcessModal() {
         }
         
         // Whitelist checkbox: interactive toggle
-        const whitelistChecked = recording.passes_whitelist ? 'checked' : '';
+        // Only show as checked when whitelist is actively enabled AND this title matches a rule.
+        // When whitelist is disabled, is_allowed() returns true for everything, which would
+        // incorrectly make every checkbox appear checked.
+        const whitelistChecked = (data.whitelist_enabled && recording.passes_whitelist) ? 'checked' : '';
         const whitelistCheckbox = `<input type="checkbox" ${whitelistChecked} onchange="toggleWhitelist(this, '${escapeAttr(recording.title)}')" title="Toggle whitelist for ${escapeAttr(recording.title)}">`;
         
         // Disable checkbox if recording is not yet completed

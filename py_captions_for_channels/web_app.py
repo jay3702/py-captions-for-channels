@@ -2522,6 +2522,7 @@ async def get_recordings() -> dict:
         return {
             "recordings": formatted_recordings,
             "count": len(formatted_recordings),
+            "whitelist_enabled": whitelist.enabled,
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
