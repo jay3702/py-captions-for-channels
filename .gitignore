@@ -82,6 +82,7 @@ docs/copilot/
 # Local deployment/dev-specific files
 docker-compose.local.yml
 docker-compose.dev.yml
+docker-compose.override.yml
 Dockerfile.local
 setup-dev.ps1
 setup-dev.sh

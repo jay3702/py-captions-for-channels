@@ -1,4 +1,8 @@
-# Build override — builds the image locally instead of pulling from ghcr.io.
+# Development / local-build override.
+#
+# Adds `build: .` so the image is built locally, and bind-mounts the Python
+# source so code changes take effect on container restart without rebuilding.
+#
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 #
@@ -7,3 +11,5 @@
 services:
   py-captions:
     build: .
+    volumes:
+      - ./py_captions_for_channels:/app/py_captions_for_channels
