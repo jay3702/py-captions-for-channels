@@ -162,9 +162,12 @@ def test_channels_api_base_url_normalization():
 
 def test_lookup_recording_path_translates_prefix():
     """lookup_recording_path applies translate_dvr_path to the result."""
-    with patch("py_captions_for_channels.channels_api.USE_MOCK", False), patch(
-        "py_captions_for_channels.channels_api.translate_dvr_path",
-        side_effect=lambda p: p.replace("/dvr-host", "/local-mount"),
+    with (
+        patch("py_captions_for_channels.channels_api.USE_MOCK", False),
+        patch(
+            "py_captions_for_channels.channels_api.translate_dvr_path",
+            side_effect=lambda p: p.replace("/dvr-host", "/local-mount"),
+        ),
     ):
         api = ChannelsAPI("http://localhost:8089")
 
@@ -187,9 +190,12 @@ def test_lookup_recording_path_translates_prefix():
 
 def test_lookup_recording_path_no_translation_when_unconfigured():
     """Without prefix mapping, lookup_recording_path returns raw API path."""
-    with patch("py_captions_for_channels.channels_api.USE_MOCK", False), patch(
-        "py_captions_for_channels.channels_api.translate_dvr_path",
-        side_effect=lambda p: p,  # passthrough
+    with (
+        patch("py_captions_for_channels.channels_api.USE_MOCK", False),
+        patch(
+            "py_captions_for_channels.channels_api.translate_dvr_path",
+            side_effect=lambda p: p,  # passthrough
+        ),
     ):
         api = ChannelsAPI("http://localhost:8089")
 

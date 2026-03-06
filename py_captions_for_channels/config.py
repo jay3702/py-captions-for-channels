@@ -110,7 +110,7 @@ def translate_dvr_path(api_path: str) -> str:
     if not DVR_PATH_PREFIX or not LOCAL_PATH_PREFIX:
         return api_path
     if api_path.startswith(DVR_PATH_PREFIX):
-        translated = LOCAL_PATH_PREFIX + api_path[len(DVR_PATH_PREFIX):]
+        translated = LOCAL_PATH_PREFIX + api_path[len(DVR_PATH_PREFIX) :]
         return translated
     return api_path
 
