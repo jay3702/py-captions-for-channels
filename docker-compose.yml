@@ -19,6 +19,9 @@ services:
       - CHANNELS_API_URL=${CHANNELS_API_URL:-}
       - CHANNELWATCH_URL=${CHANNELWATCH_URL:-}
       - API_TIMEOUT=${API_TIMEOUT:-10}
+      # Path prefix mapping (distributed deployments only)
+      - DVR_PATH_PREFIX=${DVR_PATH_PREFIX:-}
+      - LOCAL_PATH_PREFIX=${LOCAL_PATH_PREFIX:-}
       
       # Caption processing options
       - TRANSCODE_FOR_FIRETV=${TRANSCODE_FOR_FIRETV:-false}

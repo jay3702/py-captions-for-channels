@@ -153,3 +153,58 @@ def test_channels_api_base_url_normalization():
 
     assert api1.base_url == api2.base_url
     assert api1.base_url == "http://localhost:8089"
+
+
+# ---------------------------------------------------------------------------
+# Path prefix translation integration
+# ---------------------------------------------------------------------------
+
+
+def test_lookup_recording_path_translates_prefix():
+    """lookup_recording_path applies translate_dvr_path to the result."""
+    with patch("py_captions_for_channels.channels_api.USE_MOCK", False), patch(
+        "py_captions_for_channels.channels_api.translate_dvr_path",
+        side_effect=lambda p: p.replace("/dvr-host", "/local-mount"),
+    ):
+        api = ChannelsAPI("http://localhost:8089")
+
+        with patch("requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.json.return_value = [
+                {
+                    "title": "News",
+                    "path": "/dvr-host/TV/News-2026-01-18.mpg",
+                    "date_added": "2026-01-18T10:00:00Z",
+                },
+            ]
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+
+            path = api.lookup_recording_path("News", datetime.now())
+
+            assert path == "/local-mount/TV/News-2026-01-18.mpg"
+
+
+def test_lookup_recording_path_no_translation_when_unconfigured():
+    """Without prefix mapping, lookup_recording_path returns raw API path."""
+    with patch("py_captions_for_channels.channels_api.USE_MOCK", False), patch(
+        "py_captions_for_channels.channels_api.translate_dvr_path",
+        side_effect=lambda p: p,  # passthrough
+    ):
+        api = ChannelsAPI("http://localhost:8089")
+
+        with patch("requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.json.return_value = [
+                {
+                    "title": "News",
+                    "path": "/recordings/TV/News-2026-01-18.mpg",
+                    "date_added": "2026-01-18T10:00:00Z",
+                },
+            ]
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+
+            path = api.lookup_recording_path("News", datetime.now())
+
+            assert path == "/recordings/TV/News-2026-01-18.mpg"

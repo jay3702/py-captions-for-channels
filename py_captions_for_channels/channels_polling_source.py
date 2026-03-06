@@ -13,6 +13,7 @@ from typing import AsyncIterator, Optional
 import requests
 
 from .channels_api import ChannelsAPI
+from .config import translate_dvr_path
 from .config import LOCAL_TEST_DIR
 from .execution_tracker import get_tracker
 from .database import get_db
@@ -415,7 +416,8 @@ class ChannelsPollingSource:
                         skipped_cache_count += 1
                         continue
 
-                    path = rec.get("path")  # Get file path from API
+                    _raw_path = rec.get("path")  # Get file path from API
+                    path = translate_dvr_path(_raw_path) if _raw_path else None
 
                     # Check if this recording has already been processed
                     # (execution tracker persists across restarts)

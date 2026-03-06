@@ -74,6 +74,47 @@ GLANCES_URL = os.getenv("GLANCES_URL", "")
 # DVR recordings storage path (root directory where recordings are stored)
 DVR_RECORDINGS_PATH = os.getenv("DVR_RECORDINGS_PATH", "/recordings")
 
+# Path prefix mapping for distributed deployments.
+# When the Channels DVR API returns file paths that differ from where the
+# captions system accesses the same files (e.g., DVR on one host, captions
+# on another with an NFS/SMB mount), set these to translate API paths.
+#
+# DVR_PATH_PREFIX — the prefix as the DVR server reports it
+# LOCAL_PATH_PREFIX — the corresponding path on the captions host / mount
+#
+# Example:
+#   DVR: /home/channels/DVR/TV/…  →  Captions host mounts at /mnt/dvr-media/TV/…
+#   DVR_PATH_PREFIX=/home/channels/DVR
+#   LOCAL_PATH_PREFIX=/mnt/dvr-media
+#
+# When both are set, every API-returned path that starts with DVR_PATH_PREFIX
+# will have that prefix swapped for LOCAL_PATH_PREFIX before any file I/O.
+# When unset (default), paths pass through unchanged (single-host setup).
+DVR_PATH_PREFIX = os.getenv("DVR_PATH_PREFIX", "").rstrip("/") or None
+LOCAL_PATH_PREFIX = os.getenv("LOCAL_PATH_PREFIX", "").rstrip("/") or None
+
+
+def translate_dvr_path(api_path: str) -> str:
+    """Translate a Channels DVR API path to a local filesystem path.
+
+    If DVR_PATH_PREFIX and LOCAL_PATH_PREFIX are both configured, replaces
+    the DVR prefix with the local prefix.  Otherwise returns the path
+    unchanged.
+
+    Args:
+        api_path: Path string as returned by the Channels DVR API.
+
+    Returns:
+        Translated path suitable for local filesystem access.
+    """
+    if not DVR_PATH_PREFIX or not LOCAL_PATH_PREFIX:
+        return api_path
+    if api_path.startswith(DVR_PATH_PREFIX):
+        translated = LOCAL_PATH_PREFIX + api_path[len(DVR_PATH_PREFIX):]
+        return translated
+    return api_path
+
+
 # Local test directory (for development - overrides network DVR path)
 # When set, uses local sample files instead of network repository
 LOCAL_TEST_DIR = os.getenv("LOCAL_TEST_DIR", None)

@@ -4,7 +4,7 @@ from typing import Optional
 import requests
 from pathlib import Path
 
-from .config import USE_MOCK, LOCAL_TEST_DIR
+from .config import USE_MOCK, LOCAL_TEST_DIR, translate_dvr_path
 
 LOG = logging.getLogger(__name__)
 
@@ -180,13 +180,14 @@ class ChannelsAPI:
                     rec_path = recording.get("path")
 
                     if rec_title == title and rec_path:
+                        translated = translate_dvr_path(rec_path)
                         LOG.info(
                             "Exact match found (%s): %s -> %s",
                             pool_name,
                             title,
-                            rec_path,
+                            translated,
                         )
-                        return rec_path
+                        return translated
 
                 # Try partial/fuzzy match
                 title_lower = title.lower()
@@ -196,26 +197,28 @@ class ChannelsAPI:
 
                     # Case-insensitive partial match
                     if rec_path and rec_title.lower() == title_lower:
+                        translated = translate_dvr_path(rec_path)
                         LOG.info(
                             "Case-insensitive match found (%s): %s -> %s",
                             pool_name,
                             rec_title,
-                            rec_path,
+                            translated,
                         )
-                        return rec_path
+                        return translated
 
                     # Contains match (for titles with extra info)
                     if rec_path and (
                         title_lower in rec_title.lower()
                         or rec_title.lower() in title_lower
                     ):
+                        translated = translate_dvr_path(rec_path)
                         LOG.info(
                             "Partial match found (%s): %s -> %s",
                             pool_name,
                             rec_title,
-                            rec_path,
+                            translated,
                         )
-                        return rec_path
+                        return translated
 
             # No match found in recent recordings
             LOG.warning(
