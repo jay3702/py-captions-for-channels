@@ -1,7 +1,6 @@
 services:
   py-captions:
-    build: .
-    image: py-captions-for-channels:latest
+    image: ghcr.io/jay3702/py-captions-for-channels:latest
     container_name: py-captions-for-channels
     restart: unless-stopped
     runtime: nvidia

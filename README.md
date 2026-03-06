@@ -61,21 +61,26 @@ cd py-captions-for-channels
 cp .env.example .env
 nano .env   # Set CHANNELS_DVR_URL, DVR_RECORDINGS_PATH, etc.
 
-# Deploy
-docker-compose up -d
+# Deploy (pulls pre-built image from GitHub Container Registry)
+docker compose up -d
 
 # Open the web dashboard
 # http://your-server:8000
 ```
 
-The container builds FFmpeg with NVENC/NVDEC support, installs Faster Whisper with CUDA, and starts the watcher + web UI automatically.
+The pre-built image includes FFmpeg with NVENC/NVDEC support, Faster Whisper with CUDA, and starts the watcher + web UI automatically. No local compilation required.
+
+> **Building locally:** If you prefer to build the image yourself (e.g., for development), use the build override:
+> ```bash
+> docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
+> ```
 
 ### CPU-Only Mode (No GPU)
 
 If you don't have an NVIDIA GPU (or the NVIDIA Container Toolkit isn't installed), use the CPU override:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build -d
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
 ```
 
 Everything works the same, just slower (~25 min per hour of recording vs 3-6 min with GPU).

@@ -1,6 +1,8 @@
 # CPU-only override — removes the NVIDIA runtime requirement.
-# Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build
+# Usage (pre-built image):
+#   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+# Usage (local build):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.cpu.yml up --build -d
 #
 # The image still includes CUDA libraries (from the base image) but they
 # are unused.  Whisper and FFmpeg fall back to CPU automatically.

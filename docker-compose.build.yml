@@ -1,0 +1,9 @@
+# Build override — builds the image locally instead of pulling from ghcr.io.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
+#
+# Useful for development or when modifying the Dockerfile.
+
+services:
+  py-captions:
+    build: .
