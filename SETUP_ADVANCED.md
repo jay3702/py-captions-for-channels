@@ -1,14 +1,15 @@
 # Advanced Setup
 
-This guide covers topics beyond the [Quick Setup Guide](SETUP.md): GPU configuration, custom caption commands, and the full capabilities of the whitelist system.
+This guide covers topics beyond the [Quick Setup Guide](SETUP.md): Fire TV transcoding, GPU configuration, webhook-based discovery, custom caption commands, and the full capabilities of the whitelist system.
 
 ---
 
 ## Table of Contents
 
+- [Fire TV / Android Transcoding](#fire-tv--android-transcoding)
+- [GPU Configuration](#gpu-configuration)
 - [ChannelWatch (Webhook Mode)](#channelwatch-webhook-mode)
 - [Custom Caption Command](#custom-caption-command)
-- [GPU Configuration](#gpu-configuration)
 - [Whitelist — Full Reference](#whitelist--full-reference)
   - [How Matching Works](#how-matching-works)
   - [Regular Expressions](#regular-expressions)
@@ -17,11 +18,96 @@ This guide covers topics beyond the [Quick Setup Guide](SETUP.md): GPU configura
 
 ---
 
+## Fire TV / Android Transcoding
+
+By default, the system generates `.srt` (sidecar) caption files alongside your recordings. Most clients — Apple TV, Roku, and the Channels web player — pick these up automatically.
+
+If you need to support clients that don't directly support `.srt` files, such as **Fire TV** and **Android**, enable transcoding mode. This option transcodes the recording and adds a new captions track that these clients can recognize.
+
+```bash
+TRANSCODE_FOR_FIRETV=true
+KEEP_ORIGINAL=true    # archive the original .mpg as .mpg.orig
+```
+
+Transcoding is significantly slower than SRT-only mode:
+
+| | With GPU | Without GPU |
+|---|---|---|
+| **Per 1-hour recording** | ~4–10 min | ~10–30 min |
+
+The time depends on the type of recording (OTA vs TV Everywhere) and available hardware. See [GPU Configuration](#gpu-configuration) below.
+
+---
+
+## GPU Configuration
+
+An NVIDIA GPU dramatically accelerates both Whisper transcription and video encoding.
+
+This system was developed and tested on an **Intel i7-7700K** with an **NVIDIA RTX 2080 (8 GB VRAM)**. The Docker image includes the required CUDA drivers and toolkits, which should work for most NVIDIA GPUs.
+
+### Minimum Requirements
+
+- NVIDIA GPU with **6 GB+ VRAM** (GTX 1660 Super / RTX 2060 or better)
+- NVIDIA driver **525+** on the host
+- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed
+
+### Key Settings
+
+```bash
+# GPU device selection for Whisper AI transcription
+# auto | nvidia | none
+WHISPER_DEVICE=auto
+
+# Hardware-accelerated video decoding (for transcoding mode)
+# auto | cuda | off
+HWACCEL_DECODE=auto
+
+# GPU video encoder (for transcoding mode)
+# auto | nvenc | cpu
+GPU_ENCODER=auto
+```
+
+`auto` is recommended for all three settings. If you're troubleshooting GPU issues, try forcing the specific GPU type (e.g. `nvidia`, `cuda`, `nvenc`) to see if auto-detection is the problem.
+
+> **Note:** Support for Intel (QSV) and AMD (AMF/VA-API) GPUs is planned but not yet implemented. For now, only NVIDIA and CPU-only modes are available.
+
+### NVIDIA Encoding Quality
+
+```bash
+# Constant-quality level for NVENC (0–51, lower = better quality)
+# 18 = near-transparent, 23 = balanced (default), 28 = smaller files
+NVENC_CQ=23
+```
+
+### Docker Compose GPU Passthrough
+
+The default `docker-compose.yml` includes GPU passthrough. Verify your setup:
+
+```bash
+# Confirm the GPU is visible inside the container
+docker exec -it py-captions-for-channels nvidia-smi
+```
+
+### Performance Benchmarks (Approximate)
+
+Measured on an i7-7700K + RTX 2080 (8 GB). Newer GPUs will be proportionally faster.
+
+| Mode | Per 1-hour recording |
+|---|---|
+| SRT-only (GPU) | ~1–2 min |
+| Full transcode (GPU) | ~4–10 min |
+| SRT-only (CPU-only) | ~15–25 min |
+| Full transcode (CPU-only) | ~30–60 min |
+
+> CPU-only benchmarks are estimates — your mileage may vary depending on CPU. See [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for more detailed benchmarks.
+
+---
+
 ## ChannelWatch (Webhook Mode)
 
 By default, the system discovers completed recordings by **polling** the Channels DVR API. This requires no extra setup.
 
-An alternative is **webhook mode**, which uses [ChannelWatch](https://github.com/biscuitehh/ChannelWatch) to push recording events to the system in real time. This can be slightly faster (events arrive immediately instead of on the next poll cycle) but requires ChannelWatch to be installed and configured.
+An alternative is **webhook mode**, which uses [ChannelWatch](https://github.com/biscuitehh/ChannelWatch) to push recording events to the system in real time. The system responds only to the **recording complete** event provided by ChannelWatch. This can be slightly faster (events arrive immediately instead of on the next poll cycle) but requires ChannelWatch to be installed and configured.
 
 ### Enable Webhook Mode
 
@@ -68,12 +154,7 @@ curl http://YOUR_DOCKER_HOST:9000
 
 ## Custom Caption Command
 
-By default the caption command is auto-detected at startup — you don't need to set it. The auto-detection logic:
-
-| `TRANSCODE_FOR_FIRETV` | Command used |
-|---|---|
-| `false` (default) | `whisper --model medium --output_format srt --output_dir "<dir>" "<file>"` |
-| `true` | `python -m py_captions_for_channels.embed_captions --input {path}` |
+By default the caption command is auto-detected at startup — you don't need to set it. The system uses Whisper to generate `.srt` caption files.
 
 To override the default, set `CAPTION_COMMAND` in `.env`. The `{path}` placeholder is replaced with the recording's file path at runtime.
 
@@ -88,72 +169,7 @@ CAPTION_COMMAND=faster-whisper "{path}" --model medium --output_format srt
 CAPTION_COMMAND=echo "Would process: {path}"
 ```
 
-### Fire TV / Android Transcoding
-
-If your clients need burned-in captions (Fire TV, some Android devices), enable full transcoding:
-
-```bash
-TRANSCODE_FOR_FIRETV=true
-KEEP_ORIGINAL=true    # archive the original .mpg as .mpg.orig
-```
-
-This is significantly slower (10–30 min per hour of recording vs 3–6 min for SRT-only) but produces MP4 files with embedded subtitle tracks.
-
----
-
-## GPU Configuration
-
-An NVIDIA GPU dramatically accelerates both Whisper transcription and video encoding.
-
-### Minimum Requirements
-
-- NVIDIA GPU with **6 GB+ VRAM** (GTX 1660 Super / RTX 2060 or better)
-- NVIDIA driver **525+** on the host
-- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed
-
-### Key Settings
-
-```bash
-# GPU device selection for Whisper AI transcription
-# auto | nvidia | amd | intel | none
-WHISPER_DEVICE=auto
-
-# Hardware-accelerated video decoding (for transcoding mode)
-# auto | cuda | qsv | vaapi | off
-HWACCEL_DECODE=auto
-
-# GPU video encoder (for transcoding mode)
-# auto | nvenc | qsv | amf | vaapi | cpu
-GPU_ENCODER=auto
-```
-
-### NVIDIA Encoding Quality
-
-```bash
-# Constant-quality level for NVENC (0–51, lower = better quality)
-# 18 = near-transparent, 23 = balanced (default), 28 = smaller files
-NVENC_CQ=23
-```
-
-### Docker Compose GPU Passthrough
-
-The default `docker-compose.yml` includes GPU passthrough. Verify your setup:
-
-```bash
-# Confirm the GPU is visible inside the container
-docker exec -it py-captions-for-channels nvidia-smi
-```
-
-### Performance Benchmarks (Approximate)
-
-| Hardware | SRT-only (1-hr recording) | Full Transcode (1-hr recording) |
-|---|---|---|
-| RTX 2060 | ~4 min | ~12 min |
-| RTX 2080 Ti | ~3 min | ~8 min |
-| RTX 3070 | ~2.5 min | ~7 min |
-| CPU-only (i7-10700) | ~25 min | ~45 min |
-
-> See [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for more detailed benchmarks.
+The command should produce an `.srt` file in the same directory as the recording. Any CLI tool that accepts a file path and writes SRT output will work.
 
 ---
 
@@ -246,6 +262,8 @@ Dateline;Friday;11.1,113
 # Dateline on Fridays on channels 11.1 or 113 at 9 PM
 Dateline;Friday;11.1,113;21:00
 ```
+
+> **Note on delayed captions:** Some programs — such as Dateline, 48 Hours, and 20/20 — have delayed (out-of-sync) captions only when they are first aired. Repeats and repackaged versions (e.g. "Dateline: Secrets Uncovered") always have synchronized captions. If you notice caption timing issues, the original broadcast airing is likely the cause. Channel and time filters can help you target only repeat airings if desired.
 
 ### Examples
 
