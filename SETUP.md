@@ -4,6 +4,20 @@ Get up and running in three steps: configure, deploy, and whitelist your first s
 
 ---
 
+## Prerequisites
+
+- **Docker** installed on the host machine
+  - Linux: `curl -fsSL https://get.docker.com | sudo sh && sudo usermod -aG docker $USER`
+  - Windows/macOS: [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- **The repo** cloned locally (provides `docker-compose.yml` and `.env.example`):
+  ```bash
+  git clone https://github.com/jay3702/py-captions-for-channels.git
+  cd py-captions-for-channels
+  ```
+- **NVIDIA GPU users only:** [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) must also be installed, and you'll need `DOCKER_RUNTIME=nvidia` + `NVIDIA_VISIBLE_DEVICES=all` in your `.env` (see step 1 below).
+
+---
+
 ## 1. Configure
 
 ```bash
