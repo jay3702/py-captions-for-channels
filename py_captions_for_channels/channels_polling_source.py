@@ -170,6 +170,45 @@ class ChannelsPollingSource:
         if cleaned > 0:
             LOG.info("Cleaned %d old polling cache entries on startup", cleaned)
 
+        # Seed on first run: if the polling cache is empty (fresh database),
+        # mark all currently-completed recordings as already-seen so we don't
+        # try to catch up on the entire back-catalog.  Only truly *new*
+        # completions (arriving after this startup) will be processed.
+        existing_cache = cache_service.get_all()
+        if not existing_cache:
+            LOG.info(
+                "Fresh database detected — seeding polling cache with "
+                "existing recordings to avoid catch-up processing"
+            )
+            try:
+                if self._use_local_mock:
+                    seed_recordings = self._api._scan_local_recordings()
+                else:
+                    resp = requests.get(
+                        f"{self.api_url}/api/v1/all",
+                        params={
+                            "sort": "date_updated",
+                            "order": "desc",
+                            "limit": self.limit,
+                        },
+                        timeout=self.timeout,
+                    )
+                    resp.raise_for_status()
+                    seed_recordings = resp.json()
+
+                seed_count = 0
+                for rec in seed_recordings:
+                    rec_id = rec.get("id") or rec.get("FileID")
+                    if rec_id and rec.get("completed", False):
+                        cache_service.add_yielded(rec_id)
+                        seed_count += 1
+
+                LOG.info("Seeded polling cache with %d existing recordings", seed_count)
+            except Exception as e:
+                LOG.warning(
+                    "Failed to seed polling cache (will retry on first poll): %s", e
+                )
+
         while True:
             try:
                 # Track recordings yielded in THIS poll cycle only
