@@ -70,6 +70,16 @@ docker-compose up -d
 
 The container builds FFmpeg with NVENC/NVDEC support, installs Faster Whisper with CUDA, and starts the watcher + web UI automatically.
 
+### CPU-Only Mode (No GPU)
+
+If you don't have an NVIDIA GPU (or the NVIDIA Container Toolkit isn't installed), use the CPU override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build -d
+```
+
+Everything works the same, just slower (~25 min per hour of recording vs 3-6 min with GPU).
+
 ### ChannelWatch Integration (Optional)
 
 For instant detection instead of polling:

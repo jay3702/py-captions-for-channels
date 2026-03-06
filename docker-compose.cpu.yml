@@ -1,0 +1,12 @@
+# CPU-only override — removes the NVIDIA runtime requirement.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build
+#
+# The image still includes CUDA libraries (from the base image) but they
+# are unused.  Whisper and FFmpeg fall back to CPU automatically.
+
+services:
+  py-captions:
+    runtime: runc
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=
