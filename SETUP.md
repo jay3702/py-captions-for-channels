@@ -26,6 +26,34 @@ DRY_RUN=true
 
 That's it for the minimum configuration. The system automatically discovers completed recordings by polling the Channels DVR API — no additional setup is needed.
 
+### Distributed Setup (DVR on a different host)
+
+If the Channels DVR runs on a separate machine and the captions host accesses recordings over the network (NFS, SMB, etc.), add path prefix mapping so API-returned paths resolve to the correct local mount:
+
+```bash
+# The path prefix as the DVR server reports it in its API
+DVR_PATH_PREFIX=/tank/AllMedia/Channels
+
+# The corresponding mount point on the captions host
+LOCAL_PATH_PREFIX=//192.168.3.150/Channels
+```
+
+This translates every API path before file I/O — e.g.:
+```
+DVR API:  /tank/AllMedia/Channels/TV/Show Name/episode.mpg
+Local:    //192.168.3.150/Channels/TV/Show Name/episode.mpg
+```
+
+> **Tip:** Use forward slashes for all paths, including Windows UNC paths (`//server/share` instead of `\\server\share`). Python handles forward slashes natively on all platforms, and it avoids backslash escaping issues in `.env` files.
+
+To find your DVR's path prefix, query a recording from the API:
+```bash
+curl http://YOUR_DVR_IP:8089/api/v1/all?source=recordings
+# Look for the "path" field — the root portion is your DVR_PATH_PREFIX
+```
+
+When the DVR and captions system run on the same host, skip these — paths pass through unchanged by default.
+
 > An alternative webhook-based discovery mode using ChannelWatch is also supported. See [SETUP_ADVANCED.md](SETUP_ADVANCED.md#channelwatch-webhook-mode) for details.
 
 The caption command is **auto-detected** — you don't need to set it. See [SETUP_ADVANCED.md](SETUP_ADVANCED.md) for GPU tuning, custom caption commands, and other advanced options.
