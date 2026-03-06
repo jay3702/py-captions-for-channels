@@ -1,6 +1,6 @@
 [project]
 name = "py-captions-for-channels"
-version = "1.0.1"
+version = "1.0.2"
 description = "Captioning pipeline for Channels DVR"
 requires-python = ">=3.10"
 
