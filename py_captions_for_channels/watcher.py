@@ -46,6 +46,40 @@ from pathlib import Path
 
 LOG = get_logger("watcher")
 
+# Whitelist hot-reload: cached whitelist reloaded from DB periodically
+_WHITELIST_RELOAD_INTERVAL = 30  # seconds
+_whitelist_cache: Optional["Whitelist"] = None
+_whitelist_cache_time: float = 0
+
+
+def _load_whitelist() -> "Whitelist":
+    """Load whitelist from the database, with a 30-second cache.
+
+    This allows whitelist changes made via the Settings UI to take
+    effect without restarting the system.
+    """
+    global _whitelist_cache, _whitelist_cache_time
+    import time
+
+    now = time.monotonic()
+    if (
+        _whitelist_cache is not None
+        and (now - _whitelist_cache_time) < _WHITELIST_RELOAD_INTERVAL
+    ):
+        return _whitelist_cache
+
+    db = next(get_db())
+    try:
+        settings_service = SettingsService(db)
+        whitelist_content = settings_service.get("whitelist", "")
+        _whitelist_cache = Whitelist(content=whitelist_content)
+        _whitelist_cache_time = now
+    finally:
+        db.close()
+
+    return _whitelist_cache
+
+
 # Queue for pending polling detections
 # (allows polling to continue while processing serially)
 _polling_queue = asyncio.Queue()
@@ -706,14 +740,8 @@ async def main():
             len(orphaned_executions),
         )
 
-        # Load whitelist from database for filtering
-        db = next(get_db())
-        try:
-            settings_service = SettingsService(db)
-            whitelist_content = settings_service.get("whitelist", "")
-            whitelist = Whitelist(content=whitelist_content)
-        finally:
-            db.close()
+        # Load whitelist (uses cached version, reloads every 30s)
+        whitelist = _load_whitelist()
 
         @dataclass
         class PartialProcessingEvent:
@@ -934,14 +962,8 @@ async def main():
 
     pipeline = Pipeline(caption_cmd, dry_run=DRY_RUN)
 
-    # Load whitelist from database
-    db = next(get_db())
-    try:
-        settings_service = SettingsService(db)
-        whitelist_content = settings_service.get("whitelist", "")
-        whitelist = Whitelist(content=whitelist_content)
-    finally:
-        db.close()
+    # Whitelist is now loaded on-demand via _load_whitelist() with 30s cache
+    # No need to load it here at startup
 
     # Clean up stale manual process executions from previous runs
     # Only clear 'running' items (interrupted by restart)
@@ -1240,8 +1262,10 @@ async def main():
         if not bypass_state_check and not state.should_process(event_partial.timestamp):
             continue
 
-        # Check whitelist
-        if not whitelist.is_allowed(event_partial.title, event_partial.start_time):
+        # Check whitelist (hot-reloaded from DB every 30s)
+        if not _load_whitelist().is_allowed(
+            event_partial.title, event_partial.start_time
+        ):
             continue
 
         # Use path from event if provided (polling source), otherwise lookup

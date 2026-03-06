@@ -1217,11 +1217,13 @@ async function saveEnvSettings(event) {
       }
     }
     
-    let msg = '✓ Settings saved!\n\nAll changes require a restart to take effect.';
     const whitelistChanged = whitelistEditor
       && whitelistEditor.value !== (window._originalWhitelist || '');
+    let msg;
     if (whitelistChanged) {
-      msg += '\n\nTip: Whitelist rules support regex patterns, time/channel constraints, and more.';
+      msg = '✓ Settings saved!\n\nWhitelist changes take effect within 30 seconds.\nOther settings require a restart.';
+    } else {
+      msg = '✓ Settings saved!\n\nChanges require a restart to take effect.';
     }
     alert(msg);
     closeSettingsModal();
