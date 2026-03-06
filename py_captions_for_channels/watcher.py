@@ -39,6 +39,7 @@ from .config import (
     STALE_EXECUTION_SECONDS,
     LOG_VERBOSITY_FILE,
     MANUAL_PROCESS_POLL_SECONDS,
+    translate_dvr_path,
 )
 from .logging_config import set_verbosity, get_verbosity
 import json
@@ -736,9 +737,37 @@ async def main():
     if orphaned_executions:
         LOG.info(
             "Found %d orphaned execution(s) from previous run, "
-            "will re-queue for processing",
+            "validating against DVR API before re-queuing",
             len(orphaned_executions),
         )
+
+        # Fetch current DVR recording paths to validate orphans
+        dvr_paths: set = set()
+        try:
+            import requests as _req
+
+            resp = _req.get(
+                f"{CHANNELS_API_URL}/api/v1/all",
+                params={"sort": "date_updated", "order": "desc", "limit": 500},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            for rec in resp.json():
+                p = rec.get("path", "")
+                if p:
+                    dvr_paths.add(p)
+                    # Also store the translated version for distributed setups
+                    translated = translate_dvr_path(p)
+                    if translated != p:
+                        dvr_paths.add(translated)
+            LOG.debug("DVR validation set: %d paths", len(dvr_paths))
+        except Exception as e:
+            LOG.warning(
+                "Could not fetch DVR recordings for orphan validation: %s "
+                "(will re-queue all orphans)",
+                e,
+            )
+            dvr_paths = None  # Skip validation if API unreachable
 
         # Load whitelist (uses cached version, reloads every 30s)
         whitelist = _load_whitelist()
@@ -754,6 +783,7 @@ async def main():
 
         requeued_count = 0
         skipped_whitelist_count = 0
+        stale_dvr_count = 0
         first_discovered_promoted = False  # Track if we've promoted first discovered
 
         for execution in orphaned_executions:
@@ -799,6 +829,23 @@ async def main():
                         )
                     continue
 
+                # Validate against DVR API: remove orphans whose recordings
+                # no longer exist in the DVR (prevents zombie queue items)
+                exec_path = execution.get("path", "")
+                if dvr_paths is not None and exec_path and exec_path not in dvr_paths:
+                    stale_dvr_count += 1
+                    LOG.info(
+                        "Removing stale orphan (recording no longer in DVR): %s",
+                        title,
+                    )
+                    tracker.complete_execution(
+                        job_id=job_id,
+                        success=False,
+                        elapsed_seconds=0,
+                        error="Recording no longer exists in DVR",
+                    )
+                    continue
+
                 # Promote ONLY the first discovered → pending (keep others discovered)
                 # This maintains visibility in UI and creates proper chaining
                 if (
@@ -840,11 +887,13 @@ async def main():
                     e,
                 )
 
-        if requeued_count > 0 or skipped_whitelist_count > 0:
+        if requeued_count > 0 or skipped_whitelist_count > 0 or stale_dvr_count > 0:
             LOG.info(
-                "Startup recovery complete: %d re-queued, %d skipped (not whitelisted)",
+                "Startup recovery complete: %d re-queued, "
+                "%d skipped (not whitelisted), %d removed (not in DVR)",
                 requeued_count,
                 skipped_whitelist_count,
+                stale_dvr_count,
             )
 
     LOG.info("=" * 80)
