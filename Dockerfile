@@ -154,6 +154,8 @@ RUN pip install --no-cache-dir 'glances[gpu]==4.0.5' orjson
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Copy application code
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
 COPY py_captions_for_channels/ ./py_captions_for_channels/
 COPY scripts/ ./scripts/
 COPY whitelist.txt ./whitelist.txt

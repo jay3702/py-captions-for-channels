@@ -39,7 +39,12 @@ def run_web_ui():
 
 async def main():
     """Run both the watcher and web UI concurrently."""
-    logger.info("Starting py-captions-for-channels (watcher + web UI)")
+    from .version import get_version_string
+
+    logger.info(
+        "Starting py-captions-for-channels %s (watcher + web UI)",
+        get_version_string(),
+    )
 
     # Start web UI in a separate thread (uvicorn.run is blocking)
     web_thread = threading.Thread(target=run_web_ui, daemon=True, name="WebUI")
