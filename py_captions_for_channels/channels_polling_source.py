@@ -14,7 +14,7 @@ import requests
 
 from .channels_api import ChannelsAPI
 from .config import translate_dvr_path
-from .config import LOCAL_TEST_DIR, PROCESSING_ENABLED
+from .config import LOCAL_TEST_DIR, PROCESSING_ENABLED, WHITELIST_REQUIRED
 from .execution_tracker import get_tracker
 from .database import get_db
 from .services.polling_cache_service import PollingCacheService
@@ -80,7 +80,7 @@ class ChannelsPollingSource:
         # Migration: Load old in-memory cache on first run
         self._migrated = False
         # Initialize empty whitelist (will be loaded from database on each check)
-        self._whitelist = Whitelist(content="")
+        self._whitelist = Whitelist(content="", required=WHITELIST_REQUIRED)
 
     def _reload_whitelist(self):
         """Reload whitelist from database to pick up changes immediately."""
@@ -88,7 +88,7 @@ class ChannelsPollingSource:
         try:
             settings_service = SettingsService(db)
             whitelist_content = settings_service.get("whitelist", "")
-            self._whitelist = Whitelist(content=whitelist_content)
+            self._whitelist = Whitelist(content=whitelist_content, required=WHITELIST_REQUIRED)
         finally:
             db.close()
 

@@ -289,6 +289,12 @@ DRY_RUN = get_env_bool("DRY_RUN", False)
 # Useful for a secondary host that monitors the same DVR without
 # running Whisper (e.g. a laptop with no GPU accessing niu over SMB).
 PROCESSING_ENABLED = get_env_bool("PROCESSING_ENABLED", True)
+
+# Whitelist required mode: when true, an empty whitelist blocks everything
+# instead of allowing everything.  Set to false only if you want a setup
+# where no whitelist means "process all recordings".
+# Default: true (strict allowlist — only listed shows are processed)
+WHITELIST_REQUIRED = get_env_bool("WHITELIST_REQUIRED", True)
 PIPELINE_TIMEOUT = get_env_int("PIPELINE_TIMEOUT", 3600)
 STALE_EXECUTION_SECONDS = get_env_int("STALE_EXECUTION_SECONDS", PIPELINE_TIMEOUT)
 MANUAL_PROCESS_POLL_SECONDS = get_env_int("MANUAL_PROCESS_POLL_SECONDS", 10)

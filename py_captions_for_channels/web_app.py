@@ -40,6 +40,7 @@ from .config import (
     CHANNELS_FILES_ENABLED,
     translate_dvr_path,
     PROCESSING_ENABLED,
+    WHITELIST_REQUIRED,
 )
 from .state import StateBackend
 from .execution_tracker import build_manual_process_job_id, get_tracker
@@ -2451,7 +2452,7 @@ async def get_recordings() -> dict:
         try:
             settings_service = SettingsService(db)
             whitelist_content = settings_service.get("whitelist", "")
-            whitelist = Whitelist(content=whitelist_content)
+            whitelist = Whitelist(content=whitelist_content, required=WHITELIST_REQUIRED)
         finally:
             db.close()
 

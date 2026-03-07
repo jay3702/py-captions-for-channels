@@ -169,3 +169,33 @@ def test_whitelist_partial_match():
     assert rule.matches("Central Park")
     assert rule.matches("The Central Show")
     assert not rule.matches("CNN News")
+
+
+def test_whitelist_required_empty_blocks_all():
+    """With required=True and no rules, everything is blocked."""
+    whitelist = Whitelist(required=True)
+    assert not whitelist.enabled
+    assert not whitelist.is_allowed("Any Show")
+    assert not whitelist.is_allowed("Another Show")
+
+
+def test_whitelist_required_with_rules_allows_match():
+    """With required=True and rules loaded, matching titles are allowed."""
+    whitelist = Whitelist(content="CNN News\nJeopardy", required=True)
+    assert whitelist.enabled
+    assert whitelist.is_allowed("CNN News Central")
+    assert whitelist.is_allowed("Jeopardy!")
+    assert not whitelist.is_allowed("Wheel of Fortune")
+
+
+def test_whitelist_not_required_empty_allows_all():
+    """With required=False (default) and no rules, everything is allowed."""
+    whitelist = Whitelist(required=False)
+    assert not whitelist.enabled
+    assert whitelist.is_allowed("Any Show")
+
+
+def test_whitelist_required_false_is_default():
+    """required defaults to False — existing empty-whitelist behaviour unchanged."""
+    whitelist = Whitelist()
+    assert whitelist.is_allowed("Any Show")

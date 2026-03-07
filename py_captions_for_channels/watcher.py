@@ -41,6 +41,7 @@ from .config import (
     MANUAL_PROCESS_POLL_SECONDS,
     translate_dvr_path,
     PROCESSING_ENABLED,
+    WHITELIST_REQUIRED,
 )
 from .logging_config import set_verbosity, get_verbosity
 import json
@@ -74,7 +75,7 @@ def _load_whitelist() -> "Whitelist":
     try:
         settings_service = SettingsService(db)
         whitelist_content = settings_service.get("whitelist", "")
-        _whitelist_cache = Whitelist(content=whitelist_content)
+        _whitelist_cache = Whitelist(content=whitelist_content, required=WHITELIST_REQUIRED)
         _whitelist_cache_time = now
     finally:
         db.close()

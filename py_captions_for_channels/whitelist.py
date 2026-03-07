@@ -110,16 +110,23 @@ class Whitelist:
     """Manages whitelist rules for recording filtering."""
 
     def __init__(
-        self, whitelist_file: Optional[str] = None, content: Optional[str] = None
+        self,
+        whitelist_file: Optional[str] = None,
+        content: Optional[str] = None,
+        required: bool = False,
     ):
         """Initialize whitelist from file or content string.
 
         Args:
             whitelist_file: Path to whitelist file (one rule per line) - deprecated
             content: Whitelist content as string (one rule per line)
+            required: When True, an empty whitelist blocks everything instead of
+                allowing everything.  Use with WHITELIST_REQUIRED=true so that
+                only explicitly listed shows are processed.
         """
         self.rules: List[WhitelistRule] = []
         self.enabled = False
+        self.required = required
 
         if content is not None:
             self.load_from_content(content)
@@ -178,9 +185,11 @@ class Whitelist:
         Returns:
             True if recording should be processed
         """
-        # If whitelist is disabled, allow everything
+        # If whitelist has no rules:
+        #   required=False (default) → allow everything (whitelist is opt-in)
+        #   required=True  (WHITELIST_REQUIRED=true) → block everything (strict allowlist)
         if not self.enabled:
-            return True
+            return not self.required
 
         # Check if any rule matches
         for rule in self.rules:
