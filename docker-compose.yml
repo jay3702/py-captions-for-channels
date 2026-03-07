@@ -55,10 +55,15 @@ services:
       # it on the same filesystem (enables instant os.rename moves).
       # DVR_MEDIA_HOST_PATH: path on the *host* (defaults to DVR_MEDIA_MOUNT).
       #   Set this when the host path differs from the container path, e.g.
-      #   when mounting a Windows mapped drive or a UNC share into the container.
+      #   when mounting a Windows mapped drive into the container.
+      #   Use forward slashes on Windows: Z:/ not Z:\
       # DVR_MEDIA_MOUNT: path *inside the container* (also set LOCAL_PATH_PREFIX
       #   to this same value so path translation resolves correctly).
-      - ${DVR_MEDIA_HOST_PATH:-${DVR_MEDIA_MOUNT:-/mnt/media}}:${DVR_MEDIA_MOUNT:-/mnt/media}:rw
+      # Long-form syntax avoids YAML colon-parsing issues with Windows drive letters.
+      - type: bind
+        source: ${DVR_MEDIA_HOST_PATH:-${DVR_MEDIA_MOUNT:-/mnt/media}}
+        target: ${DVR_MEDIA_MOUNT:-/mnt/media}
+        read_only: false
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
