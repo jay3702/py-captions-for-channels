@@ -166,7 +166,7 @@ class TestTranslateDvrPath:
             assert result == "/mnt/remote/TV/2026/01/Show Name/S01E05 Title.mpg"
 
     def test_windows_api_backslash_paths(self):
-        """Windows DVR API returns backslash paths; prefix with forward slashes matches."""
+        """Windows DVR API returns backslash paths; forward-slash prefix matches."""
         with (
             patch("py_captions_for_channels.config.DVR_PATH_PREFIX", "D:/DVR"),
             patch(
