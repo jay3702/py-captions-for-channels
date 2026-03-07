@@ -39,6 +39,7 @@ from .config import (
     ORPHAN_CLEANUP_IDLE_THRESHOLD_MINUTES,
     CHANNELS_FILES_ENABLED,
     translate_dvr_path,
+    PROCESSING_ENABLED,
 )
 from .state import StateBackend
 from .execution_tracker import build_manual_process_job_id, get_tracker
@@ -939,6 +940,7 @@ async def status() -> dict:
             "version": VERSION,
             "build_number": BUILD_NUMBER,
             "status": "running",
+            "processing_enabled": PROCESSING_ENABLED,
             "dry_run": settings.get("dry_run", False),
             "keep_original": settings.get("keep_original", True),
             "log_verbosity": settings.get("log_verbosity", "NORMAL"),

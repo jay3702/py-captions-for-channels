@@ -40,6 +40,7 @@ from .config import (
     LOG_VERBOSITY_FILE,
     MANUAL_PROCESS_POLL_SECONDS,
     translate_dvr_path,
+    PROCESSING_ENABLED,
 )
 from .logging_config import set_verbosity, get_verbosity
 import json
@@ -210,6 +211,11 @@ def apply_settings_to_event(event, item_overrides=None):
 
 async def process_manual_process_queue(state, pipeline, api, parser):
     """Check and process any manual process requests in the queue."""
+    if not PROCESSING_ENABLED:
+        LOG.debug(
+            "PROCESSING_ENABLED=false — skipping manual process queue (monitoring only)"
+        )
+        return
     state._load()
     queue = state.get_manual_process_queue()
     tracker = get_tracker()

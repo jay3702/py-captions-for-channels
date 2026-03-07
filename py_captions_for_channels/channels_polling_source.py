@@ -14,7 +14,7 @@ import requests
 
 from .channels_api import ChannelsAPI
 from .config import translate_dvr_path
-from .config import LOCAL_TEST_DIR
+from .config import LOCAL_TEST_DIR, PROCESSING_ENABLED
 from .execution_tracker import get_tracker
 from .database import get_db
 from .services.polling_cache_service import PollingCacheService
@@ -227,6 +227,21 @@ class ChannelsPollingSource:
 
         while True:
             try:
+                # Monitoring-only mode: skip all discovery and promotion,
+                # just keep the heartbeat alive and wait.
+                if not PROCESSING_ENABLED:
+                    LOG.debug(
+                        "PROCESSING_ENABLED=false — monitoring only, skipping all"
+                        " caption processing"
+                    )
+                    try:
+                        heartbeat_service.beat("polling", "monitoring-only")
+                    except Exception as e:
+                        LOG.warning("Failed to update polling heartbeat: %s", e)
+                    if await self._shutdown_aware_sleep(self.base_interval):
+                        break
+                    continue
+
                 # Track recordings yielded in THIS poll cycle only
                 # (cleared at start of each iteration)
                 seen_this_cycle = set()

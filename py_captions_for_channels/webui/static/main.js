@@ -19,7 +19,27 @@ async function fetchStatus() {
     
     const timezone = document.getElementById('timezone');
     if (timezone) timezone.textContent = data.timezone || '—';
-    
+
+    // Show a monitoring-only banner when PROCESSING_ENABLED=false
+    let banner = document.getElementById('processing-disabled-banner');
+    if (data.processing_enabled === false) {
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'processing-disabled-banner';
+        banner.style.cssText = [
+          'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:9999',
+          'background:#b45309', 'color:#fff', 'text-align:center',
+          'padding:6px 12px', 'font-size:13px', 'font-weight:600',
+          'letter-spacing:0.02em'
+        ].join(';');
+        banner.textContent =
+          '⚠️  MONITORING ONLY — PROCESSING_ENABLED=false: no caption jobs will run';
+        document.body.prepend(banner);
+      }
+    } else if (banner) {
+      banner.remove();
+    }
+
     const lastProcessed = document.getElementById('last-processed');
     if (lastProcessed) {
       lastProcessed.textContent = data.last_processed 

@@ -281,6 +281,14 @@ POLL_MAX_QUEUE_SIZE = get_env_int(
 
 # Pipeline configuration
 DRY_RUN = get_env_bool("DRY_RUN", False)
+
+# Processing gate — set to false to run in monitoring-only mode.
+# The watcher and web UI remain fully functional (recordings are visible,
+# queue and history are tracked) but no caption jobs are ever started,
+# either automatically or via the manual-process queue.
+# Useful for a secondary host that monitors the same DVR without
+# running Whisper (e.g. a laptop with no GPU accessing niu over SMB).
+PROCESSING_ENABLED = get_env_bool("PROCESSING_ENABLED", True)
 PIPELINE_TIMEOUT = get_env_int("PIPELINE_TIMEOUT", 3600)
 STALE_EXECUTION_SECONDS = get_env_int("STALE_EXECUTION_SECONDS", PIPELINE_TIMEOUT)
 MANUAL_PROCESS_POLL_SECONDS = get_env_int("MANUAL_PROCESS_POLL_SECONDS", 10)
