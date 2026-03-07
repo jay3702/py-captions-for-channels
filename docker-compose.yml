@@ -57,13 +57,9 @@ services:
       #   Set this when the host path differs from the container path, e.g.
       #   when mounting a Windows mapped drive into the container.
       #   Use forward slashes on Windows: Z:/ not Z:\
-      # DVR_MEDIA_MOUNT: path *inside the container* (also set LOCAL_PATH_PREFIX
-      #   to this same value so path translation resolves correctly).
-      # Long-form syntax avoids YAML colon-parsing issues with Windows drive letters.
-      - type: bind
-        source: ${DVR_MEDIA_HOST_PATH:-${DVR_MEDIA_MOUNT:-/mnt/media}}
-        target: ${DVR_MEDIA_MOUNT:-/mnt/media}
-        read_only: false
+      # DVR media volume — see top-level 'volumes' section below for driver config.
+      # Set DVR_MEDIA_MOUNT to the container path (also set LOCAL_PATH_PREFIX to match).
+      - channels_media:${DVR_MEDIA_MOUNT:-/mnt/media}
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
@@ -74,3 +70,26 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  # DVR media volume — configurable via .env for local bind mounts or SMB/CIFS.
+  #
+  # Linux bind mount (default, e.g. niu — DVR and captions on same host):
+  #   DVR_MEDIA_TYPE=none
+  #   DVR_MEDIA_DEVICE=/tank/AllMedia/Channels   ← or set DVR_MEDIA_MOUNT and omit this
+  #   DVR_MEDIA_OPTS=bind
+  #   DVR_MEDIA_MOUNT=/tank/AllMedia/Channels
+  #
+  # Windows host accessing SMB share (e.g. borgpad) — Docker handles the SMB mount:
+  #   DVR_MEDIA_TYPE=cifs
+  #   DVR_MEDIA_DEVICE=//192.168.3.150/Channels
+  #   DVR_MEDIA_OPTS=addr=192.168.3.150,username=,password=,uid=0,gid=0,vers=3.0
+  #   DVR_MEDIA_MOUNT=/mnt/channels
+  #   LOCAL_PATH_PREFIX=/mnt/channels
+  #   DVR_PATH_PREFIX=/tank/AllMedia/Channels
+  channels_media:
+    driver: local
+    driver_opts:
+      type: ${DVR_MEDIA_TYPE:-none}
+      device: ${DVR_MEDIA_DEVICE:-${DVR_MEDIA_MOUNT:-/mnt/media}}
+      o: ${DVR_MEDIA_OPTS:-bind}
