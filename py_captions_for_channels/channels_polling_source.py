@@ -227,17 +227,40 @@ class ChannelsPollingSource:
 
         while True:
             try:
-                # Monitoring-only mode: skip all discovery and promotion,
-                # just keep the heartbeat alive and wait.
+                # Monitoring-only mode: still poll so the cache stays current
+                # (recordings that complete while disabled are marked seen and
+                # won't be re-processed when processing is re-enabled), but
+                # don't yield any events to the pipeline.
                 if not PROCESSING_ENABLED:
                     LOG.debug(
-                        "PROCESSING_ENABLED=false — monitoring only, skipping all"
-                        " caption processing"
+                        "PROCESSING_ENABLED=false — monitoring only, "
+                        "updating cache but skipping caption processing"
                     )
                     try:
                         heartbeat_service.beat("polling", "monitoring-only")
                     except Exception as e:
                         LOG.warning("Failed to update polling heartbeat: %s", e)
+                    try:
+                        if self._use_local_mock:
+                            _mon_recs = self._api._scan_local_recordings()
+                        else:
+                            _r = requests.get(
+                                f"{self.api_url}/api/v1/all",
+                                params={
+                                    "sort": "date_updated",
+                                    "order": "desc",
+                                    "limit": self.limit,
+                                },
+                                timeout=self.timeout,
+                            )
+                            _r.raise_for_status()
+                            _mon_recs = _r.json()
+                        for _rec in _mon_recs:
+                            _rec_id = _rec.get("id") or _rec.get("FileID")
+                            if _rec_id and _rec.get("completed", False):
+                                cache_service.add_yielded(_rec_id)
+                    except Exception as e:
+                        LOG.debug("Monitoring-mode cache update failed: %s", e)
                     if await self._shutdown_aware_sleep(self.base_interval):
                         break
                     continue
