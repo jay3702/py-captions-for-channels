@@ -79,18 +79,24 @@ DVR_RECORDINGS_PATH = os.getenv("DVR_RECORDINGS_PATH", "/recordings")
 # captions system accesses the same files (e.g., DVR on one host, captions
 # on another with an NFS/SMB mount), set these to translate API paths.
 #
-# DVR_PATH_PREFIX — the prefix as the DVR server reports it
-# LOCAL_PATH_PREFIX — the corresponding path on the captions host / mount
+# DVR_PATH_PREFIX — the "Media Folder" path shown in Channels DVR
+#                   Settings → General.  This is the full root path that
+#                   the DVR server reports in all API file paths.
+# LOCAL_PATH_PREFIX — the corresponding path on the captions host / mount.
 #
-# Example:
-#   DVR: /home/channels/DVR/TV/…  →  Captions host mounts at /mnt/dvr-media/TV/…
-#   DVR_PATH_PREFIX=/home/channels/DVR
-#   LOCAL_PATH_PREFIX=/mnt/dvr-media
+# Examples:
+#   Linux DVR root /tank/AllMedia/Channels, accessed via SMB on another host:
+#     DVR_PATH_PREFIX=/tank/AllMedia/Channels
+#     LOCAL_PATH_PREFIX=//192.168.1.10/Channels
 #
-# When both are set, every API-returned path that starts with DVR_PATH_PREFIX
-# will have that prefix swapped for LOCAL_PATH_PREFIX before any file I/O.
+#   Windows DVR root D:\DVR, accessed via SMB share on another host:
+#     DVR_PATH_PREFIX=D:\DVR  (or D:/DVR — separators are normalized)
+#     LOCAL_PATH_PREFIX=//192.168.1.20/DVR
+#
+# When both are set, every API-returned path starting with DVR_PATH_PREFIX
+# has that prefix swapped for LOCAL_PATH_PREFIX before any file I/O.
 # When unset (default), paths pass through unchanged (single-host setup).
-DVR_PATH_PREFIX = os.getenv("DVR_PATH_PREFIX", "").rstrip("/") or None
+DVR_PATH_PREFIX = os.getenv("DVR_PATH_PREFIX", "").rstrip("/\\") or None
 LOCAL_PATH_PREFIX = os.getenv("LOCAL_PATH_PREFIX", "").rstrip("/") or None
 
 
@@ -101,6 +107,11 @@ def translate_dvr_path(api_path: str) -> str:
     the DVR prefix with the local prefix.  Otherwise returns the path
     unchanged.
 
+    Path separator normalization: both the incoming path and the configured
+    prefix are compared with forward slashes so that Windows DVR paths
+    (backslash-separated from the API) match regardless of how the prefix
+    is written in .env.
+
     Args:
         api_path: Path string as returned by the Channels DVR API.
 
@@ -109,9 +120,13 @@ def translate_dvr_path(api_path: str) -> str:
     """
     if not DVR_PATH_PREFIX or not LOCAL_PATH_PREFIX:
         return api_path
-    if api_path.startswith(DVR_PATH_PREFIX):
-        translated = LOCAL_PATH_PREFIX + api_path[len(DVR_PATH_PREFIX) :]
-        return translated
+    # Normalize separators for comparison only (Windows API returns backslashes)
+    norm_path = api_path.replace("\\", "/")
+    norm_prefix = DVR_PATH_PREFIX.replace("\\", "/").rstrip("/")
+    if norm_path.startswith(norm_prefix):
+        # remainder starts with '/' (e.g. '/TV/Show/...')
+        remainder = norm_path[len(norm_prefix) :]
+        return LOCAL_PATH_PREFIX + remainder
     return api_path
 
 

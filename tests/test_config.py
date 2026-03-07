@@ -164,3 +164,51 @@ class TestTranslateDvrPath:
             deep = "/dvr/TV/2026/01/Show Name/S01E05 Title.mpg"
             result = translate_dvr_path(deep)
             assert result == "/mnt/remote/TV/2026/01/Show Name/S01E05 Title.mpg"
+
+    def test_windows_api_backslash_paths(self):
+        """Windows DVR API returns backslash paths; prefix with forward slashes matches."""
+        with (
+            patch("py_captions_for_channels.config.DVR_PATH_PREFIX", "D:/DVR"),
+            patch(
+                "py_captions_for_channels.config.LOCAL_PATH_PREFIX",
+                "//192.168.1.20/DVR",
+            ),
+        ):
+            # Channels DVR on Windows reports backslash-separated paths
+            result = translate_dvr_path(
+                "D:\\DVR\\TV\\The Lead With Jake Tapper\\ep.mpg"
+            )
+            assert result == "//192.168.1.20/DVR/TV/The Lead With Jake Tapper/ep.mpg"
+
+    def test_windows_api_backslash_prefix_with_backslash(self):
+        """Prefix set with backslashes also matches backslash API paths."""
+        with (
+            patch("py_captions_for_channels.config.DVR_PATH_PREFIX", "D:\\DVR"),
+            patch(
+                "py_captions_for_channels.config.LOCAL_PATH_PREFIX",
+                "//192.168.1.20/DVR",
+            ),
+        ):
+            result = translate_dvr_path(
+                "D:\\DVR\\TV\\Show Name\\Show Name 2026-03-06-1300.mpg"
+            )
+            assert result == (
+                "//192.168.1.20/DVR/TV/Show Name/Show Name 2026-03-06-1300.mpg"
+            )
+
+    def test_linux_api_path_no_backslash_interference(self):
+        """Linux API paths (forward slashes only) still work after normalization."""
+        with (
+            patch(
+                "py_captions_for_channels.config.DVR_PATH_PREFIX",
+                "/tank/AllMedia/Channels",
+            ),
+            patch(
+                "py_captions_for_channels.config.LOCAL_PATH_PREFIX",
+                "//192.168.3.150/Channels",
+            ),
+        ):
+            result = translate_dvr_path(
+                "/tank/AllMedia/Channels/TV/CNN News Central/ep.mpg"
+            )
+            assert result == "//192.168.3.150/Channels/TV/CNN News Central/ep.mpg"
