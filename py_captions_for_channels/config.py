@@ -9,6 +9,38 @@ import os
 from pathlib import Path
 
 
+def _load_dotenv_file() -> None:
+    """Seed os.environ from the .env file for any keys not already set.
+
+    docker-compose injects env vars at *container creation* time from the
+    .env file.  When the wizard writes new values to .env and triggers a
+    process restart (without ``docker compose up -d``), the container's env
+    vars are still the old ones.  Reading the file here with setdefault()
+    gives freshly-restarted processes the updated values while still letting
+    docker-compose-injected vars take precedence.
+    """
+    env_path = Path(__file__).parent.parent / ".env"
+    if not env_path.exists():
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                # Only valid uppercase/underscore keys; never overwrite injected vars
+                if key and key.replace("_", "").isupper():
+                    os.environ.setdefault(key, value)
+    except Exception:
+        pass  # Non-fatal — fall back to whatever docker-compose injected
+
+
+_load_dotenv_file()
+
+
 def get_env_bool(key: str, default: bool) -> bool:
     """Get boolean from environment variable."""
     value = os.getenv(key)
