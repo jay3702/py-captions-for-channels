@@ -187,7 +187,8 @@ class Whitelist:
         """
         # If whitelist has no rules:
         #   required=False (default) → allow everything (whitelist is opt-in)
-        #   required=True  (WHITELIST_REQUIRED=true) → block everything (strict allowlist)
+        #   required=True  (WHITELIST_REQUIRED=true) → block everything
+        #                  (strict allowlist)
         if not self.enabled:
             return not self.required
 
