@@ -736,7 +736,12 @@ async def probe_dvr_server(url: str) -> dict:
         recordings = resp.json()
         recording_list = recordings if isinstance(recordings, list) else []
 
-        paths = [r.get("Path") or "" for r in recording_list if (r.get("Path") or "")]
+        # Channels DVR /api/v1/all returns lowercase "path"; tolerate "Path" too
+        paths = [
+            r.get("path") or r.get("Path") or ""
+            for r in recording_list
+            if (r.get("path") or r.get("Path") or "")
+        ]
         sample_path: Optional[str] = paths[0] if paths else None
 
         if not inferred_prefix and paths:
