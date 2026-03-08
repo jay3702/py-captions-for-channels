@@ -75,7 +75,9 @@ def _load_whitelist() -> "Whitelist":
     try:
         settings_service = SettingsService(db)
         whitelist_content = settings_service.get("whitelist", "")
-        _whitelist_cache = Whitelist(content=whitelist_content, required=WHITELIST_REQUIRED)
+        _whitelist_cache = Whitelist(
+            content=whitelist_content, required=WHITELIST_REQUIRED
+        )
         _whitelist_cache_time = now
     finally:
         db.close()

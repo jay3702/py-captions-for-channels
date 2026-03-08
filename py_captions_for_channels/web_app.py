@@ -2452,7 +2452,9 @@ async def get_recordings() -> dict:
         try:
             settings_service = SettingsService(db)
             whitelist_content = settings_service.get("whitelist", "")
-            whitelist = Whitelist(content=whitelist_content, required=WHITELIST_REQUIRED)
+            whitelist = Whitelist(
+                content=whitelist_content, required=WHITELIST_REQUIRED
+            )
         finally:
             db.close()
 

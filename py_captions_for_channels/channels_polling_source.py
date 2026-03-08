@@ -88,7 +88,9 @@ class ChannelsPollingSource:
         try:
             settings_service = SettingsService(db)
             whitelist_content = settings_service.get("whitelist", "")
-            self._whitelist = Whitelist(content=whitelist_content, required=WHITELIST_REQUIRED)
+            self._whitelist = Whitelist(
+                content=whitelist_content, required=WHITELIST_REQUIRED
+            )
         finally:
             db.close()
 
