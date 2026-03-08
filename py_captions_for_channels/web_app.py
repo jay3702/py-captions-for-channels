@@ -733,6 +733,28 @@ def save_env_settings(settings: dict) -> dict:
         return {"success": False, "error": str(e)}
 
 
+@app.get("/api/setup/check-path")
+async def check_path_accessible(path: str) -> dict:
+    """Check whether a filesystem path exists and is readable inside the container."""
+    import os
+
+    if not path or not path.strip():
+        return {"accessible": False, "exists": False, "error": "No path provided"}
+    exists = os.path.exists(path)
+    readable = exists and os.access(path, os.R_OK)
+    is_dir = exists and os.path.isdir(path)
+    try:
+        entry_count = len(os.listdir(path)) if is_dir else None
+    except Exception:
+        entry_count = None
+    return {
+        "accessible": readable,
+        "exists": exists,
+        "is_dir": is_dir,
+        "entry_count": entry_count,
+    }
+
+
 @app.get("/api/setup/probe-dvr")
 async def probe_dvr_server(url: str) -> dict:
     """Probe a Channels DVR server to auto-detect media folder path prefix.

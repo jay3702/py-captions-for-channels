@@ -1451,6 +1451,8 @@ function wizardGoToStep(step) {
     if (el) el.style.display = i === step ? 'block' : 'none';
   }
   if (step === 3) {
+    const pathCheckResult = document.getElementById('wizard-path-check-result');
+    if (pathCheckResult) { pathCheckResult.style.display = 'none'; pathCheckResult.innerHTML = ''; }
     const isSame = wizardState.deploymentType === 'same-host';
     const sameEl = document.getElementById('wizard-step-3-same');
     const remoteEl = document.getElementById('wizard-step-3-remote');
@@ -1662,7 +1664,7 @@ async function wizardApply(andRestart) {
   }
 }
 
-function wizardNext() {
+async function wizardNext() {
   const step = wizardState.step;
   if (step === 1) {
     if (!wizardState.dvrUrl) { alert('Please test the connection first.'); return; }
@@ -1672,14 +1674,52 @@ function wizardNext() {
     wizardGoToStep(3);
   } else if (step === 3) {
     if (wizardState.deploymentType === 'same-host') {
-      if (!document.getElementById('wizard-local-path')?.value?.trim()) { alert('Please enter the recordings path.'); return; }
+      const localPath = document.getElementById('wizard-local-path')?.value?.trim();
+      if (!localPath) { alert('Please enter the recordings path.'); return; }
+      // Check accessibility from inside the container
+      const resultDiv = document.getElementById('wizard-path-check-result');
+      if (resultDiv) {
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = '<span style="color:var(--muted);font-size:12px;">Checking path accessibility…</span>';
+      }
+      try {
+        const res = await fetch(`/api/setup/check-path?path=${encodeURIComponent(localPath)}`);
+        const data = await res.json();
+        if (resultDiv) {
+          if (data.accessible) {
+            const entries = data.entry_count !== null ? ` (${data.entry_count} item${data.entry_count !== 1 ? 's' : ''})` : '';
+            resultDiv.innerHTML = `<div style="background:#d4edda;border:1px solid #28a745;padding:8px 12px;border-radius:5px;font-size:12px;color:#1a3c2e;">&#10003; Path is accessible from the container${entries}</div>`;
+            resultDiv.style.display = 'block';
+            setTimeout(() => wizardGoToStep(4), 500);
+          } else if (data.exists) {
+            resultDiv.innerHTML = `<div style="background:#f8d7da;border:1px solid #dc3545;padding:8px 12px;border-radius:5px;font-size:12px;color:#721c24;"><strong>&#10007; Path exists but is not readable.</strong> Check Docker volume mount permissions.</div>`;
+          } else {
+            resultDiv.innerHTML = `<div style="background:#fff3cd;border:1px solid #856404;padding:8px 12px;border-radius:5px;font-size:12px;color:#856404;">
+              <strong>&#9888; Path not found inside the container.</strong><br>
+              <span style="font-size:11px;">Make sure <code>DVR_MEDIA_MOUNT</code> matches this path and the volume is mounted. You can continue anyway if this is expected.</span><br>
+              <button type="button" class="btn-small btn-secondary" style="margin-top:8px;" onclick="wizardGoToStep(4)">Continue anyway &rarr;</button>
+            </div>`;
+          }
+        } else {
+          wizardGoToStep(4);
+        }
+      } catch (e) {
+        if (resultDiv) {
+          resultDiv.innerHTML = `<div style="background:#fff3cd;border:1px solid #856404;padding:8px 12px;border-radius:5px;font-size:12px;color:#856404;">
+            <strong>&#9888; Could not check path</strong> (${e.message})<br>
+            <button type="button" class="btn-small btn-secondary" style="margin-top:8px;" onclick="wizardGoToStep(4)">Continue anyway &rarr;</button>
+          </div>`;
+        } else {
+          wizardGoToStep(4);
+        }
+      }
     } else {
       const mountType = document.getElementById('wizard-mount-type')?.value;
       if (mountType === 'cifs' && !document.getElementById('wizard-share-url')?.value?.trim()) { alert('Please enter the share URL.'); return; }
       if (mountType === 'nfs' && !document.getElementById('wizard-nfs-share')?.value?.trim()) { alert('Please enter the NFS share.'); return; }
       if (!document.getElementById('wizard-container-path')?.value?.trim()) { alert('Please enter the container mount path.'); return; }
+      wizardGoToStep(4);
     }
-    wizardGoToStep(4);
   } else if (step === 4) {
     wizardApply(false);
   }
