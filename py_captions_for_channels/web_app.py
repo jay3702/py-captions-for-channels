@@ -3,6 +3,7 @@ import os
 import asyncio
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from typing import Optional
 
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
