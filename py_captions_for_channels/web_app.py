@@ -575,6 +575,31 @@ def load_env_settings() -> dict:
                 if key not in merged[category]:
                     merged[category][key] = config.copy()
 
+        # Flat fallback: re-scan the actual .env ignoring category headers.
+        # This catches any key=value pairs whose category header was missing or
+        # not recognised by _parse_env_file (e.g. a hand-crafted .env without
+        # the standard section headers).  Only fills gaps; never overwrites a
+        # value that was already found by the structured parse.
+        flat_actual: dict[str, str] = {}
+        if env_path.exists():
+            try:
+                with open(env_path, "r", encoding="utf-8") as _f:
+                    for _line in _f:
+                        _s = _line.strip()
+                        if _s and not _s.startswith("#") and "=" in _s:
+                            _k, _v = _s.split("=", 1)
+                            _k = _k.strip()
+                            if _k and _k.replace("_", "").isupper():
+                                flat_actual[_k] = _v.strip()
+            except Exception:
+                pass
+        if flat_actual:
+            for category in merged:
+                for key in merged[category]:
+                    if key in flat_actual:
+                        if not merged[category][key].get("value"):
+                            merged[category][key]["value"] = flat_actual[key]
+
         # Inject runtime values for settings with placeholders
         # This ensures UI shows actual values being used by the system
         from py_captions_for_channels import config
@@ -585,6 +610,10 @@ def load_env_settings() -> dict:
             "CHANNELWATCH_URL": config.CHANNELWATCH_URL,
             "DVR_RECORDINGS_PATH": config.DVR_RECORDINGS_PATH,
             "WHISPER_DEVICE": config.WHISPER_DEVICE,
+            # Path-mapping vars are passed via docker-compose environment: block;
+            # use the live env var as fallback if .env parsing missed them.
+            "DVR_PATH_PREFIX": os.getenv("DVR_PATH_PREFIX", ""),
+            "LOCAL_PATH_PREFIX": os.getenv("LOCAL_PATH_PREFIX", ""),
         }
 
         # Replace placeholder values with runtime values

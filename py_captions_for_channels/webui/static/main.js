@@ -1009,7 +1009,8 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
                          'KEEP_ORIGINAL', 'DRY_RUN'];
   
   // Fields to hide (replaced by other settings or not user-configurable)
-  const hiddenFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'CAPTION_COMMAND'];  // DISCOVERY_MODE replaces first 3, CAPTION_COMMAND is auto-detected
+  // LOCAL_PATH_PREFIX is always kept in sync with DVR_MEDIA_MOUNT automatically on save
+  const hiddenFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'CAPTION_COMMAND', 'LOCAL_PATH_PREFIX'];  // DISCOVERY_MODE replaces first 3, CAPTION_COMMAND is auto-detected, LOCAL_PATH_PREFIX mirrors DVR_MEDIA_MOUNT
   
   const dropdownFields = {
     'DISCOVERY_MODE': ['polling', 'webhook', 'mock'],
@@ -1021,7 +1022,9 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
   
   // Custom display names for settings (overrides environment variable name)
   const displayNames = {
-    'WHISPER_DEVICE': 'GPU'
+    'WHISPER_DEVICE': 'GPU',
+    'DVR_PATH_PREFIX': 'DVR Media Folder Path',
+    'DVR_MEDIA_MOUNT': 'Container Mount Path',
   };
   
   // Common IANA timezones grouped by region
@@ -1226,6 +1229,14 @@ async function saveEnvSettings(event) {
     
     settings[category][name] = { value };
   });
+  
+  // LOCAL_PATH_PREFIX is hidden from the UI but must always equal DVR_MEDIA_MOUNT.
+  // Mirror it automatically so the saved .env stays consistent.
+  for (const [cat, fields] of Object.entries(settings)) {
+    if (fields['DVR_MEDIA_MOUNT'] !== undefined) {
+      settings[cat]['LOCAL_PATH_PREFIX'] = { value: fields['DVR_MEDIA_MOUNT'].value };
+    }
+  }
   
   try {
     // Save env settings to .env file
@@ -1505,10 +1516,10 @@ async function wizardProbe() {
       wizardState.dvrUrl = url;
       wizardState.probedPrefix = data.inferred_prefix || null;
       wizardState.samplePath = data.sample_path || null;
-      let html = `<div style="background:#d4edda;border:1px solid #28a745;padding:12px;border-radius:6px;font-size:13px;"><strong style="color:#155724;">✓ Connected — ${data.recording_count} recording(s) found</strong>`;
+      let html = `<div style="background:#d4edda;border:1px solid #28a745;padding:12px;border-radius:6px;font-size:13px;color:#1a3c2e;"><strong style="color:#0d2618;">✓ Connected — ${data.recording_count} recording(s) found</strong>`;
       if (data.sample_path) html += `<br><br><strong>Sample path:</strong><br><code style="font-size:11px;">${data.sample_path}</code>`;
       if (data.inferred_prefix) {
-        html += `<br><br><strong>DVR media folder (auto-detected):</strong><br><code style="font-size:11px;">${data.inferred_prefix}</code><br><span style="font-size:11px;color:#155724;">→ Will be used as DVR_PATH_PREFIX</span>`;
+        html += `<br><br><strong>DVR media folder (auto-detected):</strong><br><code style="font-size:11px;background:#b8ddc8;color:#0d2618;">${data.inferred_prefix}</code><br><span style="font-size:11px;color:#0d5a2e;">→ Will be used as DVR_PATH_PREFIX</span>`;
       } else if (data.recording_count === 0) {
         html += `<br><br><span style="color:#856404;">⚠ No recordings found — path detection requires at least one recording. You can still continue.</span>`;
       } else {
@@ -1597,10 +1608,8 @@ function wizardBuildReview() {
         s.DVR_PATH_PREFIX
           ? 'Root path that Channels DVR uses for its recordings (auto-detected from the sample path above). Every file path the DVR API returns will start with this.'
           : 'Could not be auto-detected. The wizard will leave this empty — you can set it manually in Settings after verifying with a real recording path.');
-      exp += row('LOCAL_PATH_PREFIX', s.LOCAL_PATH_PREFIX,
-        'The path inside this Docker container where the share is mounted. Every DVR API path has its DVR_PATH_PREFIX replaced with this before the service tries to open the file.');
       exp += row('DVR_MEDIA_DEVICE', s.DVR_MEDIA_DEVICE, 'The network share Docker will mount (CIFS UNC path or NFS export).');
-      exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Where inside the container Docker places the mounted share. Must equal LOCAL_PATH_PREFIX.');
+      exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Path inside the container where recordings appear. The app looks for files here after translating the DVR API path.');
     } else {
       exp += row('DVR_MEDIA_DEVICE', s.DVR_MEDIA_DEVICE, 'Local path Docker bind-mounts into the container.');
       exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Container path where recordings appear (same as local path for a bind mount).');
