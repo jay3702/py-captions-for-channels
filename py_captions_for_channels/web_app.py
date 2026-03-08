@@ -709,9 +709,9 @@ async def probe_dvr_server(url: str) -> dict:
     """Probe a Channels DVR server to auto-detect media folder path prefix.
 
     Tries three strategies in order:
-    1. /dvr/status or /dvr endpoint — may return a storage/media path directly.
-    2. Category-folder markers in recording paths (/TV/, /Movies/, etc.).
-    3. Longest common path prefix across multiple recordings.
+    1. /dvr endpoint — may return a StoragePath/MediaFolder key directly.
+    2. Split the first recording path on known Channels DVR category folder names.
+    3. Longest common filesystem prefix across multiple recordings.
     """
     try:
         clean_url = url.rstrip("/")
@@ -722,7 +722,6 @@ async def probe_dvr_server(url: str) -> dict:
             dvr_resp = requests.get(f"{clean_url}/dvr", timeout=5)
             if dvr_resp.ok:
                 dvr_data = dvr_resp.json()
-                # Channels DVR returns StoragePath or similar keys
                 for key in ("StoragePath", "storage_path", "Path", "MediaFolder"):
                     val = dvr_data.get(key)
                     if val and isinstance(val, str) and len(val) > 1:
@@ -741,39 +740,34 @@ async def probe_dvr_server(url: str) -> dict:
         sample_path: Optional[str] = paths[0] if paths else None
 
         if not inferred_prefix and paths:
-            # Strategy 2: look for known category folder names in the path
-            category_markers = [
-                "/TV/",
-                "/Movies/",
-                "/Sports/",
-                "/Kids/",
-                "/Other/",
-                "/TV Shows/",
-                "/TV Series/",
-                "/Documentary/",
-                "/News/",
-                "\\TV\\",
-                "\\Movies\\",
-                "\\Sports\\",
-            ]
-            for path in paths[:20]:
-                for marker in category_markers:
-                    idx = path.find(marker)
-                    if idx > 0:
-                        inferred_prefix = path[:idx].rstrip("/\\")
+            # Strategy 2: split the first recording path on any known Channels DVR
+            # category folder name.  The path before that segment is the prefix.
+            # e.g.  /tank/AllMedia/Channels/TV/Some Show/... → /tank/AllMedia/Channels
+            import re
+
+            # Channels DVR category folder names (case-insensitive, word boundary)
+            category_pattern = re.compile(
+                r"(?:^|[\\/])("
+                r"TV|Movies|Movie|Sports|Sport|Kids|Other|"
+                r"TV Shows|TV Series|Documentary|Documentaries|News|"
+                r"Comedy|Drama|Music|Fitness"
+                r")(?:[\\/])",
+                re.IGNORECASE,
+            )
+            for path in paths:
+                m = category_pattern.search(path)
+                if m:
+                    inferred_prefix = path[: m.start()].rstrip("/\\")
+                    if inferred_prefix:  # don't accept empty string as prefix
                         break
-                if inferred_prefix:
-                    break
 
         if not inferred_prefix and len(paths) > 1:
-            # Strategy 3: longest common filesystem prefix of all recording paths
+            # Strategy 3: longest common filesystem prefix across recordings
             import os.path
 
             norm = [p.replace("\\", "/") for p in paths[:20]]
             try:
                 common = os.path.commonpath(norm)
-                # commonpath may return the file itself if only one path; only
-                # use it when it looks like a directory prefix (not a file)
                 if (
                     common
                     and common not in ("/", "")

@@ -1364,19 +1364,40 @@ async function restartSystem() {
   if (!confirm('Restart the system?\n\nThe current job (if any) will finish first, then the application will restart.')) {
     return;
   }
+  _triggerRestart();
+}
+
+async function _triggerRestart() {
   try {
-    const response = await fetch('/api/shutdown/graceful', { method: 'POST' });
-    const result = await response.json();
-    if (result.error) {
-      alert('Restart failed: ' + result.error);
-    } else {
-      closeSettingsModal();
-      alert(result.message + '\n\nThe page will be unavailable briefly while the system restarts.');
-    }
-  } catch (error) {
-    console.error('Restart failed:', error);
-    alert('Restart failed: ' + error.message);
+    // Best-effort call — the server may close the connection before responding
+    await Promise.race([
+      fetch('/api/shutdown/graceful', { method: 'POST' }),
+      new Promise(resolve => setTimeout(resolve, 2000)),
+    ]);
+  } catch (_) {
+    // Expected: server shut down before sending the full HTTP response
   }
+  closeSettingsModal();
+  // Poll until the server comes back, then reload
+  _waitForRestart();
+}
+
+function _waitForRestart() {
+  const banner = document.createElement('div');
+  banner.id = 'restart-banner';
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;padding:12px 20px;background:#856404;color:#fff3cd;'
+    + 'font-weight:600;text-align:center;z-index:10000;font-size:14px;';
+  banner.textContent = '⟳ Restarting… the page will reload automatically.';
+  document.body.appendChild(banner);
+  const poll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/status', { signal: AbortSignal.timeout(2000) });
+      if (r.ok) {
+        clearInterval(poll);
+        window.location.reload();
+      }
+    } catch (_) { /* still restarting */ }
+  }, 2000);
 }
 
 // ─── Setup Wizard ──────────────────────────────────────────────────────────
@@ -1458,8 +1479,11 @@ function wizardGoToStep(step) {
   if (labelEl) labelEl.textContent = `Step ${step} of 4: ${stepLabels[step - 1]}`;
   const backBtn = document.getElementById('wizard-btn-back');
   const nextBtn = document.getElementById('wizard-btn-next');
+  const applyBtn = document.getElementById('wizard-btn-apply');
   if (backBtn) backBtn.style.display = step > 1 ? 'inline-block' : 'none';
-  if (nextBtn) nextBtn.textContent = step === 4 ? 'Apply Settings' : 'Next →';
+  if (applyBtn) applyBtn.style.display = step === 4 ? 'inline-block' : 'none';
+  if (nextBtn) nextBtn.textContent = step === 4 ? 'Apply & Restart' : 'Next →';
+  if (nextBtn) nextBtn.onclick = step === 4 ? () => wizardApply(true) : wizardNext;
 }
 
 async function wizardProbe() {
@@ -1606,7 +1630,7 @@ function wizardBuildReview() {
   el.textContent = lines.join('\n');
 }
 
-async function wizardApply() {
+async function wizardApply(andRestart) {
   const settings = wizardCollectSettings();
   try {
     const res = await fetch('/api/setup/apply-wizard', {
@@ -1616,9 +1640,14 @@ async function wizardApply() {
     });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || 'Failed to save');
-    alert('✓ Settings applied!\n\nRestart the application (or run docker compose down && docker compose up -d) for changes to take effect.');
-    closeSetupWizard();
-    loadSettings();
+    if (andRestart) {
+      closeSetupWizard();
+      _triggerRestart();
+    } else {
+      alert('✓ Settings applied!\n\nRun docker compose down && docker compose up -d to apply the new configuration.');
+      closeSetupWizard();
+      loadSettings();
+    }
   } catch (e) {
     alert('✗ Failed to apply settings: ' + e.message);
   }
@@ -1643,7 +1672,7 @@ function wizardNext() {
     }
     wizardGoToStep(4);
   } else if (step === 4) {
-    wizardApply();
+    wizardApply(false);
   }
 }
 
