@@ -703,6 +703,70 @@ def save_env_settings(settings: dict) -> dict:
         return {"success": False, "error": str(e)}
 
 
+@app.get("/api/setup/probe-dvr")
+async def probe_dvr_server(url: str) -> dict:
+    """Probe a Channels DVR server to auto-detect media folder path prefix.
+
+    Used by the setup wizard to populate DVR_PATH_PREFIX automatically.
+    """
+    try:
+        clean_url = url.rstrip("/")
+        resp = requests.get(f"{clean_url}/api/v1/all", timeout=10)
+        resp.raise_for_status()
+        recordings = resp.json()
+
+        sample_path: Optional[str] = None
+        inferred_prefix: Optional[str] = None
+        category_markers = [
+            "/TV/",
+            "/Movies/",
+            "/Sports/",
+            "/Kids/",
+            "/Other/",
+            "\\TV\\",
+            "\\Movies\\",
+            "\\Sports\\",
+        ]
+
+        for rec in recordings if isinstance(recordings, list) else []:
+            path = rec.get("Path") or ""
+            if path:
+                sample_path = path
+                for marker in category_markers:
+                    idx = path.find(marker)
+                    if idx > 0:
+                        inferred_prefix = path[:idx]
+                        break
+            if inferred_prefix:
+                break
+
+        return {
+            "connected": True,
+            "sample_path": sample_path,
+            "inferred_prefix": inferred_prefix,
+            "recording_count": len(recordings) if isinstance(recordings, list) else 0,
+        }
+    except Exception as e:
+        return {
+            "connected": False,
+            "error": str(e),
+            "sample_path": None,
+            "inferred_prefix": None,
+            "recording_count": 0,
+        }
+
+
+@app.post("/api/setup/apply-wizard")
+async def apply_wizard_settings(data: dict = Body(...)) -> dict:
+    """Apply wizard-generated path settings to .env file.
+
+    Accepts a flat {KEY: value} dict; each key is matched by name against any
+    category in the .env, so no category grouping is needed from the caller.
+    """
+    wrapped = {"wizard": {k: {"value": v} for k, v in data.items()}}
+    return save_env_settings(wrapped)
+
+
 @app.get("/api/env-settings")
 async def get_env_settings() -> dict:
     """Get all settings from .env file."""

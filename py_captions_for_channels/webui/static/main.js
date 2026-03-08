@@ -1013,7 +1013,7 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
   
   const dropdownFields = {
     'DISCOVERY_MODE': ['polling', 'webhook', 'mock'],
-    'WHISPER_MODEL': ['tiny', 'base', 'small', 'medium', 'large-v2', 'large-v3'],
+    'WHISPER_MODEL': ['tiny', 'base', 'small', 'medium', 'large-v2', 'large-v3', 'large-v3-turbo', 'distil-large-v3', 'distil-large-v2'],
     'OPTIMIZATION_MODE': ['standard', 'automatic'],
     'WHISPER_DEVICE': ['auto', 'nvidia', 'amd', 'intel', 'none'],
     'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -1379,11 +1379,258 @@ async function restartSystem() {
   }
 }
 
-// Close settings modal on background click
+// ─── Setup Wizard ──────────────────────────────────────────────────────────
+let wizardState = {
+  step: 1,
+  dvrUrl: '',
+  probedPrefix: null,
+  samplePath: null,
+  deploymentType: null,
+};
+
+function openSetupWizard() {
+  wizardState = { step: 1, dvrUrl: '', probedPrefix: null, samplePath: null, deploymentType: null };
+  const dvrInput = document.getElementById('wizard-dvr-url');
+  const envUrlInput = document.querySelector('input[name="CHANNELS_API_URL"]');
+  if (dvrInput && envUrlInput && envUrlInput.value) dvrInput.value = envUrlInput.value;
+  const probeResult = document.getElementById('wizard-probe-result');
+  if (probeResult) probeResult.style.display = 'none';
+  document.querySelectorAll('input[name="wizard-deploy"]').forEach(r => r.checked = false);
+  const sameLabel = document.getElementById('wizard-deploy-same-label');
+  const remoteLabel = document.getElementById('wizard-deploy-remote-label');
+  if (sameLabel) sameLabel.style.borderColor = 'var(--panel-border)';
+  if (remoteLabel) remoteLabel.style.borderColor = 'var(--panel-border)';
+  wizardGoToStep(1);
+  const modal = document.getElementById('setup-wizard-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeSetupWizard() {
+  const modal = document.getElementById('setup-wizard-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function wizardGoToStep(step) {
+  wizardState.step = step;
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`wizard-step-${i}`);
+    if (el) el.style.display = i === step ? 'block' : 'none';
+  }
+  if (step === 3) {
+    const isSame = wizardState.deploymentType === 'same-host';
+    const sameEl = document.getElementById('wizard-step-3-same');
+    const remoteEl = document.getElementById('wizard-step-3-remote');
+    if (sameEl) sameEl.style.display = isSame ? 'block' : 'none';
+    if (remoteEl) remoteEl.style.display = !isSame ? 'block' : 'none';
+    if (isSame) {
+      const localPath = document.getElementById('wizard-local-path');
+      if (localPath && !localPath.value && wizardState.probedPrefix) localPath.value = wizardState.probedPrefix;
+    } else {
+      const shareUrl = document.getElementById('wizard-share-url');
+      if (shareUrl && !shareUrl.value) {
+        const ipMatch = wizardState.dvrUrl.match(/(?:https?:\/\/)?([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[^:/]+)/);
+        if (ipMatch) {
+          const lastSeg = (wizardState.probedPrefix || '').split('/').filter(Boolean).pop() || 'Channels';
+          shareUrl.value = `//${ipMatch[1]}/${lastSeg}`;
+        }
+      }
+    }
+  }
+  if (step === 4) wizardBuildReview();
+  for (let i = 1; i <= 4; i++) {
+    const dot = document.getElementById(`wdot-${i}`);
+    if (dot) {
+      const active = i === step;
+      const done = i < step;
+      dot.style.background = (done || active) ? 'var(--accent)' : 'var(--panel-border)';
+      dot.style.color = (done || active) ? 'white' : 'var(--muted)';
+      dot.style.outline = active ? '3px solid color-mix(in srgb, var(--accent) 40%, transparent)' : 'none';
+    }
+    if (i < 4) {
+      const line = document.getElementById(`wline-${i}`);
+      if (line) line.style.background = i < step ? 'var(--accent)' : 'var(--panel-border)';
+    }
+  }
+  const stepLabels = ['Connect to DVR', 'Deployment Type', 'Mount Configuration', 'Review & Apply'];
+  const labelEl = document.getElementById('wizard-step-label');
+  if (labelEl) labelEl.textContent = `Step ${step} of 4: ${stepLabels[step - 1]}`;
+  const backBtn = document.getElementById('wizard-btn-back');
+  const nextBtn = document.getElementById('wizard-btn-next');
+  if (backBtn) backBtn.style.display = step > 1 ? 'inline-block' : 'none';
+  if (nextBtn) nextBtn.textContent = step === 4 ? 'Apply Settings' : 'Next →';
+}
+
+async function wizardProbe() {
+  const urlInput = document.getElementById('wizard-dvr-url');
+  const resultDiv = document.getElementById('wizard-probe-result');
+  const btn = document.getElementById('wizard-probe-btn');
+  const url = urlInput?.value?.trim();
+  if (!url) { alert('Please enter the Channels DVR URL.'); return; }
+  btn.textContent = 'Testing...';
+  btn.disabled = true;
+  resultDiv.style.display = 'none';
+  try {
+    const res = await fetch(`/api/setup/probe-dvr?url=${encodeURIComponent(url)}`);
+    const data = await res.json();
+    btn.textContent = 'Test & Detect';
+    btn.disabled = false;
+    resultDiv.style.display = 'block';
+    if (data.connected) {
+      wizardState.dvrUrl = url;
+      wizardState.probedPrefix = data.inferred_prefix || null;
+      wizardState.samplePath = data.sample_path || null;
+      let html = `<div style="background:#d4edda;border:1px solid #28a745;padding:12px;border-radius:6px;font-size:13px;"><strong style="color:#155724;">✓ Connected — ${data.recording_count} recording(s) found</strong>`;
+      if (data.sample_path) html += `<br><br><strong>Sample path:</strong><br><code style="font-size:11px;">${data.sample_path}</code>`;
+      if (data.inferred_prefix) {
+        html += `<br><br><strong>DVR media folder (auto-detected):</strong><br><code style="font-size:11px;">${data.inferred_prefix}</code><br><span style="font-size:11px;color:#155724;">→ Will be used as DVR_PATH_PREFIX</span>`;
+      } else if (data.recording_count === 0) {
+        html += `<br><br><span style="color:#856404;">⚠ No recordings found — path detection requires at least one recording. You can still continue.</span>`;
+      } else {
+        html += `<br><br><span style="color:#856404;">⚠ Could not auto-detect media folder. Set DVR_PATH_PREFIX manually after the wizard.</span>`;
+      }
+      html += `</div>`;
+      resultDiv.innerHTML = html;
+    } else {
+      resultDiv.innerHTML = `<div style="background:#f8d7da;border:1px solid #dc3545;padding:12px;border-radius:6px;font-size:13px;color:#721c24;"><strong>✗ Connection failed</strong><br>${data.error || 'Unknown error'}</div>`;
+    }
+  } catch (e) {
+    btn.textContent = 'Test & Detect';
+    btn.disabled = false;
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = `<div style="background:#f8d7da;border:1px solid #dc3545;padding:12px;border-radius:6px;font-size:13px;color:#721c24;"><strong>✗ Error:</strong> ${e.message}</div>`;
+  }
+}
+
+function wizardDeployChanged(radio) {
+  wizardState.deploymentType = radio.value;
+  document.getElementById('wizard-deploy-same-label').style.borderColor =
+    radio.value === 'same-host' ? 'var(--accent)' : 'var(--panel-border)';
+  document.getElementById('wizard-deploy-remote-label').style.borderColor =
+    radio.value === 'remote' ? 'var(--accent)' : 'var(--panel-border)';
+}
+
+function wizardMountTypeChanged(select) {
+  document.getElementById('wizard-cifs-opts').style.display = select.value === 'cifs' ? 'block' : 'none';
+  document.getElementById('wizard-nfs-opts').style.display = select.value === 'nfs' ? 'block' : 'none';
+}
+
+function wizardCollectSettings() {
+  const s = {};
+  s.CHANNELS_API_URL = wizardState.dvrUrl;
+  if (wizardState.deploymentType === 'same-host') {
+    const localPath = document.getElementById('wizard-local-path')?.value?.trim() || '/recordings';
+    s.DVR_PATH_PREFIX = '';
+    s.LOCAL_PATH_PREFIX = '';
+    s.DVR_MEDIA_TYPE = 'none';
+    s.DVR_MEDIA_DEVICE = localPath;
+    s.DVR_MEDIA_OPTS = 'bind';
+    s.DVR_MEDIA_MOUNT = localPath;
+    s.DVR_RECORDINGS_PATH = localPath;
+  } else {
+    const mountType = document.getElementById('wizard-mount-type')?.value || 'cifs';
+    const containerPath = document.getElementById('wizard-container-path')?.value?.trim() || '/mnt/channels';
+    s.DVR_PATH_PREFIX = wizardState.probedPrefix || '';
+    s.LOCAL_PATH_PREFIX = containerPath;
+    s.DVR_MEDIA_MOUNT = containerPath;
+    s.DVR_MEDIA_TYPE = mountType;
+    s.DVR_RECORDINGS_PATH = containerPath;
+    if (mountType === 'cifs') {
+      const shareUrl = document.getElementById('wizard-share-url')?.value?.trim() || '';
+      const user = document.getElementById('wizard-cifs-user')?.value?.trim() || '';
+      const pass = document.getElementById('wizard-cifs-pass')?.value?.trim() || '';
+      const ipMatch = shareUrl.match(/^\/\/([^/]+)/);
+      const addr = ipMatch ? ipMatch[1] : '';
+      s.DVR_MEDIA_DEVICE = shareUrl;
+      s.DVR_MEDIA_OPTS = `addr=${addr},username=${user},password=${pass},uid=0,gid=0,vers=3.0`;
+    } else if (mountType === 'nfs') {
+      const nfsShare = document.getElementById('wizard-nfs-share')?.value?.trim() || '';
+      s.DVR_MEDIA_DEVICE = nfsShare;
+      s.DVR_MEDIA_OPTS = 'nfsvers=4,soft';
+    }
+  }
+  return s;
+}
+
+function wizardBuildReview() {
+  const s = wizardCollectSettings();
+  const el = document.getElementById('wizard-review-content');
+  if (!el) return;
+  const lines = [
+    '# Channels DVR connection',
+    `CHANNELS_API_URL=${s.CHANNELS_API_URL}`,
+    '',
+    '# Path translation (empty = no translation needed)',
+    `DVR_PATH_PREFIX=${s.DVR_PATH_PREFIX}`,
+    `LOCAL_PATH_PREFIX=${s.LOCAL_PATH_PREFIX}`,
+    '',
+    '# Docker volume mount',
+    `DVR_MEDIA_TYPE=${s.DVR_MEDIA_TYPE}`,
+    `DVR_MEDIA_DEVICE=${s.DVR_MEDIA_DEVICE}`,
+    `DVR_MEDIA_OPTS=${s.DVR_MEDIA_OPTS}`,
+    `DVR_MEDIA_MOUNT=${s.DVR_MEDIA_MOUNT}`,
+    '',
+    '# Recordings path',
+    `DVR_RECORDINGS_PATH=${s.DVR_RECORDINGS_PATH}`,
+  ];
+  el.textContent = lines.join('\n');
+}
+
+async function wizardApply() {
+  const settings = wizardCollectSettings();
+  try {
+    const res = await fetch('/api/setup/apply-wizard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'Failed to save');
+    alert('✓ Settings applied!\n\nRestart the application (or run docker compose down && docker compose up -d) for changes to take effect.');
+    closeSetupWizard();
+    loadSettings();
+  } catch (e) {
+    alert('✗ Failed to apply settings: ' + e.message);
+  }
+}
+
+function wizardNext() {
+  const step = wizardState.step;
+  if (step === 1) {
+    if (!wizardState.dvrUrl) { alert('Please test the connection first.'); return; }
+    wizardGoToStep(2);
+  } else if (step === 2) {
+    if (!wizardState.deploymentType) { alert('Please select a deployment type.'); return; }
+    wizardGoToStep(3);
+  } else if (step === 3) {
+    if (wizardState.deploymentType === 'same-host') {
+      if (!document.getElementById('wizard-local-path')?.value?.trim()) { alert('Please enter the recordings path.'); return; }
+    } else {
+      const mountType = document.getElementById('wizard-mount-type')?.value;
+      if (mountType === 'cifs' && !document.getElementById('wizard-share-url')?.value?.trim()) { alert('Please enter the share URL.'); return; }
+      if (mountType === 'nfs' && !document.getElementById('wizard-nfs-share')?.value?.trim()) { alert('Please enter the NFS share.'); return; }
+      if (!document.getElementById('wizard-container-path')?.value?.trim()) { alert('Please enter the container mount path.'); return; }
+    }
+    wizardGoToStep(4);
+  } else if (step === 4) {
+    wizardApply();
+  }
+}
+
+function wizardBack() {
+  if (wizardState.step > 1) wizardGoToStep(wizardState.step - 1);
+}
+
+// ─── End Setup Wizard ───────────────────────────────────────────────────────
+
+// Close modals on background click
 window.addEventListener('click', function(event) {
   const settingsModal = document.getElementById('settings-modal');
   if (event.target === settingsModal) {
     closeSettingsModal();
+  }
+  const wizardModal = document.getElementById('setup-wizard-modal');
+  if (event.target === wizardModal) {
+    closeSetupWizard();
   }
 });
 

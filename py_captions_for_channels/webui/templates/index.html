@@ -418,6 +418,134 @@
       </div>
     </div>
 
+    <!-- Setup Wizard Modal -->
+    <div id="setup-wizard-modal" class="modal">
+      <div class="modal-content" style="max-width:680px;max-height:90vh;overflow-y:auto;">
+        <div class="modal-header">
+          <h2>Path Setup Wizard</h2>
+          <button class="modal-close" onclick="closeSetupWizard()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Step indicator -->
+          <div style="display:flex;align-items:center;margin-bottom:28px;">
+            <div id="wdot-1" style="width:28px;height:28px;border-radius:50%;background:var(--accent);color:white;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">1</div>
+            <div id="wline-1" style="flex:1;height:2px;background:var(--panel-border);"></div>
+            <div id="wdot-2" style="width:28px;height:28px;border-radius:50%;background:var(--panel-border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">2</div>
+            <div id="wline-2" style="flex:1;height:2px;background:var(--panel-border);"></div>
+            <div id="wdot-3" style="width:28px;height:28px;border-radius:50%;background:var(--panel-border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">3</div>
+            <div id="wline-3" style="flex:1;height:2px;background:var(--panel-border);"></div>
+            <div id="wdot-4" style="width:28px;height:28px;border-radius:50%;background:var(--panel-border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">4</div>
+            <div id="wizard-step-label" style="margin-left:12px;font-size:13px;color:var(--muted);white-space:nowrap;">Step 1 of 4</div>
+          </div>
+
+          <!-- Step 1: DVR Connection -->
+          <div id="wizard-step-1">
+            <h3 style="margin:0 0 6px 0;">Connect to Channels DVR</h3>
+            <p style="color:var(--muted);font-size:13px;margin:0 0 20px 0;">Enter your Channels DVR server URL. The wizard will connect to detect your media folder path automatically.</p>
+            <div class="settings-group">
+              <label for="wizard-dvr-url" style="font-weight:600;display:block;margin-bottom:4px;">Channels DVR URL</label>
+              <div style="display:flex;gap:8px;">
+                <input type="text" id="wizard-dvr-url" placeholder="http://192.168.1.x:8089" style="flex:1;">
+                <button type="button" class="btn-small btn-secondary" onclick="wizardProbe()" id="wizard-probe-btn">Test &amp; Detect</button>
+              </div>
+            </div>
+            <div id="wizard-probe-result" style="margin-top:16px;display:none;"></div>
+          </div>
+
+          <!-- Step 2: Deployment Type -->
+          <div id="wizard-step-2" style="display:none;">
+            <h3 style="margin:0 0 6px 0;">Deployment Type</h3>
+            <p style="color:var(--muted);font-size:13px;margin:0 0 20px 0;">Where is this captions service running relative to your Channels DVR server?</p>
+            <label id="wizard-deploy-same-label" style="display:flex;gap:12px;padding:14px;border:2px solid var(--panel-border);border-radius:8px;cursor:pointer;margin-bottom:12px;">
+              <input type="radio" name="wizard-deploy" value="same-host" style="margin-top:3px;" onchange="wizardDeployChanged(this)">
+              <div>
+                <strong>Same host</strong>
+                <p style="margin:4px 0 0 0;font-size:12px;color:var(--muted);">Channels DVR and this service are on the same machine. Recordings are on a local or already-mounted disk.</p>
+              </div>
+            </label>
+            <label id="wizard-deploy-remote-label" style="display:flex;gap:12px;padding:14px;border:2px solid var(--panel-border);border-radius:8px;cursor:pointer;">
+              <input type="radio" name="wizard-deploy" value="remote" style="margin-top:3px;" onchange="wizardDeployChanged(this)">
+              <div>
+                <strong>Remote / Distributed</strong>
+                <p style="margin:4px 0 0 0;font-size:12px;color:var(--muted);">This service runs on a different machine. Recordings are accessed over the network via SMB/CIFS or NFS.</p>
+              </div>
+            </label>
+          </div>
+
+          <!-- Step 3: Mount Configuration -->
+          <div id="wizard-step-3" style="display:none;">
+            <div id="wizard-step-3-same" style="display:none;">
+              <h3 style="margin:0 0 6px 0;">Recordings Path</h3>
+              <p style="color:var(--muted);font-size:13px;margin:0 0 20px 0;">Confirm the path to your Channels DVR recordings on this machine. It will be bind-mounted into the container at the same path.</p>
+              <div class="settings-group">
+                <label for="wizard-local-path" style="font-weight:600;display:block;margin-bottom:4px;">Local Recordings Path</label>
+                <input type="text" id="wizard-local-path" placeholder="/tank/AllMedia/Channels" style="width:100%;">
+                <p style="font-size:11px;color:var(--muted);margin:4px 0 0 0;">Must be accessible on the Docker host machine.</p>
+              </div>
+            </div>
+            <div id="wizard-step-3-remote" style="display:none;">
+              <h3 style="margin:0 0 6px 0;">Network Mount</h3>
+              <p style="color:var(--muted);font-size:13px;margin:0 0 20px 0;">Docker will mount the recordings share directly into the container using the credentials you provide.</p>
+              <div class="settings-group">
+                <label for="wizard-mount-type" style="font-weight:600;display:block;margin-bottom:4px;">Mount Type</label>
+                <select id="wizard-mount-type" style="width:100%;" onchange="wizardMountTypeChanged(this)">
+                  <option value="cifs">CIFS / SMB (Windows share or Samba)</option>
+                  <option value="nfs">NFS</option>
+                </select>
+              </div>
+              <div id="wizard-cifs-opts">
+                <div class="settings-group">
+                  <label for="wizard-share-url" style="font-weight:600;display:block;margin-bottom:4px;">Share URL</label>
+                  <input type="text" id="wizard-share-url" placeholder="//192.168.1.x/Channels" style="width:100%;">
+                  <p style="font-size:11px;color:var(--muted);margin:4px 0 0 0;">Use forward slashes — e.g. //192.168.3.150/Channels</p>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                  <div class="settings-group">
+                    <label for="wizard-cifs-user" style="font-weight:600;display:block;margin-bottom:4px;">Username</label>
+                    <input type="text" id="wizard-cifs-user" style="width:100%;" autocomplete="off">
+                  </div>
+                  <div class="settings-group">
+                    <label for="wizard-cifs-pass" style="font-weight:600;display:block;margin-bottom:4px;">Password</label>
+                    <input type="password" id="wizard-cifs-pass" style="width:100%;" autocomplete="off">
+                  </div>
+                </div>
+              </div>
+              <div id="wizard-nfs-opts" style="display:none;">
+                <div class="settings-group">
+                  <label for="wizard-nfs-share" style="font-weight:600;display:block;margin-bottom:4px;">NFS Share</label>
+                  <input type="text" id="wizard-nfs-share" placeholder="192.168.1.x:/exports/channels" style="width:100%;">
+                </div>
+              </div>
+              <div class="settings-group" style="margin-top:12px;">
+                <label for="wizard-container-path" style="font-weight:600;display:block;margin-bottom:4px;">Container Mount Path</label>
+                <input type="text" id="wizard-container-path" value="/mnt/channels" style="width:100%;">
+                <p style="font-size:11px;color:var(--muted);margin:4px 0 0 0;">Path inside Docker where recordings appear. Must match LOCAL_PATH_PREFIX.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: Review & Apply -->
+          <div id="wizard-step-4" style="display:none;">
+            <h3 style="margin:0 0 6px 0;">Review &amp; Apply</h3>
+            <p style="color:var(--muted);font-size:13px;margin:0 0 16px 0;">The following values will be written to your <code>.env</code> file. Review before applying.</p>
+            <div id="wizard-review-content" style="font-family:monospace;font-size:12px;line-height:1.6;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:6px;padding:16px;margin-bottom:16px;white-space:pre;overflow-x:auto;"></div>
+            <div style="background:#fff3cd;border:1px solid #856404;padding:12px;border-radius:6px;font-size:13px;color:#856404;">
+              <strong>Note:</strong> A restart is required for these changes to take effect. Run <code>docker compose down &amp;&amp; docker compose up -d</code> to apply.
+            </div>
+          </div>
+
+          <!-- Navigation -->
+          <div style="display:flex;gap:10px;margin-top:24px;border-top:1px solid var(--panel-border);padding-top:20px;align-items:center;">
+            <button type="button" class="btn-small btn-secondary" id="wizard-btn-back" onclick="wizardBack()" style="display:none;">&#8592; Back</button>
+            <div style="margin-left:auto;display:flex;gap:10px;">
+              <button type="button" class="btn-secondary" onclick="closeSetupWizard()">Cancel</button>
+              <button type="button" class="btn-primary" id="wizard-btn-next" onclick="wizardNext()">Next &#8594;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal for settings -->
     <div id="settings-modal" class="modal">
       <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
@@ -463,6 +591,7 @@
             
             <div style="display: flex; gap: 10px; margin-top: 20px; border-top: 1px solid var(--panel-border); padding-top: 20px; align-items: center;">
               <button type="button" class="btn-small btn-danger" onclick="restartSystem()" title="Graceful restart: finishes current job, then restarts">Restart System</button>
+              <button type="button" class="btn-small btn-secondary" onclick="openSetupWizard()" title="Step-by-step path and mount configuration wizard">&#9881; Path Setup Wizard</button>
               <div style="margin-left: auto; display: flex; gap: 10px;">
                 <button type="button" class="btn-secondary" onclick="closeSettingsModal()">Cancel</button>
                 <button type="submit" class="btn-primary">Save to .env</button>
