@@ -973,12 +973,14 @@ async function loadSettings() {
     const envData = await envRes.json();
     
     let whitelist = '';
+    const dbOverrides = {};
     if (settingsRes.ok) {
       const settingsData = await settingsRes.json();
       whitelist = settingsData.whitelist || '';
+      if (settingsData.whisper_model) dbOverrides.WHISPER_MODEL = settingsData.whisper_model;
     }
     
-    renderSettingsUI(envData, whitelist);
+    renderSettingsUI(envData, whitelist, dbOverrides);
   } catch (err) {
     console.error('Failed to load settings:', err);
     const container = document.getElementById('settings-container');
@@ -988,7 +990,7 @@ async function loadSettings() {
   }
 }
 
-function renderSettingsUI(settings, whitelist) {
+function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
   const container = document.getElementById('settings-container');
   if (!container) return;
   
@@ -1011,6 +1013,7 @@ function renderSettingsUI(settings, whitelist) {
   
   const dropdownFields = {
     'DISCOVERY_MODE': ['polling', 'webhook', 'mock'],
+    'WHISPER_MODEL': ['tiny', 'base', 'small', 'medium', 'large-v2', 'large-v3'],
     'OPTIMIZATION_MODE': ['standard', 'automatic'],
     'WHISPER_DEVICE': ['auto', 'nvidia', 'amd', 'intel', 'none'],
     'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -1095,7 +1098,7 @@ function renderSettingsUI(settings, whitelist) {
       // Skip hidden fields (replaced by other settings)
       if (hiddenFields.includes(key)) continue;
       
-      const value = config.value || '';
+      const value = dbOverrides[key] !== undefined ? dbOverrides[key] : (config.value || '');
       const desc = config.description || '';
       const defaultVal = config.default || '';
       const isOptional = config.optional || false;
@@ -1237,18 +1240,21 @@ async function saveEnvSettings(event) {
       throw new Error(envData.error || 'Failed to save settings');
     }
     
-    // Save whitelist to database
+    // Save whisper_model and whitelist to database (take effect without restart)
     const whitelistEditor = document.getElementById('whitelist-editor');
-    if (whitelistEditor) {
-      const whitelistRes = await fetch('/api/settings', {
+    const whisperModelSelect = form.querySelector('select[name="WHISPER_MODEL"]');
+    const dbPayload = {};
+    if (whitelistEditor) dbPayload.whitelist = whitelistEditor.value;
+    if (whisperModelSelect) dbPayload.whisper_model = whisperModelSelect.value;
+    if (Object.keys(dbPayload).length > 0) {
+      const dbRes = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ whitelist: whitelistEditor.value })
+        body: JSON.stringify(dbPayload)
       });
-      
-      if (!whitelistRes.ok) {
-        const whitelistData = await whitelistRes.json();
-        throw new Error(whitelistData.error || 'Failed to save whitelist');
+      if (!dbRes.ok) {
+        const dbData = await dbRes.json();
+        throw new Error(dbData.error || 'Failed to save settings');
       }
     }
     
@@ -1256,9 +1262,9 @@ async function saveEnvSettings(event) {
       && whitelistEditor.value !== (window._originalWhitelist || '');
     let msg;
     if (whitelistChanged) {
-      msg = '✓ Settings saved!\n\nWhitelist changes take effect within 30 seconds.\nOther settings require a restart.';
+      msg = '✓ Settings saved!\n\nWhitelist and Whisper model changes take effect within 30 seconds.\nOther settings require a restart.';
     } else {
-      msg = '✓ Settings saved!\n\nChanges require a restart to take effect.';
+      msg = '✓ Settings saved!\n\nWhisper model changes take effect on the next job.\nOther settings require a restart.';
     }
     alert(msg);
     closeSettingsModal();
