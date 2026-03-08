@@ -2,7 +2,7 @@
 # syntax=docker/dockerfile:1
 
 # --- Build stage: Compile FFmpeg with NVENC support ---
-FROM nvidia/cuda:12.6.3-cudnn-devel-ubuntu22.04 AS ffmpeg-build
+FROM nvidia/cuda:12.2.2-cudnn8-devel-ubuntu22.04 AS ffmpeg-build
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -83,7 +83,7 @@ RUN git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-heade
     && make -j$(nproc) && make install
 
 # --- Runtime stage ---
-FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -135,8 +135,8 @@ WORKDIR /app
 # Copy requirements first (for better caching)
 COPY requirements.txt ./
 
-# Install PyTorch with CUDA 12.4 support (forward-compatible with CUDA 12.6 runtime)
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+# Install PyTorch with CUDA 12.1 support (compatible with CUDA 12.2 runtime and driver 535)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu121
 
 # Copy FFmpeg from build stage
 COPY --from=ffmpeg-build /ffmpeg_build/bin/ffmpeg /usr/local/bin/ffmpeg
