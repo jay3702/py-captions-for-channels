@@ -506,7 +506,7 @@
                   </div>
                   <div class="settings-group">
                     <label for="wizard-cifs-pass" style="font-weight:600;display:block;margin-bottom:4px;">Password</label>
-                    <input type="password" id="wizard-cifs-pass" style="width:100%;" autocomplete="off">
+                    <input type="password" id="wizard-cifs-pass" style="width:100%;" autocomplete="new-password">
                   </div>
                 </div>
               </div>
@@ -519,7 +519,7 @@
               <div class="settings-group" style="margin-top:12px;">
                 <label for="wizard-container-path" style="font-weight:600;display:block;margin-bottom:4px;">Container Mount Path</label>
                 <input type="text" id="wizard-container-path" value="/mnt/channels" style="width:100%;">
-                <p style="font-size:11px;color:var(--muted);margin:4px 0 0 0;">Path inside Docker where recordings appear. Must match LOCAL_PATH_PREFIX.</p>
+                <p style="font-size:11px;color:var(--muted);margin:4px 0 0 0;">The path <em>inside the Docker container</em> where recordings will appear after mounting. You can use any path — <code>/mnt/channels</code> is a good default. The service uses this path to open recording files.</p>
               </div>
             </div>
           </div>
@@ -527,8 +527,12 @@
           <!-- Step 4: Review & Apply -->
           <div id="wizard-step-4" style="display:none;">
             <h3 style="margin:0 0 6px 0;">Review &amp; Apply</h3>
-            <p style="color:var(--muted);font-size:13px;margin:0 0 16px 0;">The following values will be written to your <code>.env</code> file. Review before applying.</p>
-            <div id="wizard-review-content" style="font-family:monospace;font-size:12px;line-height:1.6;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:6px;padding:16px;margin-bottom:16px;white-space:pre;overflow-x:auto;"></div>
+            <p style="color:var(--muted);font-size:13px;margin:0 0 12px 0;">Review what each setting does, then click <strong>Apply Settings</strong> to write them to your <code>.env</code> file.</p>
+            <div id="wizard-review-explanations" style="background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:6px;padding:12px;margin-bottom:12px;display:none;"></div>
+            <details style="margin-bottom:16px;">
+              <summary style="font-size:12px;color:var(--muted);cursor:pointer;user-select:none;">Show raw .env values</summary>
+              <div id="wizard-review-content" style="font-family:monospace;font-size:12px;line-height:1.6;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:6px;padding:16px;margin-top:8px;white-space:pre;overflow-x:auto;"></div>
+            </details>
             <div style="background:#fff3cd;border:1px solid #856404;padding:12px;border-radius:6px;font-size:13px;color:#856404;">
               <strong>Note:</strong> A restart is required for these changes to take effect. Run <code>docker compose down &amp;&amp; docker compose up -d</code> to apply.
             </div>

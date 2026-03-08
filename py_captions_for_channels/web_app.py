@@ -708,44 +708,86 @@ def save_env_settings(settings: dict) -> dict:
 async def probe_dvr_server(url: str) -> dict:
     """Probe a Channels DVR server to auto-detect media folder path prefix.
 
-    Used by the setup wizard to populate DVR_PATH_PREFIX automatically.
+    Tries three strategies in order:
+    1. /dvr/status or /dvr endpoint — may return a storage/media path directly.
+    2. Category-folder markers in recording paths (/TV/, /Movies/, etc.).
+    3. Longest common path prefix across multiple recordings.
     """
     try:
         clean_url = url.rstrip("/")
+        inferred_prefix: Optional[str] = None
+
+        # Strategy 1: ask the DVR for its storage path via /dvr endpoint
+        try:
+            dvr_resp = requests.get(f"{clean_url}/dvr", timeout=5)
+            if dvr_resp.ok:
+                dvr_data = dvr_resp.json()
+                # Channels DVR returns StoragePath or similar keys
+                for key in ("StoragePath", "storage_path", "Path", "MediaFolder"):
+                    val = dvr_data.get(key)
+                    if val and isinstance(val, str) and len(val) > 1:
+                        inferred_prefix = val.rstrip("/\\")
+                        break
+        except Exception:
+            pass
+
+        # Fetch recordings list
         resp = requests.get(f"{clean_url}/api/v1/all", timeout=10)
         resp.raise_for_status()
         recordings = resp.json()
+        recording_list = recordings if isinstance(recordings, list) else []
 
-        sample_path: Optional[str] = None
-        inferred_prefix: Optional[str] = None
-        category_markers = [
-            "/TV/",
-            "/Movies/",
-            "/Sports/",
-            "/Kids/",
-            "/Other/",
-            "\\TV\\",
-            "\\Movies\\",
-            "\\Sports\\",
-        ]
+        paths = [r.get("Path") or "" for r in recording_list if (r.get("Path") or "")]
+        sample_path: Optional[str] = paths[0] if paths else None
 
-        for rec in recordings if isinstance(recordings, list) else []:
-            path = rec.get("Path") or ""
-            if path:
-                sample_path = path
+        if not inferred_prefix and paths:
+            # Strategy 2: look for known category folder names in the path
+            category_markers = [
+                "/TV/",
+                "/Movies/",
+                "/Sports/",
+                "/Kids/",
+                "/Other/",
+                "/TV Shows/",
+                "/TV Series/",
+                "/Documentary/",
+                "/News/",
+                "\\TV\\",
+                "\\Movies\\",
+                "\\Sports\\",
+            ]
+            for path in paths[:20]:
                 for marker in category_markers:
                     idx = path.find(marker)
                     if idx > 0:
-                        inferred_prefix = path[:idx]
+                        inferred_prefix = path[:idx].rstrip("/\\")
                         break
-            if inferred_prefix:
-                break
+                if inferred_prefix:
+                    break
+
+        if not inferred_prefix and len(paths) > 1:
+            # Strategy 3: longest common filesystem prefix of all recording paths
+            import os.path
+
+            norm = [p.replace("\\", "/") for p in paths[:20]]
+            try:
+                common = os.path.commonpath(norm)
+                # commonpath may return the file itself if only one path; only
+                # use it when it looks like a directory prefix (not a file)
+                if (
+                    common
+                    and common not in ("/", "")
+                    and "." not in common.split("/")[-1]
+                ):
+                    inferred_prefix = common.rstrip("/")
+            except Exception:
+                pass
 
         return {
             "connected": True,
             "sample_path": sample_path,
             "inferred_prefix": inferred_prefix,
-            "recording_count": len(recordings) if isinstance(recordings, list) else 0,
+            "recording_count": len(recording_list),
         }
     except Exception as e:
         return {

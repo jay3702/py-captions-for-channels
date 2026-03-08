@@ -1389,9 +1389,11 @@ let wizardState = {
 };
 
 function openSetupWizard() {
+  closeSettingsModal();
   wizardState = { step: 1, dvrUrl: '', probedPrefix: null, samplePath: null, deploymentType: null };
   const dvrInput = document.getElementById('wizard-dvr-url');
-  const envUrlInput = document.querySelector('input[name="CHANNELS_API_URL"]');
+  const envUrlInput = document.querySelector('input[name="CHANNELS_API_URL"]') ||
+    document.querySelector('input[name="CHANNELS_DVR_URL"]');
   if (dvrInput && envUrlInput && envUrlInput.value) dvrInput.value = envUrlInput.value;
   const probeResult = document.getElementById('wizard-probe-result');
   if (probeResult) probeResult.style.display = 'none';
@@ -1554,22 +1556,51 @@ function wizardCollectSettings() {
 function wizardBuildReview() {
   const s = wizardCollectSettings();
   const el = document.getElementById('wizard-review-content');
+  const expEl = document.getElementById('wizard-review-explanations');
   if (!el) return;
+
+  // Plain-English explanation of the key path settings
+  const isSame = wizardState.deploymentType === 'same-host';
+  if (expEl) {
+    let exp = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    const row = (name, val, desc) =>
+      `<tr><td style="padding:6px 8px;font-family:monospace;font-weight:600;white-space:nowrap;vertical-align:top;color:var(--text);">${name}</td>`+
+      `<td style="padding:6px 8px;font-family:monospace;color:var(--accent);vertical-align:top;">${val || '<em style="color:var(--muted);">empty</em>'}</td>`+
+      `<td style="padding:6px 8px;font-size:11px;color:var(--muted);vertical-align:top;">${desc}</td></tr>`;
+    exp += row('CHANNELS_API_URL', s.CHANNELS_API_URL, 'URL of your Channels DVR server.');
+    if (!isSame) {
+      exp += row('DVR_PATH_PREFIX', s.DVR_PATH_PREFIX,
+        s.DVR_PATH_PREFIX
+          ? 'Root path that Channels DVR uses for its recordings (auto-detected from the sample path above). Every file path the DVR API returns will start with this.'
+          : 'Could not be auto-detected. The wizard will leave this empty — you can set it manually in Settings after verifying with a real recording path.');
+      exp += row('LOCAL_PATH_PREFIX', s.LOCAL_PATH_PREFIX,
+        'The path inside this Docker container where the share is mounted. Every DVR API path has its DVR_PATH_PREFIX replaced with this before the service tries to open the file.');
+      exp += row('DVR_MEDIA_DEVICE', s.DVR_MEDIA_DEVICE, 'The network share Docker will mount (CIFS UNC path or NFS export).');
+      exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Where inside the container Docker places the mounted share. Must equal LOCAL_PATH_PREFIX.');
+    } else {
+      exp += row('DVR_MEDIA_DEVICE', s.DVR_MEDIA_DEVICE, 'Local path Docker bind-mounts into the container.');
+      exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Container path where recordings appear (same as local path for a bind mount).');
+    }
+    exp += '</table>';
+    expEl.innerHTML = exp;
+    expEl.style.display = 'block';
+  }
+
   const lines = [
     '# Channels DVR connection',
     `CHANNELS_API_URL=${s.CHANNELS_API_URL}`,
     '',
-    '# Path translation (empty = no translation needed)',
+    '# Path translation (empty = same-host, no translation needed)',
     `DVR_PATH_PREFIX=${s.DVR_PATH_PREFIX}`,
     `LOCAL_PATH_PREFIX=${s.LOCAL_PATH_PREFIX}`,
     '',
     '# Docker volume mount',
     `DVR_MEDIA_TYPE=${s.DVR_MEDIA_TYPE}`,
     `DVR_MEDIA_DEVICE=${s.DVR_MEDIA_DEVICE}`,
-    `DVR_MEDIA_OPTS=${s.DVR_MEDIA_OPTS}`,
+    `DVR_MEDIA_OPTS=${s.DVR_MEDIA_OPTS || 'bind'}`,
     `DVR_MEDIA_MOUNT=${s.DVR_MEDIA_MOUNT}`,
     '',
-    '# Recordings path',
+    '# Recordings path (host path for Docker volume)',
     `DVR_RECORDINGS_PATH=${s.DVR_RECORDINGS_PATH}`,
   ];
   el.textContent = lines.join('\n');
