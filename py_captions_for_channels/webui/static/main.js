@@ -567,10 +567,10 @@ async function clearList() {
     // If there are legitimate pending jobs, ask for confirmation
     if (data.pending_count > 0 && data.pending_ids && data.pending_ids.length > 0) {
       const titles = data.pending_ids.map(p => `  • ${p.title || p.path}`).join('\n');
-      const msg = `This will remove failed, dry-run, and invalid pending jobs.\n\nHowever, ${data.pending_count} legitimate pending job(s) are active:\n${titles}\n\nCancel these ${data.pending_count} pending job(s)?`;
+      const msg = `This will remove failed, cancelled, dry-run, and invalid pending jobs.\n\nHowever, ${data.pending_count} legitimate pending job(s) are active:\n${titles}\n\nCancel these ${data.pending_count} pending job(s) too?`;
       
       if (!confirm(msg)) {
-        // User declined to cancel pending jobs
+        // User declined to cancel pending jobs — still show what was already removed
         console.log('Kept', data.pending_count, 'legitimate pending jobs in queue');
         await fetchExecutions();
         return;

@@ -1259,19 +1259,17 @@ async def get_executions(limit: int = 50) -> dict:
 
 @app.post("/api/executions/clear_list")
 async def clear_list_executions(cancel_pending: bool = False) -> dict:
-    """Clear list intelligently based on status.
+    """Clear list of non-successful executions.
 
-    Removes:
-    - Failed executions (completed with success=False)
-    - Cancelled executions (status="cancelled")
-    - Dry-run executions (status="dry_run")
-    - Discovered executions (status="discovered")
+    Removes everything except actively-running jobs and successfully-completed jobs:
+    - Failed executions (status="completed" with success != True, or status="failed")
+    - Cancelled / stale-canceling executions
+    - Dry-run executions
+    - Discovered executions (backlog not yet queued)
     - Stale pending executions (not in manual process queue AND older than 60 minutes)
 
-    Stale pending executions are those that will never be processed:
-    - Created more than 60 minutes ago
-    - No longer in the manual process queue
-    - Not actively being processed
+    Successfully completed executions (status="completed", success=True) are
+    ALWAYS kept.
 
     If there are legitimate pending executions (in queue and recent),
     returns them for confirmation before clearing.
@@ -1297,17 +1295,26 @@ async def clear_list_executions(cancel_pending: bool = False) -> dict:
             path = exec_data.get("path", "")
             started_at = exec_data.get("started_at")
 
-            # NEVER remove running executions - they are actively processing
+            # NEVER remove actively running executions
             if status == "running":
                 continue
 
-            # Remove failed executions
-            if status == "completed" and exec_data.get("success") is False:
+            # ALWAYS keep successfully completed executions
+            if status == "completed" and exec_data.get("success") is True:
+                continue
+
+            # Remove failed completions (success=False or success=None/unexpected)
+            if status == "completed":
                 if job_id and tracker.remove_execution(job_id):
                     removed_ids.append(job_id)
 
-            # Remove cancelled executions
-            elif status == "cancelled":
+            # Remove standalone "failed" status (set by some crash/stale recovery paths)
+            elif status == "failed":
+                if job_id and tracker.remove_execution(job_id):
+                    removed_ids.append(job_id)
+
+            # Remove cancelled and stale canceling executions
+            elif status in ("cancelled", "canceling"):
                 if job_id and tracker.remove_execution(job_id):
                     removed_ids.append(job_id)
 
