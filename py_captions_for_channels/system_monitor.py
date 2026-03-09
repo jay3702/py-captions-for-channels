@@ -78,8 +78,11 @@ class GPUProvider:
 class NvidiaNvmlProvider(GPUProvider):
     """NVIDIA GPU metrics via nvidia-ml-py (pynvml) library."""
 
+    _MAX_CONSECUTIVE_FAILURES = 3
+
     def __init__(self):
         self.available = False
+        self._consecutive_failures = 0
         try:
             import warnings
 
@@ -128,6 +131,7 @@ class NvidiaNvmlProvider(GPUProvider):
             except Exception:
                 pass
 
+            self._consecutive_failures = 0
             return {
                 "util_percent": float(util.gpu),
                 "mem_used_mb": mem_info.used / (1024 * 1024),
@@ -136,7 +140,16 @@ class NvidiaNvmlProvider(GPUProvider):
                 "dec_percent": dec_percent,
             }
         except Exception as e:
-            logger.warning(f"Failed to get NVIDIA NVML metrics: {e}")
+            self._consecutive_failures += 1
+            if self._consecutive_failures <= self._MAX_CONSECUTIVE_FAILURES:
+                logger.warning(f"Failed to get NVIDIA NVML metrics: {e}")
+            if self._consecutive_failures == self._MAX_CONSECUTIVE_FAILURES:
+                logger.warning(
+                    "NVIDIA NVML metrics unavailable after repeated failures "
+                    "(common on Docker Desktop / WSL2 — GPU still used for inference). "
+                    "Disabling NVML polling; live GPU stats will not show in dashboard."
+                )
+                self.available = False
             return super().get_metrics()
 
 
