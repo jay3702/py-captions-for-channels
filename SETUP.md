@@ -14,7 +14,26 @@ Get up and running in three steps: configure, deploy, and whitelist your first s
   git clone https://github.com/jay3702/py-captions-for-channels.git
   cd py-captions-for-channels
   ```
-- **NVIDIA GPU users only:** [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) must also be installed, and you'll need `DOCKER_RUNTIME=nvidia` + `NVIDIA_VISIBLE_DEVICES=all` in your `.env` (see step 1 below).
+
+> **Prebuilt image available:** The `docker-compose.yml` pulls the latest image automatically from
+> `ghcr.io/jay3702/py-captions-for-channels:latest` — no local build required.
+
+### GPU (optional but strongly recommended)
+
+- **NVIDIA GPU** with 6 GB+ VRAM (GTX 1660 Super / RTX 2060 or newer)
+- **NVIDIA driver ≥ 520** on the Docker host — this supports CUDA 12.2, which the container requires.
+  Verify with `nvidia-smi`; the **"CUDA Version"** shown must be **12.2 or higher**.
+  If it is lower, GPU acceleration silently falls back to CPU and a warning is logged at startup.
+- **NVIDIA Container Toolkit** installed on the host:
+  ```bash
+  # Linux quick-install
+  curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+  sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+  sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
+  ```
+
+> **CPU-only hosts** (no NVIDIA GPU) work fine — just skip the GPU steps. Jobs will be slower (~20 min/hr of TV instead of ~3 min with GPU).
 
 ---
 
@@ -25,20 +44,40 @@ cp .env.example .env
 nano .env   # or vi, vim, etc.
 ```
 
-Set these three values:
+### Minimum settings — CPU-only host
 
 ```bash
-# Your Channels DVR IP address
+# Your Channels DVR server
 CHANNELS_DVR_URL=http://YOUR_DVR_IP:8089
-
-# Path to your DVR recordings on the HOST machine
-DVR_RECORDINGS_PATH=/path/to/your/recordings
 
 # Leave DRY_RUN=true until you've verified the setup
 DRY_RUN=true
 ```
 
+### Minimum settings — GPU host (NVIDIA)
+
+Add the following on top of the CPU settings:
+
+```bash
+# Enable NVIDIA GPU passthrough
+DOCKER_RUNTIME=nvidia
+NVIDIA_VISIBLE_DEVICES=all
+```
+
 That's it for the minimum configuration. The system automatically discovers completed recordings by polling the Channels DVR API — no additional setup is needed.
+
+### Recordings path — use the Setup Wizard
+
+The trickiest part of setup is telling the container where to find your DVR recordings.
+The **Setup Wizard** (web dashboard → ⚙ gear icon → **Setup Wizard**) walks you through this
+step-by-step:
+
+1. **Connect** — enter your DVR URL and test the connection; the wizard auto-detects the media folder path.
+2. **Deployment type** — *Same Host* (DVR and container on the same machine) or *Remote* (recordings accessed over the network via SMB/CIFS or NFS).
+3. **Mount configuration** — the wizard fills in the correct Docker volume settings for your chosen type and verifies the path is accessible from inside the container.
+4. **Review & Apply** — writes the settings to `.env` and restarts the container.
+
+> If you prefer to configure by hand, see the [Distributed Setup](#distributed-setup-dvr-on-a-different-host) section below.
 
 ### Distributed Setup (DVR on a different host)
 
@@ -48,23 +87,17 @@ If the Channels DVR runs on a separate machine and the captions host accesses re
 # The path prefix as the DVR server reports it in its API
 DVR_PATH_PREFIX=/tank/AllMedia/Channels
 
-# The corresponding mount point on the captions host
-LOCAL_PATH_PREFIX=//192.168.3.150/Channels
+# The corresponding mount point on the captions host (managed by the wizard)
+LOCAL_PATH_PREFIX=/mnt/channels
 ```
 
 This translates every API path before file I/O — e.g.:
 ```
 DVR API:  /tank/AllMedia/Channels/TV/Show Name/episode.mpg
-Local:    //192.168.3.150/Channels/TV/Show Name/episode.mpg
+Local:    /mnt/channels/TV/Show Name/episode.mpg
 ```
 
 > **Tip:** Use forward slashes for all paths, including Windows UNC paths (`//server/share` instead of `\\server\share`). Python handles forward slashes natively on all platforms, and it avoids backslash escaping issues in `.env` files.
-
-To find your DVR's path prefix, query a recording from the API:
-```bash
-curl http://YOUR_DVR_IP:8089/api/v1/all?source=recordings
-# Look for the "path" field — the root portion is your DVR_PATH_PREFIX
-```
 
 When the DVR and captions system run on the same host, skip these — paths pass through unchanged by default.
 
