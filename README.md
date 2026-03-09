@@ -36,6 +36,7 @@ Channels DVR clients (Apple TV, Roku, Fire TV, web) automatically detect `.srt` 
 
 - **Channels DVR** server (with recordings accessible via network/mount)
 - **NVIDIA GPU** with 6GB+ VRAM (GTX 1660 Super / RTX 2060 or better)
+- **NVIDIA driver ≥ 520** on the Docker host (supports CUDA 12.2, which the container requires). Check with `nvidia-smi` — the "CUDA Version" shown must be **12.2 or higher**. If it's lower, GPU acceleration will silently fall back to CPU; the container logs a warning at startup identifying the mismatch.
 - **Docker** with NVIDIA Container Toolkit (`nvidia-container-toolkit`)
 - **ChannelWatch** (optional, for webhook-based detection instead of polling)
 
