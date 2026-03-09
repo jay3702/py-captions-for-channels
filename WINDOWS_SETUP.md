@@ -84,9 +84,23 @@ cd py-captions-for-channels
 
 If your Channels DVR is on a NAS, Linux server, or another Windows machine, confirm Windows can reach the share before you configure Docker. The Setup Wizard handles all path formatting — you just need the server name (or IP) and the share name.
 
+### Find the share name
+
+If you're not sure what shares exist on the DVR server, list them:
+
 ```powershell
-# Replace with your actual server name or IP and share name
-Get-ChildItem "\\YOUR_DVR_SERVER\Channels"
+net view \\YOUR_DVR_SERVER
+```
+
+Look for the share that points to your Channels DVR recordings folder. Note the exact share name — it could be anything (e.g. `Channels`, `DVR`, `media`, `recordings`).
+
+**No share yet?** You'll need to create one on the server that exposes the Channels DVR recordings folder before continuing. How to do this depends on the server OS (Windows: File Explorer → right-click folder → Properties → Sharing; NAS: check your NAS admin UI; Linux: configure Samba).
+
+### Verify access
+
+```powershell
+# Use the share name you found above
+Get-ChildItem "\\YOUR_DVR_SERVER\YOUR_SHARE_NAME"
 ```
 
 You should see the DVR's `TV` and `Movies` (or similar) folders. If access is denied or the path is not found, resolve the share permissions before continuing.
