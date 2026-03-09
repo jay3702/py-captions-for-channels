@@ -140,9 +140,40 @@ notepad .env
 code .env
 ```
 
-Set `CHANNELS_DVR_URL` to your DVR's IP address — that's the only required change to get started. Leave `DRY_RUN=true` until you've verified the setup.
+Set `CHANNELS_DVR_URL` to your DVR's IP address. Leave `DRY_RUN=true` until you've verified the setup.
 
-> **Leave the recordings volume settings for Step 7** — the Setup Wizard runs from the web dashboard after the container is started.
+### Configure the recordings volume
+
+> **The recordings volume must be configured before the first deploy.** The Setup Wizard (Step 7) can update these settings later, but the container cannot start without a valid initial configuration.
+
+The `DVR_MEDIA_*` variables in your `.env` tell Docker how to mount the Channels DVR recordings folder into the container. The starter `.env` files have these commented out — uncomment and fill them in based on your setup:
+
+**DVR on the same Windows machine:**
+
+Open Channels DVR → **Settings → General** and note the DVR storage path. Use it directly (forward slashes only):
+
+```dotenv
+DVR_MEDIA_TYPE=none
+DVR_MEDIA_DEVICE=C:/path/to/your/Channels/DVR    # forward slashes required
+DVR_MEDIA_OPTS=bind
+DVR_MEDIA_MOUNT=/mnt/media
+LOCAL_PATH_PREFIX=/mnt/media
+```
+
+**DVR on a different machine (NAS, Linux server, another Windows PC):**
+
+Use the server address and share name you verified in Step 2a:
+
+```dotenv
+DVR_MEDIA_TYPE=cifs
+DVR_MEDIA_DEVICE=//YOUR_DVR_SERVER/YOUR_SHARE_NAME
+DVR_MEDIA_OPTS=addr=YOUR_DVR_SERVER,username=,password=,uid=0,gid=0,vers=3.0
+DVR_MEDIA_MOUNT=/mnt/channels
+LOCAL_PATH_PREFIX=/mnt/channels
+DVR_PATH_PREFIX=   # path the DVR server reports in its API (from Settings → General)
+```
+
+If credentials are required for the share, fill in `username=` and `password=` in `DVR_MEDIA_OPTS`.
 
 ---
 
@@ -230,7 +261,7 @@ docker exec -it py-captions-for-channels nvidia-smi
 ```
 You should see your GPU listed. If not, check that `DOCKER_RUNTIME=nvidia` and `NVIDIA_VISIBLE_DEVICES=all` are in `.env` and that your driver version is ≥ 520.
 
-### Connect your DVR recordings via Setup Wizard
+### Verify recordings access via Setup Wizard
 
 Open the web dashboard:
 ```
@@ -239,21 +270,11 @@ http://localhost:8000
 
 Navigate to: **⚙ gear icon → Setup Wizard**
 
-The wizard auto-detects your DVR's media folder and generates the correct Docker volume settings for your deployment type.
+The wizard auto-detects your DVR's media folder and verifies that the volume settings configured in Step 3 are working correctly. It can also regenerate the correct `DVR_MEDIA_*` values if you need to update them (e.g. the DVR server moved or the share changed). After the wizard writes updated values to `.env`, restart the container to apply them:
 
-**Channels DVR running on the same Windows machine:**  
-Choose *Same Host*. Docker Desktop on Windows mounts Windows paths into WSL2 containers automatically — the wizard handles the translation.
-
-**Channels DVR on a different machine (NAS, Linux server, etc.):**  
-Choose *Remote* and provide the SMB share address. Example values it will generate:
-
-```dotenv
-DVR_MEDIA_TYPE=cifs
-DVR_MEDIA_DEVICE=//192.168.1.100/Channels
-DVR_MEDIA_OPTS=addr=192.168.1.100,username=,password=,uid=0,gid=0,vers=3.0
-DVR_MEDIA_MOUNT=/mnt/channels
-DVR_PATH_PREFIX=D:/DVR/Channels    ← the path the Windows DVR server reports (use forward slashes)
-LOCAL_PATH_PREFIX=/mnt/channels
+```powershell
+docker compose down
+docker compose up -d
 ```
 
 ### Whitelist shows and go live
@@ -292,6 +313,14 @@ Docker and the Python code inside the container run on Linux (via WSL2). Backsla
 ### "The system cannot find the file specified" / pipe error
 
 Docker Desktop is not running. Start it from the Start menu or taskbar and wait for the whale icon to stop animating.
+
+### Volume mount fails: `no such file or directory` / `failed to mount local volume`
+
+```
+Error response from daemon: failed to mount local volume: mount /mnt/media ... no such file or directory
+```
+
+The `DVR_MEDIA_*` variables in `.env` are not set (or are set to a path that doesn't exist). The container cannot start without a valid volume configuration — go back to **Step 3** and configure them before retrying `docker compose up -d`.
 
 ### `docker compose up` starts but container exits immediately
 
