@@ -158,7 +158,7 @@ ARG GIT_SHA=unknown
 ENV GIT_SHA=${GIT_SHA}
 COPY py_captions_for_channels/ ./py_captions_for_channels/
 COPY scripts/ ./scripts/
-COPY whitelist.txt ./whitelist.txt
+COPY whitelist_example.txt ./whitelist.txt
 COPY .env.example ./.env.example
 
 RUN chmod +x ./scripts/*.sh

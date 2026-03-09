@@ -1,0 +1,53 @@
+# py-captions-for-channels — Whitelist Example
+#
+# This file is a reference template.  In a deployed setup the active whitelist
+# lives in the database and is edited through the web UI (Settings → Whitelist).
+#
+# For a complete explanation of rule syntax, matching behaviour, regex support,
+# and channel/time filters see:
+#   SETUP_ADVANCED.md  →  Whitelist — Full Reference
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# QUICK SYNTAX REFERENCE
+#
+#   ShowName                   plain substring match (case-insensitive)
+#   ^Pattern$                  regex (any line containing a regex operator)
+#   Show;Day;Channel(s);Time   channel/time-restricted rule
+#
+# If the whitelist is empty or all rules are commented out, no recordings
+# will be processed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Simple substring matches ──────────────────────────────────────────────────
+# Matches any recording whose title contains the text (case-insensitive).
+
+# News                        # any show with "News" in the title
+# 60 Minutes
+# Dateline
+# 20/20
+# Jeopardy
+# Wheel of Fortune
+# Saturday Night Live
+
+# ── Regex: anchor or combine ──────────────────────────────────────────────────
+# Triggered automatically when the pattern contains a regex operator character.
+
+# ^NBC Nightly News            # title must START with this string
+# Nightly News$                # title must END with this string
+# Dateline|20/20               # either show
+# ^(60 Minutes|48 Hours|20/20)$  # exact list, nothing else
+# Late.*Show                   # "Late" anywhere, followed eventually by "Show"
+
+# ── Channel / time filters ────────────────────────────────────────────────────
+# Format:  ShowName;DayOfWeek;Channel(s);Time
+# Trailing fields are optional (omit = match any).
+
+# Local news on weeknights at 11 PM on OTA channel 4.1:
+# News;Monday;4.1;23:00
+# News;Tuesday;4.1;23:00
+# News;Wednesday;4.1;23:00
+# News;Thursday;4.1;23:00
+# News;Friday;4.1;23:00
+
+# Dateline only on Fridays (any channel, any time):
+# Dateline;Friday
