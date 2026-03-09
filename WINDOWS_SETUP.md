@@ -2,6 +2,12 @@
 
 > This guide covers Windows-specific steps and gotchas. For the general setup flow see [SETUP.md](SETUP.md).
 
+> **All commands in this guide are for [PowerShell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows).** Windows 10/11 ships with PowerShell 5.1 (`powershell.exe`), but PowerShell 7+ is recommended. Install it with:
+> ```powershell
+> winget install Microsoft.PowerShell
+> ```
+> Then launch it as **PowerShell 7** (search "pwsh" in the Start menu) rather than the older Windows PowerShell.
+
 ---
 
 ## Table of Contents
