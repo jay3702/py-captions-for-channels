@@ -162,26 +162,53 @@ LOCAL_PATH_PREFIX=/mnt/media
 
 **DVR on a different machine (NAS, Linux server, another Windows PC):**
 
-Docker Desktop on Windows handles SMB shares best as a standard bind mount — map the share as a Windows drive first, then point Docker at the drive letter. This avoids all CIFS driver path-escaping issues:
+Docker Desktop on Windows handles SMB shares as a plain bind mount via `DVR_MEDIA_HOST_PATH`. No `DVR_MEDIA_TYPE`, `DVR_MEDIA_DEVICE`, or `DVR_MEDIA_OPTS` needed — Docker Desktop translates the Windows path natively.
 
-**Step 1** — Map the share as a persistent Windows drive (run once in PowerShell):
+**Step 1 — Store credentials in Windows Credential Manager (keeps passwords out of files)**
 
 ```powershell
-net use Z: \\YOUR_DVR_SERVER\YOUR_SHARE_NAME /user:USERNAME PASSWORD /persistent:yes
+cmdkey /add:YOUR_DVR_SERVER /user:USERNAME /pass:PASSWORD
 ```
 
-Replace `Z:` with any free drive letter. Verify access: `Get-ChildItem Z:\`
+This stores the credentials encrypted in the Windows Credential Manager. Verify the share is accessible:
 
-**Step 2** — Set these in `.env` (comment out the "same machine" block above):
+```powershell
+Get-ChildItem \\YOUR_DVR_SERVER\YOUR_SHARE_NAME
+```
+
+> If you'd rather skip `cmdkey`, you can map a drive letter (Step 1b below) and Windows will prompt for credentials — or you can pass `/user:USERNAME PASSWORD` on the `net use` command line, though that leaves the password visible in shell history.
+
+**Step 1b (optional) — Map a persistent drive letter**
+
+A drive letter is more reliable than a bare UNC path on Windows. Run once in PowerShell:
+
+```powershell
+net use Z: \\YOUR_DVR_SERVER\YOUR_SHARE_NAME /persistent:yes
+```
+
+Replace `Z:` with any free drive letter. If credentials are already stored (Step 1), no `/user:` needed. Verify: `Get-ChildItem Z:\`
+
+**Step 2 — Set in `.env`** (comment out the "same machine" block above)
+
+With a mapped drive letter (Step 1b):
 
 ```dotenv
 DVR_MEDIA_HOST_PATH=Z:/
 DVR_MEDIA_MOUNT=/mnt/channels
 LOCAL_PATH_PREFIX=/mnt/channels
-# DVR_PATH_PREFIX is optional here — leave it unset and configure via the Setup Wizard (Step 7)
+# DVR_PATH_PREFIX — leave unset; configure via the Setup Wizard (Step 7)
 ```
 
-> `DVR_MEDIA_HOST_PATH` tells Docker Compose to use a plain bind mount instead of the CIFS named volume driver. Docker Desktop translates the Windows path natively — no `DVR_MEDIA_TYPE`, `DVR_MEDIA_DEVICE`, or `DVR_MEDIA_OPTS` needed.
+Or directly via UNC path (credentials must be in Credential Manager from Step 1):
+
+```dotenv
+DVR_MEDIA_HOST_PATH=\\YOUR_DVR_SERVER\YOUR_SHARE_NAME
+DVR_MEDIA_MOUNT=/mnt/channels
+LOCAL_PATH_PREFIX=/mnt/channels
+# DVR_PATH_PREFIX — leave unset; configure via the Setup Wizard (Step 7)
+```
+
+> **Any slash style is accepted** — `\\server\share`, `//server/share`, `////server//share` — the path is normalized automatically. Forward slashes are recommended for readability.
 
 ---
 
