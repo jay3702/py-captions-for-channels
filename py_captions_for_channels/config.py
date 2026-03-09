@@ -6,6 +6,7 @@ See .env.example for all available options.
 """
 
 import os
+import re
 from pathlib import Path
 
 
@@ -106,7 +107,49 @@ GLANCES_URL = os.getenv("GLANCES_URL", "")
 # DVR recordings storage path (root directory where recordings are stored)
 DVR_RECORDINGS_PATH = os.getenv("DVR_RECORDINGS_PATH", "/recordings")
 
-# Path prefix mapping for distributed deployments.
+
+def normalize_host_path(path: str) -> str:
+    """Normalize a host path accepted from .env to a canonical form.
+
+    Accepts any mix of forward slashes and backslashes, and any number of
+    leading slashes for UNC paths.  All of the following are equivalent::
+
+        \\\\server\\share
+        //server/share
+        \\\\\\\\server\\\\share
+        ////server//share
+
+    Drive-letter paths (``Z:/``, ``Z:\\``) are also handled — backslashes
+    become forward slashes and the drive letter is left intact.
+
+    Returns a canonical path with:
+    - forward slashes only
+    - UNC paths normalised to exactly ``//server/share``
+    - no trailing slash
+    """
+    if not path:
+        return path
+    # Backslashes → forward slashes
+    path = path.replace("\\", "/")
+    # Two or more leading slashes → UNC path; collapse to exactly //
+    # (single leading slash is a Unix absolute path — leave it alone)
+    if re.match(r"^/{2,}", path):
+        stripped = path.lstrip("/")
+        path = "//" + re.sub(r"/+", "/", stripped)
+    else:
+        # Drive-letter or Unix path — just collapse internal duplicate slashes
+        path = re.sub(r"/+", "/", path)
+    return path.rstrip("/")
+
+
+# Windows drive-letter (or UNC) path on the Docker host for the DVR recordings
+# share. When set, docker-compose uses it as a plain bind-mount source instead
+# of the CIFS named-volume driver. Any slash/backslash variant is accepted;
+# it is normalised to forward slashes for Python-side usage.
+DVR_MEDIA_HOST_PATH = normalize_host_path(os.getenv("DVR_MEDIA_HOST_PATH", "")) or None
+
+# CIFS device path (Linux deployments). Normalised for consistency.
+DVR_MEDIA_DEVICE = normalize_host_path(os.getenv("DVR_MEDIA_DEVICE", "")) or None
 # When the Channels DVR API returns file paths that differ from where the
 # captions system accesses the same files (e.g., DVR on one host, captions
 # on another with an NFS/SMB mount), set these to translate API paths.

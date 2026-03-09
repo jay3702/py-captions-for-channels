@@ -164,7 +164,9 @@ def check_media_mount() -> None:
 
 def _remap_hint() -> str:
     """Return an actionable remap hint using the configured host path if available."""
-    host_path = os.getenv("DVR_MEDIA_HOST_PATH", "").strip().rstrip("/")
+    from .config import DVR_MEDIA_HOST_PATH
+
+    host_path = DVR_MEDIA_HOST_PATH or ""
     if not host_path:
         # Generic hint for Linux / non-Windows deployments
         return (
