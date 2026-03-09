@@ -56,18 +56,25 @@ See [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for detailed benc
 
 ## Quick Start
 
+**Windows users:** see [WINDOWS_SETUP.md](WINDOWS_SETUP.md) — Docker Desktop must be running before any `docker` command will work, and there are a few Windows-specific path gotchas.
+
 ```bash
 git clone https://github.com/jay3702/py-captions-for-channels.git
 cd py-captions-for-channels
 
-# Configure
-cp .env.example .env
-nano .env   # Set CHANNELS_DVR_URL, DVR_RECORDINGS_PATH, etc.
+# Pick the starter .env for your hardware:
+#   CPU-only:  cp .env.example.cpu .env
+#   NVIDIA:    cp .env.example.nvidia .env
+#   Intel GPU: cp .env.example.intel .env
+#   AMD GPU:   cp .env.example.amd .env
+cp .env.example.nvidia .env
+nano .env   # set CHANNELS_DVR_URL to your DVR's IP
 
 # Deploy (pulls pre-built image from GitHub Container Registry)
+docker compose pull
 docker compose up -d
 
-# Open the web dashboard
+# Open the web dashboard, then use the Setup Wizard to configure recordings
 # http://your-server:8000
 ```
 
@@ -143,8 +150,13 @@ DRY_RUN=true                    # Switch to false once setup is verified
 | Document | Description |
 |----------|-------------|
 | [SETUP.md](SETUP.md) | Quick setup walkthrough |
+| [WINDOWS_SETUP.md](WINDOWS_SETUP.md) | Windows-specific setup guide |
 | [SETUP_ADVANCED.md](SETUP_ADVANCED.md) | GPU, Fire TV transcoding, webhooks, whitelist regex |
 | [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) | Full Docker deployment guide |
+| [.env.example.nvidia](.env.example.nvidia) | Minimal starter config — NVIDIA GPU |
+| [.env.example.cpu](.env.example.cpu) | Minimal starter config — CPU-only |
+| [.env.example.intel](.env.example.intel) | Minimal starter config — Intel GPU |
+| [.env.example.amd](.env.example.amd) | Minimal starter config — AMD GPU |
 | [.env.example](.env.example) | All configuration options with descriptions |
 | [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) | Hardware benchmarks and sizing |
 | [docs/AUTOMATIC_WHISPER_OPTIMIZATION.md](docs/AUTOMATIC_WHISPER_OPTIMIZATION.md) | Smart encoding optimization |

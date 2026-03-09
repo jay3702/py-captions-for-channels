@@ -2,6 +2,8 @@
 
 Get up and running in three steps: configure, deploy, and whitelist your first shows.
 
+> **Windows users:** see [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for Windows-specific steps, including the most common first-run error (Docker Desktop not running).
+
 ---
 
 ## Prerequisites
@@ -39,32 +41,30 @@ Get up and running in three steps: configure, deploy, and whitelist your first s
 
 ## 1. Configure
 
-```bash
-cp .env.example .env
-nano .env   # or vi, vim, etc.
-```
-
-### Minimum settings — CPU-only host
+Pick the starter file that matches your hardware and copy it to `.env`:
 
 ```bash
-# Your Channels DVR server
-CHANNELS_DVR_URL=http://YOUR_DVR_IP:8089
+# CPU-only:
+cp .env.example.cpu .env
 
-# Leave DRY_RUN=true until you've verified the setup
-DRY_RUN=true
+# NVIDIA GPU:
+cp .env.example.nvidia .env
+
+# Intel GPU:
+cp .env.example.intel .env
+
+# AMD GPU:
+cp .env.example.amd .env
 ```
 
-### Minimum settings — GPU host (NVIDIA)
-
-Add the following on top of the CPU settings:
-
-```bash
-# Enable NVIDIA GPU passthrough
-DOCKER_RUNTIME=nvidia
-NVIDIA_VISIBLE_DEVICES=all
+On Windows use `copy` instead of `cp`:
+```powershell
+copy .env.example.nvidia .env
 ```
 
-That's it for the minimum configuration. The system automatically discovers completed recordings by polling the Channels DVR API — no additional setup is needed.
+Open `.env` and set `CHANNELS_DVR_URL` to your DVR's IP. The starter files already include the correct GPU settings for each platform, so that's usually the only required change.
+
+> The full reference for every available option is in [.env.example](.env.example).
 
 ### Recordings path — use the Setup Wizard
 
@@ -108,11 +108,12 @@ The caption command is **auto-detected** — you don't need to set it. See [SETU
 ## 2. Deploy
 
 ```bash
-docker-compose up -d
-docker-compose logs -f   # watch startup
+docker compose pull          # download the prebuilt image (~5.5 GB, one-time)
+docker compose up -d
+docker compose logs -f       # watch startup
 ```
 
-Open the web dashboard at **http://YOUR_HOST_IP:8000**.
+Open the web dashboard at **http://YOUR_HOST_IP:8000** and complete the Setup Wizard to configure your recordings volume.
 
 ## 3. Create a Whitelist
 
@@ -151,7 +152,7 @@ Once you're satisfied:
 DRY_RUN=false
 
 # Restart to pick up the change
-docker-compose down && docker-compose up -d
+docker compose down && docker compose up -d
 ```
 
 New recordings that match your whitelist will now be processed automatically.
@@ -162,10 +163,10 @@ New recordings that match your whitelist will now be processed automatically.
 
 ```bash
 # Container running?
-docker-compose ps
+docker compose ps
 
 # Logs healthy?
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ---
@@ -175,7 +176,7 @@ docker-compose logs -f
 ### Configuration not taking effect?
 
 ```bash
-docker-compose down && docker-compose up -d
+docker compose down && docker compose up -d
 ```
 
 ### Can't find recordings?
