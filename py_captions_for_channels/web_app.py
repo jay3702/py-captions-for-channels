@@ -597,8 +597,12 @@ def load_env_settings() -> dict:
             for category in merged:
                 for key in merged[category]:
                     if key in flat_actual:
-                        if not merged[category][key].get("value"):
-                            merged[category][key]["value"] = flat_actual[key]
+                        # Always override with the value from the actual .env file.
+                        # flat_actual only contains non-commented lines, so this
+                        # correctly picks up e.g. DRY_RUN=true even when the .env
+                        # uses different section headers than .env.example and the
+                        # structured parse above assigned the wrong default.
+                        merged[category][key]["value"] = flat_actual[key]
 
         # Inject runtime values for settings with placeholders
         # This ensures UI shows actual values being used by the system
