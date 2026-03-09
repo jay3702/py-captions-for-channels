@@ -33,7 +33,7 @@ Get up and running in three steps: configure, deploy, and whitelist your first s
   sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
   ```
 
-> **CPU-only hosts** (no NVIDIA GPU) work fine — just skip the GPU steps. Jobs will be slower (~20 min/hr of TV instead of ~3 min with GPU).
+> **CPU-only hosts** (no NVIDIA GPU) work fine — just skip the GPU steps. Jobs will be slower (~10 min/hr for streaming recordings, ~10–15 min/hr for OTA, vs ~1–2 min with GPU).
 
 ---
 

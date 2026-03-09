@@ -30,7 +30,7 @@ Channels DVR ──recording complete──▶ py-captions-for-channels
                                         └─ (optional) Transcode to .mp4 with embedded captions track
 ```
 
-Channels DVR clients (Apple TV, Roku, Fire TV, web) automatically detect `.srt` files placed alongside recordings.
+Some Channels DVR clients — such as Apple TV and the web player — automatically detect and display captions from `.srt` files placed alongside recordings. Others, such as Fire TV and Android clients, require captions to be muxed into the recording file itself (see `TRANSCODE_FOR_FIRETV` in the [Fire TV / Android section](SETUP_ADVANCED.md#fire-tv--android-transcoding)).
 
 ## Requirements
 
@@ -40,15 +40,17 @@ Channels DVR clients (Apple TV, Roku, Fire TV, web) automatically detect `.srt` 
 - **Docker** with NVIDIA Container Toolkit (`nvidia-container-toolkit`)
 - **ChannelWatch** (optional, for webhook-based detection instead of polling)
 
-> **CPU-only operation** is possible but significantly slower (~25 min per 1-hour recording vs 3-6 min with GPU).
+> **CPU-only operation** is possible but significantly slower (~10 min SRT-only, ~10–20 min with Fire TV transcoding, per 1-hour recording).
+
+Timings below are for the default **SRT-only** mode. `TRANSCODE_FOR_FIRETV=true` adds encoding time (see [GPU Configuration](SETUP_ADVANCED.md#gpu-configuration)).
 
 | Hardware | 1-hr OTA Recording | 1-hr TVE (Streaming) | Daily Capacity |
 |----------|-------------------|---------------------|----------------|
-| CPU only | ~25 min | ~20 min | Very limited |
-| RTX 2080 (11GB) | ~5-6 min | ~3-4 min | 20+ hours |
-| RTX 3060/4060+ | ~4-5 min | ~2-3 min | 24+ hours |
+| CPU only | ~10–15 min | ~10 min | Very limited |
+| RTX 2080 (11GB) | ~3–5 min | ~1–2 min | 20+ hours |
+| RTX 3060/4060+ | ~2–4 min | ~1–2 min | 24+ hours |
 
-> **Note:** OTA (over-the-air) recordings require MPEG2→H.264 transcoding, which adds time. TVE (streaming) recordings are already H.264 and only need captioning.
+> **Note:** OTA (over-the-air) recordings require MPEG2→H.264 transcoding, which adds time even in SRT-only mode. TVE (streaming) recordings are already H.264 and only need Whisper transcription (~1–2 min with GPU, ~10 min with CPU).
 
 See [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for detailed benchmarks and hardware guidance.
 
@@ -87,7 +89,7 @@ NVIDIA_VISIBLE_DEVICES=all
 ```
 
 Requires the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
-Without it, everything works the same on CPU — just slower (~6-10 min per hour of recording vs 2-4 min with GPU).
+Without it, everything works the same on CPU — just slower (~10 min per hour for TVE, ~10–15 min for OTA vs ~1–5 min with GPU).
 
 ### ChannelWatch Integration (Optional)
 

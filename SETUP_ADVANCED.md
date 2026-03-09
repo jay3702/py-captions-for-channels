@@ -105,8 +105,8 @@ Measured on an i7-7700K + RTX 2080 (8 GB). Newer GPUs will be proportionally fas
 |---|---|
 | SRT-only (GPU) | ~1–2 min |
 | Full transcode (GPU) | ~4–10 min |
-| SRT-only (CPU-only) | ~15–25 min |
-| Full transcode (CPU-only) | ~30–60 min |
+| SRT-only (CPU-only) | ~10 min |
+| Full transcode (CPU-only) | ~10–20 min |
 
 > CPU-only benchmarks are estimates — your mileage may vary depending on CPU. See [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for more detailed benchmarks.
 
