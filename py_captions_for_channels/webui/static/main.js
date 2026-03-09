@@ -1251,12 +1251,21 @@ async function saveEnvSettings(event) {
       throw new Error(envData.error || 'Failed to save settings');
     }
     
-    // Save whisper_model and whitelist to database (take effect without restart)
+    // Save pipeline-behaviour settings to database so they take effect without
+    // a full container restart (docker compose down && up).
     const whitelistEditor = document.getElementById('whitelist-editor');
     const whisperModelSelect = form.querySelector('select[name="WHISPER_MODEL"]');
+    const dryRunCheckbox   = form.querySelector('input[name="DRY_RUN"]');
+    const keepOriginalCheckbox = form.querySelector('input[name="KEEP_ORIGINAL"]');
+    const logVerbositySelect = form.querySelector('select[name="LOG_VERBOSITY"]');
+    const discoveryModeSelect = form.querySelector('select[name="DISCOVERY_MODE"]');
     const dbPayload = {};
-    if (whitelistEditor) dbPayload.whitelist = whitelistEditor.value;
-    if (whisperModelSelect) dbPayload.whisper_model = whisperModelSelect.value;
+    if (whitelistEditor)      dbPayload.whitelist       = whitelistEditor.value;
+    if (whisperModelSelect)   dbPayload.whisper_model   = whisperModelSelect.value;
+    if (dryRunCheckbox)       dbPayload.dry_run         = dryRunCheckbox.checked;
+    if (keepOriginalCheckbox) dbPayload.keep_original   = keepOriginalCheckbox.checked;
+    if (logVerbositySelect)   dbPayload.log_verbosity   = logVerbositySelect.value;
+    if (discoveryModeSelect)  dbPayload.discovery_mode  = discoveryModeSelect.value;
     if (Object.keys(dbPayload).length > 0) {
       const dbRes = await fetch('/api/settings', {
         method: 'POST',
@@ -1273,9 +1282,9 @@ async function saveEnvSettings(event) {
       && whitelistEditor.value !== (window._originalWhitelist || '');
     let msg;
     if (whitelistChanged) {
-      msg = '✓ Settings saved!\n\nWhitelist and Whisper model changes take effect within 30 seconds.\nOther settings require a restart.';
+      msg = '✓ Settings saved!\n\nWhitelist, Dry Run, and Whisper model changes take effect on the next job.\nVolume/path changes require a full restart (docker compose down && up).';
     } else {
-      msg = '✓ Settings saved!\n\nWhisper model changes take effect on the next job.\nOther settings require a restart.';
+      msg = '✓ Settings saved!\n\nDry Run and Whisper model changes take effect on the next job.\nVolume/path changes require a full restart (docker compose down && up).';
     }
     alert(msg);
     closeSettingsModal();
