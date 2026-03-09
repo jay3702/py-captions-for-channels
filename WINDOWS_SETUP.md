@@ -9,7 +9,7 @@
 - [Prerequisites](#prerequisites)
 - [Step 1 — Install and Start Docker Desktop](#step-1--install-and-start-docker-desktop)
 - [Step 2 — Clone the Repository](#step-2--clone-the-repository)
-- [Step 2a — Map a Persistent Drive to Your DVR Storage (remote DVR only)](#step-2a--map-a-persistent-drive-to-your-dvr-storage-remote-dvr-only)
+- [Step 2a — Verify DVR Network Share Access (remote DVR only)](#step-2a--verify-dvr-network-share-access-remote-dvr-only)
 - [Step 3 — Configure .env](#step-3--configure-env)
 - [Step 4 — GPU Setup (NVIDIA)](#step-4--gpu-setup-nvidia)
 - [Step 5 — Pre-deploy Verification](#step-5--pre-deploy-verification)
@@ -64,43 +64,20 @@ cd py-captions-for-channels
 
 ---
 
-## Step 2a — Map a Persistent Drive to Your DVR Storage (remote DVR only)
+## Step 2a — Verify DVR Network Share Access (remote DVR only)
 
 > Skip this if Channels DVR is running on the same Windows machine.
 
-If your Channels DVR is on a NAS, Linux server, or another Windows machine, map a persistent drive letter to its media folder **before** configuring `.env`. This gives you a familiar way to browse and verify the share, and makes it easy to identify the correct UNC path to put in the Setup Wizard later.
-
-### Option A — GUI (persistent across reboots)
-
-1. Open **File Explorer**
-2. Right-click **This PC** → **Map network drive...**
-3. Choose a drive letter (e.g. `Z:`)
-4. Enter the share path: `\\YOUR_DVR_SERVER\Channels`
-5. Check **Reconnect at sign-in** so it survives reboots
-6. Click **Finish**
-
-### Option B — PowerShell (persistent, scriptable)
+If your Channels DVR is on a NAS, Linux server, or another Windows machine, confirm Windows can reach the share before you configure Docker. The Setup Wizard handles all path formatting — you just need the server name (or IP) and the share name.
 
 ```powershell
-# Map Z: to the Channels share and reconnect at login
-New-PSDrive -Name Z -PSProvider FileSystem `
-            -Root "\\YOUR_DVR_SERVER\Channels" `
-            -Persist
-
-# Or using the classic net use command:
-net use Z: \\YOUR_DVR_SERVER\Channels /persistent:yes
-
-# If the share requires credentials:
-net use Z: \\YOUR_DVR_SERVER\Channels /user:USERNAME PASSWORD /persistent:yes
+# Replace with your actual server name or IP and share name
+Get-ChildItem "\\YOUR_DVR_SERVER\Channels"
 ```
 
-### Verify access
+You should see the DVR's `TV` and `Movies` (or similar) folders. If access is denied or the path is not found, resolve the share permissions before continuing.
 
-```powershell
-Get-ChildItem Z:\    # you should see your DVR's TV and Movie folders
-```
-
-> **Note on how Docker uses this:** The Docker container does **not** use the Windows drive letter. It mounts the SMB share directly via the `DVR_MEDIA_*` variables configured by the Setup Wizard (using the UNC path `//YOUR_DVR_SERVER/Channels`). The mapped drive is for your own verification and browsing. When the Wizard asks for the share path, enter the UNC path — not `Z:\`.
+> **What the wizard needs:** When the Setup Wizard runs, it will ask for the server address and share name separately — e.g. `YOUR_DVR_SERVER` and `Channels`. You do not need to type UNC paths or backslashes manually.
 
 ---
 
@@ -171,6 +148,11 @@ You should see both Client and Server versions. If you get a pipe error, Docker 
 ### 2. GPU is visible on the host (NVIDIA only)
 ```powershell
 nvidia-smi
+```
+The CUDA Version is in the **top-right corner of the first header row** — easy to miss:
+```
++----------------------------------------------------------+
+| NVIDIA-SMI 581.95   Driver Version: 581.95   CUDA Version: 13.0  |
 ```
 Confirm the **CUDA Version** shown is **12.2 or higher**. If it's lower, GPU acceleration will fall back to CPU and the container logs a warning at startup.
 
