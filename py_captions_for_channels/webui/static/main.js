@@ -256,8 +256,8 @@ async function fetchStatus() {
       const queueStatuses = new Set(['running', 'pending', 'discovered']);
       const queueExecutions = executions.filter(exec => queueStatuses.has(exec.status));
       
-      // History: completed, failed, cancelled executions
-      const historyStatuses = new Set(['completed', 'failed', 'cancelled']);
+      // History: completed, failed, cancelled, dry_run executions
+      const historyStatuses = new Set(['completed', 'failed', 'cancelled', 'dry_run']);
       const historyExecutions = executions.filter(exec => historyStatuses.has(exec.status));
       
       // Sort queue items (recordings first, then by status/time)
