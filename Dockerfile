@@ -164,23 +164,9 @@ COPY .env.example ./.env.example
 RUN chmod +x ./scripts/*.sh
 RUN mkdir -p /app/data /app/logs
 
-# Create startup script
-RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-# Start Glances web server in background\n\
-echo "Starting Glances web server on port 61208..."\n\
-glances -w --disable-plugin quicklook,ports,irq,folders,raid &\n\
-GLANCES_PID=$!\n\
-echo "Glances started with PID $GLANCES_PID"\n\
-\n\
-# Wait a moment for Glances to start\n\
-sleep 2\n\
-\n\
-# Start the main application\n\
-echo "Starting py-captions-for-channels..."\n\
-exec python -u -m py_captions_for_channels' > /app/start.sh && \
-    chmod +x /app/start.sh
+# Copy startup script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 ENV PYTHONUNBUFFERED=1
 
