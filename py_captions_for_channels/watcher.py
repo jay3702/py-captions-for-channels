@@ -585,7 +585,9 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                     if result.stderr:
                         LOG.error("stderr output: %s", result.stderr.strip())
                     if result.stdout:
-                        LOG.info("stdout output: %s", result.stdout.strip())
+                        # stdout lines were already forwarded in real-time by pipeline;
+                        # keep the full dump only at debug level for post-mortem review.
+                        LOG.debug("stdout dump: %s", result.stdout.strip())
                     state.clear_manual_process_request(path)
                     LOG.warning(
                         "Removed failed manual process request after retry: %s",
@@ -1260,7 +1262,11 @@ async def main():
                             if result.stderr:
                                 LOG.error("stderr output: %s", result.stderr.strip())
                             if result.stdout:
-                                LOG.info("stdout output: %s", result.stdout.strip())
+                                # stdout forwarded live; keep dump at debug only.
+                                LOG.debug(
+                                    "stdout dump: %s",
+                                    result.stdout.strip(),
+                                )
 
                         # Only update state if not a dry-run
                         if not (hasattr(result, "is_dry_run") and result.is_dry_run):

@@ -1,5 +1,6 @@
 from py_captions_for_channels.logging.structured_logger import get_logger
 import json
+import os
 import re
 import subprocess
 from typing import Callable, Optional
@@ -16,6 +17,34 @@ from .config import (
 )
 from .progress_tracker import get_progress_tracker
 from .execution_tracker import get_tracker
+
+
+def _forward_subprocess_log_line(line: str, log) -> None:
+    """Parse and forward a JSON structured log line from a subprocess in real-time.
+
+    embed_captions writes JSON-formatted structured logs to stdout.  This
+    helper parses each line and re-emits it through the parent logger so it
+    appears immediately rather than being buffered until the subprocess exits.
+    """
+    if not line:
+        return
+    try:
+        data = json.loads(line)
+        msg = (data.get("msg") or "").strip()
+        if not msg:
+            return
+        level = (data.get("level") or "INFO").upper()
+        if level == "WARNING":
+            log.warning(msg)
+        elif level == "ERROR":
+            log.error(msg)
+        elif level == "DEBUG":
+            log.debug(msg)
+        else:
+            log.info(msg)
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        if line:
+            log.info(line)
 
 
 class PipelineResult:
@@ -270,6 +299,9 @@ class Pipeline:
                     stderr_lines.append(line)
                 else:
                     stdout_lines.append(line)
+                    # Forward each stdout line immediately so it appears in
+                    # the container log without waiting for process exit.
+                    _forward_subprocess_log_line(line, log)
 
                 # Parse progress from line
                 if is_stderr:  # FFmpeg writes to stderr
@@ -550,8 +582,6 @@ class Pipeline:
                 srt_path = getattr(event, "srt_path", None)
                 if not srt_path:
                     # Default SRT path: same dir as input, basename.srt
-                    import os
-
                     base = os.path.splitext(os.path.basename(event.path))[0]
                     srt_path = os.path.join(os.path.dirname(event.path), f"{base}.srt")
 
@@ -627,6 +657,11 @@ class Pipeline:
                 log.debug("About to execute command: %s", cmd)
 
                 try:
+                    # Ensure child Python process flushes stdout line-by-line
+                    # even when stdout is a pipe (not a TTY).
+                    _env = os.environ.copy()
+                    _env["PYTHONUNBUFFERED"] = "1"
+
                     proc = subprocess.Popen(
                         cmd,
                         shell=True,
@@ -634,6 +669,7 @@ class Pipeline:
                         stderr=subprocess.PIPE,
                         text=True,
                         bufsize=1,  # Line buffered
+                        env=_env,
                     )
 
                     # Stream output and parse progress
