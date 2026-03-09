@@ -82,28 +82,34 @@ cd py-captions-for-channels
 
 > Skip this if Channels DVR is running on the same Windows machine.
 
-If your Channels DVR is on a NAS, Linux server, or another Windows machine, confirm Windows can reach the share before you configure Docker. The Setup Wizard handles all path formatting — you just need the server name (or IP) and the share name.
+If your Channels DVR is on a NAS, Linux server, or another Windows machine, confirm Windows can reach the recordings folder before you configure Docker. The Setup Wizard handles all path formatting — you just need the server name (or IP) and the share name.
 
-### Find the share name
+### Step 1 — Find the recordings path in Channels DVR
 
-If you're not sure what shares exist on the DVR server, list them:
+Open the Channels DVR web UI on the DVR server and go to **Settings → General**. The **DVR Storage** (or "Server Enabled") field shows the full path where recordings are stored — e.g. `/mnt/storage/dvr` or `D:\Channels`. This is the folder that must be accessible via network share from the Windows machine running this tool.
+
+### Step 2 — Find or create the share
+
+List existing shares on that server to find one that covers that path:
 
 ```powershell
 net view \\YOUR_DVR_SERVER
 ```
 
-Look for the share that points to your Channels DVR recordings folder. Note the exact share name — it could be anything (e.g. `Channels`, `DVR`, `media`, `recordings`).
+The share name could be anything — `Channels`, `DVR`, `media`, `recordings`, etc. If none of the listed shares expose the recordings folder, you'll need to create one:
 
-**No share yet?** You'll need to create one on the server that exposes the Channels DVR recordings folder before continuing. How to do this depends on the server OS (Windows: File Explorer → right-click folder → Properties → Sharing; NAS: check your NAS admin UI; Linux: configure Samba).
+- **Windows DVR server:** File Explorer → right-click the recordings folder → Properties → Sharing
+- **NAS:** check your NAS admin UI for the share covering that path
+- **Linux (Samba):** add a share entry to `/etc/samba/smb.conf` pointing to the recordings directory
 
-### Verify access
+### Step 3 — Verify access from this machine
 
 ```powershell
-# Use the share name you found above
+# Use the share name you identified above
 Get-ChildItem "\\YOUR_DVR_SERVER\YOUR_SHARE_NAME"
 ```
 
-You should see the DVR's `TV` and `Movies` (or similar) folders. If access is denied or the path is not found, resolve the share permissions before continuing.
+You should see the DVR's recording folders (e.g. `TV`, `Movies`). If access is denied or the path is not found, resolve the share permissions before continuing.
 
 > **What the wizard needs:** When the Setup Wizard runs, it will ask for the server address and share name separately — e.g. `YOUR_DVR_SERVER` and `Channels`. You do not need to type UNC paths or backslashes manually.
 
