@@ -172,7 +172,12 @@ DVR_MEDIA_DEVICE = normalize_host_path(os.getenv("DVR_MEDIA_DEVICE", "")) or Non
 # has that prefix swapped for LOCAL_PATH_PREFIX before any file I/O.
 # When unset (default), paths pass through unchanged (single-host setup).
 DVR_PATH_PREFIX = os.getenv("DVR_PATH_PREFIX", "").rstrip("/\\") or None
-LOCAL_PATH_PREFIX = os.getenv("LOCAL_PATH_PREFIX", "").rstrip("/") or None
+# LOCAL_PATH_PREFIX defaults to DVR_MEDIA_MOUNT when not explicitly set — they are
+# always the same value in normal deployments.  Only set LOCAL_PATH_PREFIX explicitly
+# if you need it to differ from DVR_MEDIA_MOUNT (uncommon).
+LOCAL_PATH_PREFIX = (
+    os.getenv("LOCAL_PATH_PREFIX") or os.getenv("DVR_MEDIA_MOUNT") or ""
+).rstrip("/") or None
 
 
 def translate_dvr_path(api_path: str) -> str:

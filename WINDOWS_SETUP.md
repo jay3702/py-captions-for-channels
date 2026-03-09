@@ -146,23 +146,22 @@ Set `CHANNELS_DVR_URL` to your DVR's IP address. Leave `DRY_RUN=true` until you'
 
 > **The recordings volume must be configured before the first deploy.** The Setup Wizard (Step 7) can update these settings later, but the container cannot start without a valid initial configuration.
 
-The `DVR_MEDIA_*` variables in your `.env` tell Docker how to mount the Channels DVR recordings folder into the container. The starter `.env` files have these commented out — uncomment and fill them in based on your setup:
+Your `.env` file has two option blocks — **use Option A or Option B, not both.** Comment out the one you are not using.
 
-**DVR on the same Windows machine:**
+**Option A — DVR is on this machine (same Windows PC running Docker):**
 
-Open Channels DVR → **Settings → General** and note the DVR storage path. Use it directly (forward slashes only):
+Open Channels DVR → **Settings → General** and note the DVR storage path. Fill it in as `DVR_MEDIA_DEVICE` using forward slashes:
 
 ```dotenv
 DVR_MEDIA_TYPE=none
-DVR_MEDIA_DEVICE=C:/path/to/your/Channels/DVR    # forward slashes required
+DVR_MEDIA_DEVICE=C:/path/to/your/Channels/DVR
 DVR_MEDIA_OPTS=bind
 DVR_MEDIA_MOUNT=/mnt/media
-LOCAL_PATH_PREFIX=/mnt/media
 ```
 
-**DVR on a different machine (NAS, Linux server, another Windows PC):**
+**Option B — DVR is on a different machine (NAS, Linux server, another Windows PC):**
 
-Docker Desktop on Windows handles SMB shares as a plain bind mount via `DVR_MEDIA_HOST_PATH`. No `DVR_MEDIA_TYPE`, `DVR_MEDIA_DEVICE`, or `DVR_MEDIA_OPTS` needed — Docker Desktop translates the Windows path natively.
+Docker Desktop handles the share as a plain bind mount via `DVR_MEDIA_HOST_PATH`. The `DVR_MEDIA_TYPE`, `DVR_MEDIA_DEVICE`, and `DVR_MEDIA_OPTS` lines from Option A are not used here — leave them commented out.
 
 **Step 1 — Store credentials in Windows Credential Manager (keeps passwords out of files)**
 
@@ -170,13 +169,11 @@ Docker Desktop on Windows handles SMB shares as a plain bind mount via `DVR_MEDI
 cmdkey /add:YOUR_DVR_SERVER /user:USERNAME /pass:PASSWORD
 ```
 
-This stores the credentials encrypted in the Windows Credential Manager. Verify the share is accessible:
+Verify the share is accessible:
 
 ```powershell
 Get-ChildItem \\YOUR_DVR_SERVER\YOUR_SHARE_NAME
 ```
-
-> If you'd rather skip `cmdkey`, you can map a drive letter (Step 1b below) and Windows will prompt for credentials — or you can pass `/user:USERNAME PASSWORD` on the `net use` command line, though that leaves the password visible in shell history.
 
 **Step 1b (optional) — Map a persistent drive letter**
 
@@ -188,27 +185,27 @@ net use Z: \\YOUR_DVR_SERVER\YOUR_SHARE_NAME /persistent:yes
 
 Replace `Z:` with any free drive letter. If credentials are already stored (Step 1), no `/user:` needed. Verify: `Get-ChildItem Z:\`
 
-**Step 2 — Set in `.env`** (comment out the "same machine" block above)
+**Step 2 — Comment out Option A and fill in Option B:**
 
 With a mapped drive letter (Step 1b):
 
 ```dotenv
 DVR_MEDIA_HOST_PATH=Z:/
-DVR_MEDIA_MOUNT=/mnt/channels
-LOCAL_PATH_PREFIX=/mnt/channels
+DVR_MEDIA_MOUNT=/mnt/media
 # DVR_PATH_PREFIX — leave unset; configure via the Setup Wizard (Step 7)
 ```
 
 Or directly via UNC path (credentials must be in Credential Manager from Step 1):
 
 ```dotenv
-DVR_MEDIA_HOST_PATH=\\YOUR_DVR_SERVER\YOUR_SHARE_NAME
-DVR_MEDIA_MOUNT=/mnt/channels
-LOCAL_PATH_PREFIX=/mnt/channels
+DVR_MEDIA_HOST_PATH=//YOUR_DVR_SERVER/YOUR_SHARE_NAME
+DVR_MEDIA_MOUNT=/mnt/media
 # DVR_PATH_PREFIX — leave unset; configure via the Setup Wizard (Step 7)
 ```
 
-> **Any slash style is accepted** — `\\server\share`, `//server/share`, `////server//share` — the path is normalized automatically. Forward slashes are recommended for readability.
+> **Any slash style is accepted** — `\\server\share`, `//server/share` — the path is normalized automatically.
+
+> **`LOCAL_PATH_PREFIX`** is set automatically from `DVR_MEDIA_MOUNT` — you do not need to include it in `.env`. It only needs to be set explicitly when using `DVR_PATH_PREFIX` for path translation (when the DVR server reports a different internal path from the mount point).
 
 ---
 
