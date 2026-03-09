@@ -11,8 +11,9 @@
 - [Step 2 — Clone the Repository](#step-2--clone-the-repository)
 - [Step 3 — Configure .env](#step-3--configure-env)
 - [Step 4 — GPU Setup (NVIDIA)](#step-4--gpu-setup-nvidia)
-- [Step 5 — Connect Your DVR Recordings](#step-5--connect-your-dvr-recordings)
+- [Step 5 — Pre-deploy Verification](#step-5--pre-deploy-verification)
 - [Step 6 — Deploy](#step-6--deploy)
+- [Step 7 — Post-deploy: Recordings and GPU Check](#step-7--post-deploy-recordings-and-gpu-check)
 - [Path Syntax Rules](#path-syntax-rules)
 - [Troubleshooting](#troubleshooting)
 
@@ -89,7 +90,7 @@ code .env
 
 Set `CHANNELS_DVR_URL` to your DVR's IP address — that's the only required change to get started. Leave `DRY_RUN=true` until you've verified the setup.
 
-> **Leave the recordings volume settings for Step 5** — the Setup Wizard configures those interactively.
+> **Leave the recordings volume settings for Step 7** — the Setup Wizard runs from the web dashboard after the container is started.
 
 ---
 
@@ -112,43 +113,36 @@ DOCKER_RUNTIME=nvidia
 NVIDIA_VISIBLE_DEVICES=all
 ```
 
-### Verify GPU passthrough
-
-After starting the container (Step 6), run:
-```powershell
-docker exec -it py-captions-for-channels nvidia-smi
-```
+> GPU passthrough inside the container is verified in Step 7, after the container is running.
 
 ---
 
-## Step 5 — Connect Your DVR Recordings
+## Step 5 — Pre-deploy Verification
 
-Use the **Setup Wizard** in the web dashboard to configure how the container accesses your recordings. Open it at:
+Before pulling the image, confirm everything is in order:
 
+### 1. Docker is running
+```powershell
+docker version
 ```
-http://localhost:8000
+You should see both Client and Server versions. If you get a pipe error, Docker Desktop is not running — start it and wait for the whale icon to stop animating.
+
+### 2. GPU is visible on the host (NVIDIA only)
+```powershell
+nvidia-smi
 ```
+Confirm the **CUDA Version** shown is **12.2 or higher**. If it's lower, GPU acceleration will fall back to CPU and the container logs a warning at startup.
 
-Then navigate to: **⚙ gear icon → Setup Wizard**
-
-The wizard auto-detects your DVR's media folder and generates the correct Docker volume settings for your deployment type.
-
-### Common Windows scenarios
-
-**Channels DVR running on the same Windows machine:**  
-Choose *Same Host* in the wizard. Docker Desktop on Windows mounts Windows paths into WSL2 containers using the path as-is — the wizard handles the translation.
-
-**Channels DVR on a different machine (NAS, Linux server, etc.):**  
-Choose *Remote* in the wizard and provide the SMB share address. Example values it will generate:
-
-```dotenv
-DVR_MEDIA_TYPE=cifs
-DVR_MEDIA_DEVICE=//192.168.1.100/Channels
-DVR_MEDIA_OPTS=addr=192.168.1.100,username=,password=,uid=0,gid=0,vers=3.0
-DVR_MEDIA_MOUNT=/mnt/channels
-DVR_PATH_PREFIX=D:\DVR\Channels   ← the path as Windows Channels DVR server reports it
-LOCAL_PATH_PREFIX=/mnt/channels
+### 3. Validate your .env
+```powershell
+docker compose config
 ```
+This resolves all `${VAR}` substitutions and prints the final compose configuration. Look for obvious issues:
+- `CHANNELS_DVR_URL` should not be `http://<CHANNELS_DVR_SERVER>:8089` (the placeholder)
+- `DOCKER_RUNTIME` should show `nvidia` if you're using GPU
+- No lines like `image: ` with an empty value
+
+If any substitution looks wrong, edit `.env` and re-run `docker compose config` before proceeding.
 
 ---
 
@@ -157,15 +151,68 @@ LOCAL_PATH_PREFIX=/mnt/channels
 ```powershell
 docker compose pull        # download the prebuilt image (~5.5 GB, one-time)
 docker compose up -d       # start the container
-docker compose logs -f     # watch startup logs
+docker compose logs -f     # watch startup logs (Ctrl+C to exit)
 ```
 
-Open the web dashboard at **http://localhost:8000**, complete the Setup Wizard, whitelist a few shows, then set `DRY_RUN=false` and restart:
+The startup log should end with something like:
+```
+INFO  Watcher started
+INFO  Web UI listening on 0.0.0.0:8000
+```
+If it exits immediately instead, see Troubleshooting below.
+
+---
+
+## Step 7 — Post-deploy: Recordings and GPU Check
+
+### Verify GPU passthrough (NVIDIA only)
+
+With the container running:
+```powershell
+docker exec -it py-captions-for-channels nvidia-smi
+```
+You should see your GPU listed. If not, check that `DOCKER_RUNTIME=nvidia` and `NVIDIA_VISIBLE_DEVICES=all` are in `.env` and that your driver version is ≥ 520.
+
+### Connect your DVR recordings via Setup Wizard
+
+Open the web dashboard:
+```
+http://localhost:8000
+```
+
+Navigate to: **⚙ gear icon → Setup Wizard**
+
+The wizard auto-detects your DVR's media folder and generates the correct Docker volume settings for your deployment type.
+
+**Channels DVR running on the same Windows machine:**  
+Choose *Same Host*. Docker Desktop on Windows mounts Windows paths into WSL2 containers automatically — the wizard handles the translation.
+
+**Channels DVR on a different machine (NAS, Linux server, etc.):**  
+Choose *Remote* and provide the SMB share address. Example values it will generate:
+
+```dotenv
+DVR_MEDIA_TYPE=cifs
+DVR_MEDIA_DEVICE=//192.168.1.100/Channels
+DVR_MEDIA_OPTS=addr=192.168.1.100,username=,password=,uid=0,gid=0,vers=3.0
+DVR_MEDIA_MOUNT=/mnt/channels
+DVR_PATH_PREFIX=D:/DVR/Channels    ← the path the Windows DVR server reports (use forward slashes)
+LOCAL_PATH_PREFIX=/mnt/channels
+```
+
+### Whitelist shows and go live
+
+In the dashboard, go to **Recordings**, check the shows you want captioned, then:
 
 ```powershell
+# Edit .env: set DRY_RUN=false
+notepad .env
+
+# Restart to apply
 docker compose down
 docker compose up -d
 ```
+
+New recordings that match your whitelist will now be processed automatically.
 
 ---
 
