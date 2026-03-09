@@ -10,15 +10,54 @@ import re
 from pathlib import Path
 
 
+def _strip_inline_comment(value: str) -> str:
+    """Strip an inline comment from a .env value.
+
+    Docker Compose strips inline comments (anything after unquoted `` #``).
+    Our Python parsers must do the same so that lines like::
+
+        DVR_PATH_PREFIX=   # set via Setup Wizard
+
+    are treated as an empty value rather than storing the comment text.
+    """
+    # Remove trailing ` # ...` (space/tab before the hash)
+    return re.sub(r"\s+#.*$", "", value).strip()
+
+
+# Keys whose values are written by the Setup Wizard after the container is
+# first started.  These must be read directly from the .env file on every
+# process restart because docker-compose injects the *original* value at
+# container-creation time and cannot update it without a full
+# ``docker compose down && up``.
+_WIZARD_MANAGED_KEYS = frozenset(
+    {
+        "DVR_PATH_PREFIX",
+        "LOCAL_PATH_PREFIX",
+        "DVR_MEDIA_MOUNT",
+        "DVR_MEDIA_HOST_PATH",
+        "DVR_MEDIA_DEVICE",
+        "DVR_MEDIA_TYPE",
+        "DVR_MEDIA_OPTS",
+        "CHANNELS_DVR_URL",
+    }
+)
+
+
 def _load_dotenv_file() -> None:
-    """Seed os.environ from the .env file for any keys not already set.
+    """Seed os.environ from the .env file.
 
     docker-compose injects env vars at *container creation* time from the
     .env file.  When the wizard writes new values to .env and triggers a
     process restart (without ``docker compose up -d``), the container's env
-    vars are still the old ones.  Reading the file here with setdefault()
-    gives freshly-restarted processes the updated values while still letting
-    docker-compose-injected vars take precedence.
+    vars are still the old ones.  This function re-reads the file so that
+    freshly-restarted processes see the updated values.
+
+    Policy:
+    - Wizard-managed keys (path prefixes, DVR URL, etc.) **always** take
+      their value from the current .env file, overriding whatever
+      docker-compose injected at startup.
+    - All other keys use setdefault — docker-compose-injected vars win.
+    - Inline comments (`` # ...``) are stripped from values before storing.
     """
     env_path = Path(__file__).parent.parent / ".env"
     if not env_path.exists():
@@ -31,9 +70,14 @@ def _load_dotenv_file() -> None:
                     continue
                 key, _, value = line.partition("=")
                 key = key.strip()
-                value = value.strip()
-                # Only valid uppercase/underscore keys; never overwrite injected vars
-                if key and key.replace("_", "").isupper():
+                value = _strip_inline_comment(value)
+                # Only valid uppercase/underscore keys
+                if not (key and key.replace("_", "").isupper()):
+                    continue
+                if key in _WIZARD_MANAGED_KEYS:
+                    # Always override — wizard may have updated after container start
+                    os.environ[key] = value
+                else:
                     os.environ.setdefault(key, value)
     except Exception:
         pass  # Non-fatal — fall back to whatever docker-compose injected
@@ -71,6 +115,8 @@ def load_dotenv():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = _strip_inline_comment(value)
                     if key not in os.environ:
                         os.environ[key] = value
 
