@@ -82,7 +82,7 @@ volumes:
   #
   # Windows host accessing SMB share (e.g. borgpad) — Docker handles the SMB mount:
   #   DVR_MEDIA_TYPE=cifs
-  #   DVR_MEDIA_DEVICE=////192.168.3.150/Channels  ← 4 slashes: Docker Desktop strips one
+  #   DVR_MEDIA_DEVICE=///192.168.3.150/Channels   ← 3 slashes: Docker Desktop strips one → //server/share
   #   DVR_MEDIA_OPTS=addr=192.168.3.150,username=,password=,uid=0,gid=0,vers=3.0
   #   DVR_MEDIA_MOUNT=/mnt/channels
   #   LOCAL_PATH_PREFIX=/mnt/channels

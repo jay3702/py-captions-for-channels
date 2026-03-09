@@ -166,12 +166,14 @@ Use the server address and share name you verified in Step 2a:
 
 ```dotenv
 DVR_MEDIA_TYPE=cifs
-DVR_MEDIA_DEVICE=////YOUR_DVR_SERVER/YOUR_SHARE_NAME
+DVR_MEDIA_DEVICE=///YOUR_DVR_SERVER/YOUR_SHARE_NAME
 DVR_MEDIA_OPTS=addr=YOUR_DVR_SERVER,username=,password=,uid=0,gid=0,vers=3.0
 DVR_MEDIA_MOUNT=/mnt/channels
 LOCAL_PATH_PREFIX=/mnt/channels
 DVR_PATH_PREFIX=   # path the DVR server reports in its API (from Settings → General)
 ```
+
+> **Windows note:** Use 3 leading slashes (`///server/share`). Docker Desktop strips one slash from CIFS device paths, so `///` becomes the required `//` at mount time. Using `//` results in `/server/share` (broken); using `////` passes four slashes literally (also broken).
 
 If credentials are required for the share, fill in `username=` and `password=` in `DVR_MEDIA_OPTS`.
 
@@ -300,7 +302,7 @@ New recordings that match your whitelist will now be processed automatically.
 
 | Context | Correct | Wrong |
 |---------|---------|-------|
-| `.env` values | `DVR_MEDIA_DEVICE=////192.168.1.100/share` | `\\192.168.1.100\share` |
+| `.env` values | `DVR_MEDIA_DEVICE=///192.168.1.100/share` | `\\192.168.1.100\share` |
 | `.env` values | `DVR_MEDIA_MOUNT=/mnt/channels` | `C:\mnt\channels` |
 | `.env` comment describing a Windows DVR path | `D:/DVR` | `D:\DVR` |
 
@@ -362,7 +364,9 @@ DVR_MEDIA_OPTS=addr=192.168.1.100,username=myuser,password=mypassword,uid=0,gid=
 
 Note the single leading slash — Docker Desktop on Windows strips one slash from `//server/share` paths in volume `device` values, leaving `/server/share` which is invalid.
 
-**Fix:** use four slashes in your `.env` so after the strip you get the correct two:
+**Fix:** use three slashes in your `.env` — Docker Desktop strips one, leaving the correct `//`:
 ```dotenv
-DVR_MEDIA_DEVICE=////YOUR_DVR_SERVER/YOUR_SHARE_NAME
+DVR_MEDIA_DEVICE=///YOUR_DVR_SERVER/YOUR_SHARE_NAME
 ```
+
+Using `////` (four slashes) is also wrong — they are passed through literally and the CIFS driver rejects them.
