@@ -162,20 +162,26 @@ LOCAL_PATH_PREFIX=/mnt/media
 
 **DVR on a different machine (NAS, Linux server, another Windows PC):**
 
-Use the server address and share name you verified in Step 2a:
+Docker Desktop on Windows handles SMB shares best as a standard bind mount — map the share as a Windows drive first, then point Docker at the drive letter. This avoids all CIFS driver path-escaping issues:
+
+**Step 1** — Map the share as a persistent Windows drive (run once in PowerShell):
+
+```powershell
+net use Z: \\YOUR_DVR_SERVER\YOUR_SHARE_NAME /user:USERNAME PASSWORD /persistent:yes
+```
+
+Replace `Z:` with any free drive letter. Verify access: `Get-ChildItem Z:\`
+
+**Step 2** — Set these in `.env` (comment out the "same machine" block above):
 
 ```dotenv
-DVR_MEDIA_TYPE=cifs
-DVR_MEDIA_DEVICE=///YOUR_DVR_SERVER/YOUR_SHARE_NAME
-DVR_MEDIA_OPTS=addr=YOUR_DVR_SERVER,username=,password=,uid=0,gid=0,vers=3.0
+DVR_MEDIA_HOST_PATH=Z:/
 DVR_MEDIA_MOUNT=/mnt/channels
 LOCAL_PATH_PREFIX=/mnt/channels
 DVR_PATH_PREFIX=   # path the DVR server reports in its API (from Settings → General)
 ```
 
-> **Windows note:** Use 3 leading slashes (`///server/share`). Docker Desktop strips one slash from CIFS device paths, so `///` becomes the required `//` at mount time. Using `//` results in `/server/share` (broken); using `////` passes four slashes literally (also broken).
-
-If credentials are required for the share, fill in `username=` and `password=` in `DVR_MEDIA_OPTS`.
+> `DVR_MEDIA_HOST_PATH` tells Docker Compose to use a plain bind mount instead of the CIFS named volume driver. Docker Desktop translates the Windows path natively — no `DVR_MEDIA_TYPE`, `DVR_MEDIA_DEVICE`, or `DVR_MEDIA_OPTS` needed.
 
 ---
 
@@ -302,7 +308,8 @@ New recordings that match your whitelist will now be processed automatically.
 
 | Context | Correct | Wrong |
 |---------|---------|-------|
-| `.env` values | `DVR_MEDIA_DEVICE=///192.168.1.100/share` | `\\192.168.1.100\share` |
+| `.env` values | `DVR_MEDIA_HOST_PATH=Z:/` | `Z:\` |
+| `.env` values | `DVR_MEDIA_DEVICE=//192.168.1.100/share` | `\\192.168.1.100\share` |
 | `.env` values | `DVR_MEDIA_MOUNT=/mnt/channels` | `C:\mnt\channels` |
 | `.env` comment describing a Windows DVR path | `D:/DVR` | `D:\DVR` |
 
@@ -353,20 +360,6 @@ If it shows "Exited", check the logs above. If running, confirm Windows Firewall
 - Make sure all `.env` paths use forward slashes
 - Check the container can reach the share: `docker exec -it py-captions-for-channels ls /mnt/channels`
 
-### SMB share needs credentials
+### SMB share: CIFS mount errors (`invalid argument`, `no such file or directory`)
 
-Add your username and password to `DVR_MEDIA_OPTS`:
-```dotenv
-DVR_MEDIA_OPTS=addr=192.168.1.100,username=myuser,password=mypassword,uid=0,gid=0,vers=3.0
-```
-
-### CIFS mount fails: `mount /192.168.x.x/share ... no such file or directory`
-
-Note the single leading slash — Docker Desktop on Windows strips one slash from `//server/share` paths in volume `device` values, leaving `/server/share` which is invalid.
-
-**Fix:** use three slashes in your `.env` — Docker Desktop strips one, leaving the correct `//`:
-```dotenv
-DVR_MEDIA_DEVICE=///YOUR_DVR_SERVER/YOUR_SHARE_NAME
-```
-
-Using `////` (four slashes) is also wrong — they are passed through literally and the CIFS driver rejects them.
+The Docker Desktop CIFS named volume driver on Windows has unpredictable path-normalization behaviour and is not reliable. Use the `DVR_MEDIA_HOST_PATH` approach instead — see **Step 3** ("DVR on a different machine").
