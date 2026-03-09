@@ -23,6 +23,9 @@ services:
       # Path prefix mapping (distributed deployments only)
       - DVR_PATH_PREFIX=${DVR_PATH_PREFIX:-}
       - LOCAL_PATH_PREFIX=${LOCAL_PATH_PREFIX:-}
+      # Windows drive-letter mount path (used for actionable startup log messages)
+      - DVR_MEDIA_HOST_PATH=${DVR_MEDIA_HOST_PATH:-}
+      - DVR_MEDIA_MOUNT=${DVR_MEDIA_MOUNT:-/mnt/media}
       
       # Caption processing options
       - TRANSCODE_FOR_FIRETV=${TRANSCODE_FOR_FIRETV:-false}

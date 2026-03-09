@@ -101,6 +101,89 @@ def check_gpu_compatibility() -> None:
         logger.debug("PyTorch not available — skipping GPU check")
 
 
+def check_media_mount() -> None:
+    """Check that the recordings mount is accessible at startup.
+
+    Probes LOCAL_PATH_PREFIX with a timeout so stale/hung mounts are caught
+    (os.path.exists on a dead SMB mount can block indefinitely).
+    Logs clear, actionable guidance referencing the specific host path when
+    DVR_MEDIA_HOST_PATH is available.
+    """
+    from .config import LOCAL_PATH_PREFIX
+
+    mount_path = LOCAL_PATH_PREFIX
+    if not mount_path:
+        return  # No prefix mapping — same-machine deployment, nothing to check
+
+    result: dict = {"ok": False, "entries": 0, "error": None}
+
+    def _probe():
+        try:
+            result["entries"] = len(os.listdir(mount_path))
+            result["ok"] = True
+        except Exception as exc:
+            result["error"] = str(exc)
+
+    t = threading.Thread(target=_probe, daemon=True, name="MountCheck")
+    t.start()
+    t.join(timeout=5)
+
+    if t.is_alive():
+        # Mount exists but is hung — classic stale SMB/NFS symptom
+        logger.error(
+            "Recordings mount is not responding (hung after 5 s): %s\n"
+            "  The path exists but cannot be read — this usually means the\n"
+            "  underlying network share has disconnected.\n"
+            "  %s\n"
+            "  After remapping, restart: docker compose restart",
+            mount_path,
+            _remap_hint(),
+        )
+        return
+
+    if result["ok"]:
+        logger.info(
+            "Recordings mount OK: %s (%d entries visible)",
+            mount_path,
+            result["entries"],
+        )
+        return
+
+    # Path missing or permission denied
+    logger.error(
+        "Recordings mount is not accessible: %s\n"
+        "  Error: %s\n"
+        "  %s\n"
+        "  Recordings will not be found until this is resolved.\n"
+        "  After remapping, restart: docker compose down -v && docker compose up -d",
+        mount_path,
+        result["error"],
+        _remap_hint(),
+    )
+
+
+def _remap_hint() -> str:
+    """Return an actionable remap hint using the configured host path if available."""
+    host_path = os.getenv("DVR_MEDIA_HOST_PATH", "").strip().rstrip("/")
+    if not host_path:
+        # Generic hint for Linux / non-Windows deployments
+        return (
+            "Check that the network share is mounted and accessible on the host,\n"
+            "  then restart the container."
+        )
+    # Derive drive letter if the host path looks like a drive (e.g. Z:/ or Z:)
+    drive = host_path.split(":")[0].upper() + ":" if ":" in host_path else host_path
+    return (
+        f"The Windows drive mapping for '{host_path}' appears to be missing.\n"
+        f"  To check current mappings, run in PowerShell on the host:\n"
+        f"    net use\n"
+        f"  To remap (replace Z: with the correct drive letter):\n"
+        f"    net use {drive}\\ \\\\SERVER\\SHARE"
+        f" /user:USERNAME PASSWORD /persistent:yes\n"
+        f"  Then update DVR_MEDIA_HOST_PATH in .env if the drive letter changed."
+    )
+
+
 def run_web_ui():
     """Run the FastAPI web UI using uvicorn."""
     web_port = int(os.getenv("WEB_UI_PORT", "8000"))
@@ -124,6 +207,7 @@ async def main():
     )
 
     check_gpu_compatibility()
+    check_media_mount()
 
     # Start web UI in a separate thread (uvicorn.run is blocking)
     web_thread = threading.Thread(target=run_web_ui, daemon=True, name="WebUI")
