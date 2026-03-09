@@ -1,6 +1,6 @@
 # Advanced Setup
 
-This guide covers topics beyond the [Quick Setup Guide](SETUP.md): Fire TV transcoding, GPU configuration, webhook-based discovery, custom caption commands, and the full capabilities of the whitelist system.
+This guide covers topics beyond the [Quick Setup Guide](SETUP.md): Fire TV transcoding, GPU configuration, webhook-based discovery, and the full capabilities of the whitelist system.
 
 ---
 
@@ -9,7 +9,6 @@ This guide covers topics beyond the [Quick Setup Guide](SETUP.md): Fire TV trans
 - [Fire TV / Android Transcoding](#fire-tv--android-transcoding)
 - [GPU Configuration](#gpu-configuration)
 - [ChannelWatch (Webhook Mode)](#channelwatch-webhook-mode)
-- [Custom Caption Command](#custom-caption-command)
 - [Whitelist — Full Reference](#whitelist--full-reference)
   - [How Matching Works](#how-matching-works)
   - [Regular Expressions](#regular-expressions)
@@ -37,6 +36,22 @@ Transcoding is significantly slower than SRT-only mode:
 
 The time depends on the type of recording (OTA vs TV Everywhere) and available hardware. See [GPU Configuration](#gpu-configuration) below.
 
+### Hardware Acceleration for Transcoding
+
+When `TRANSCODE_FOR_FIRETV=true`, the system uses ffmpeg to re-encode the video. These settings control GPU use during that encoding step:
+
+```bash
+# Hardware-accelerated video decoding
+# auto | cuda | qsv | vaapi | off
+HWACCEL_DECODE=auto
+
+# GPU video encoder
+# auto | nvenc | qsv | vaapi | cpu
+GPU_ENCODER=auto
+```
+
+`auto` is recommended. If you're troubleshooting transcoding issues specifically, you can force a value to bypass auto-detection.
+
 ---
 
 ## GPU Configuration
@@ -55,23 +70,17 @@ This system was developed and tested on an **Intel i7-7700K** with an **NVIDIA R
 
 ```bash
 # GPU device selection for Whisper AI transcription
-# auto | nvidia | none
+# auto | nvidia | amd | intel | none
 WHISPER_DEVICE=auto
-
-# Hardware-accelerated video decoding (for transcoding mode)
-# auto | cuda | off
-HWACCEL_DECODE=auto
-
-# GPU video encoder (for transcoding mode)
-# auto | nvenc | cpu
-GPU_ENCODER=auto
 ```
 
-`auto` is recommended for all three settings. If you're troubleshooting GPU issues, try forcing the specific GPU type (e.g. `nvidia`, `cuda`, `nvenc`) to see if auto-detection is the problem.
+`auto` is recommended. If you're troubleshooting transcription GPU issues, try forcing `nvidia` to see if auto-detection is the problem.
 
-> **Note:** Support for Intel (QSV) and AMD (AMF/VA-API) GPUs is planned but not yet implemented. For now, only NVIDIA and CPU-only modes are available.
+> **Note:** Hardware acceleration for video transcoding (`HWACCEL_DECODE`, `GPU_ENCODER`) is only relevant when `TRANSCODE_FOR_FIRETV=true`. See [Fire TV / Android Transcoding](#fire-tv--android-transcoding) above.
 
 ### NVIDIA Encoding Quality
+
+> Only applies when `TRANSCODE_FOR_FIRETV=true`.
 
 ```bash
 # Constant-quality level for NVENC (0–51, lower = better quality)
@@ -149,27 +158,6 @@ netstat -tuln | grep 9000
 # Test from the DVR machine
 curl http://YOUR_DOCKER_HOST:9000
 ```
-
----
-
-## Custom Caption Command
-
-By default the caption command is auto-detected at startup — you don't need to set it. The system uses Whisper to generate `.srt` caption files.
-
-To override the default, set `CAPTION_COMMAND` in `.env`. The `{path}` placeholder is replaced with the recording's file path at runtime.
-
-```bash
-# Example: use a specific Whisper model
-CAPTION_COMMAND=whisper --model large-v2 --output_format srt --output_dir "$(dirname "{path}")" "{path}"
-
-# Example: use faster-whisper instead
-CAPTION_COMMAND=faster-whisper "{path}" --model medium --output_format srt
-
-# Example: dry-run placeholder (no-op)
-CAPTION_COMMAND=echo "Would process: {path}"
-```
-
-The command should produce an `.srt` file in the same directory as the recording. Any CLI tool that accepts a file path and writes SRT output will work.
 
 ---
 
