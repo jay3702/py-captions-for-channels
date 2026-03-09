@@ -178,7 +178,7 @@ Replace `Z:` with any free drive letter. Verify access: `Get-ChildItem Z:\`
 DVR_MEDIA_HOST_PATH=Z:/
 DVR_MEDIA_MOUNT=/mnt/channels
 LOCAL_PATH_PREFIX=/mnt/channels
-DVR_PATH_PREFIX=   # path the DVR server reports in its API (from Settings → General)
+# DVR_PATH_PREFIX is optional here — leave it unset and configure via the Setup Wizard (Step 7)
 ```
 
 > `DVR_MEDIA_HOST_PATH` tells Docker Compose to use a plain bind mount instead of the CIFS named volume driver. Docker Desktop translates the Windows path natively — no `DVR_MEDIA_TYPE`, `DVR_MEDIA_DEVICE`, or `DVR_MEDIA_OPTS` needed.
