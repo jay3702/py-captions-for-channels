@@ -49,6 +49,28 @@ from pathlib import Path
 
 LOG = get_logger("watcher")
 
+
+def _get_db_dry_run() -> bool:
+    """Return the live dry_run flag from the settings DB.
+
+    Falls back to the frozen ``DRY_RUN`` config constant when the DB is
+    unavailable.  Called immediately before each ``pipeline.run()`` so that a
+    settings change (e.g. unchecking Dry Run in the UI) takes effect on the
+    very next job without requiring a full ``docker compose down && up``.
+    """
+    try:
+        db = next(get_db())
+        try:
+            val = SettingsService(db).get("dry_run")
+            if val is not None:
+                return str(val).lower() in ("true", "1", "yes", "on")
+        finally:
+            db.close()
+    except Exception:
+        pass
+    return DRY_RUN
+
+
 # Whitelist hot-reload: cached whitelist reloaded from DB periodically
 _WHITELIST_RELOAD_INTERVAL = 30  # seconds
 _whitelist_cache: Optional["Whitelist"] = None
@@ -495,6 +517,10 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                 # Update job_id to the actual execution ID
                 # (may have timestamp for reprocessing)
                 set_job_id(exec_id)
+
+                # Refresh dry_run from DB so a settings change takes effect
+                # immediately without requiring a full container restart.
+                pipeline.dry_run = _get_db_dry_run()
 
                 # Run pipeline in executor to not block event loop
                 loop = asyncio.get_event_loop()
@@ -1171,6 +1197,10 @@ async def main():
                         promoted_event = promote_next_discovered_to_pending()
                         if promoted_event:
                             await _polling_queue.put(promoted_event)
+
+                        # Refresh dry_run from DB so a settings change takes
+                        # effect immediately without a full container restart.
+                        pipeline.dry_run = _get_db_dry_run()
 
                         # Run pipeline in executor to not block event loop
                         loop = asyncio.get_event_loop()
