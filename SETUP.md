@@ -103,7 +103,7 @@ When the DVR and captions system run on the same host, skip these — paths pass
 
 > An alternative webhook-based discovery mode using ChannelWatch is also supported. See [SETUP_ADVANCED.md](SETUP_ADVANCED.md#channelwatch-webhook-mode) for details.
 
-The caption command is **auto-detected** — you don't need to set it. See [SETUP_ADVANCED.md](SETUP_ADVANCED.md) for GPU tuning, custom caption commands, and other advanced options.
+The caption command is **auto-detected** — you don't need to set it. See [SETUP_ADVANCED.md](SETUP_ADVANCED.md) for GPU tuning, Fire TV transcoding, webhooks, and other advanced options.
 
 ## 2. Deploy
 
@@ -195,6 +195,6 @@ Make sure `DVR_RECORDINGS_PATH` in `.env` matches the host path where your DVR s
 |------|-------------|
 | **Add shows** | Expand your whitelist from Recordings or Settings |
 | **Turn off dry-run** | Set `DRY_RUN=false` and restart |
-| **Advanced config** | See [SETUP_ADVANCED.md](SETUP_ADVANCED.md) for GPU, webhooks, whitelist regex, caption command customization |
+| **Advanced config** | See [SETUP_ADVANCED.md](SETUP_ADVANCED.md) for GPU, Fire TV transcoding, webhooks, whitelist regex |
 | **Full reference** | See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for complete deployment documentation |
 | **All settings** | See [.env.example](.env.example) for every configuration option |

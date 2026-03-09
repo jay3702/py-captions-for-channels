@@ -105,7 +105,7 @@ For the full list see [.env.example](.env.example).
 Configure ChannelWatch to send webhooks to your container:
 
 1. Open ChannelWatch web interface: `http://YOUR_DVR_IP:8501`
-2. Go to **Settings ? Notification Providers**
+2. Go to **Settings → Notification Providers**
 3. Enable **Custom URL**
 4. Set **Custom Apprise URL** to:
    ```
@@ -197,7 +197,6 @@ docker-compose config
    curl -X POST http://YOUR_HOST:9000 -H "Content-Type: application/json" -d '{"test":"data"}'
    ```
 3. Check firewall rules
-4. Verify `network_mode: host` in docker-compose.yml
 
 ### Cannot Access DVR API
 
@@ -209,27 +208,11 @@ docker-compose config
 
 ### Recording Files Not Found
 
-1. Verify volume mount paths in docker-compose.yml
+1. Verify `.env` settings (`DVR_MEDIA_MOUNT`, `DVR_MEDIA_DEVICE`) or re-run the Setup Wizard
 2. Check file permissions
 3. Ensure container has read access to recordings
 
-## Advanced Configuration
-
-### Custom Whisper Model
-
-```yaml
-environment:
-  - CAPTION_COMMAND=whisper --model large-v2 --language en --output_dir /app/captions {path}
-```
-
-### Multiple Caption Formats
-
-```yaml
-environment:
-  - CAPTION_COMMAND=whisper {path} --output_format srt,vtt --output_dir /recordings/captions
-```
-
-### Production Best Practices
+## Production Best Practices
 
 1. **Disable Dry-Run**: Set `DRY_RUN=false`
 2. **Use Persistent Volumes**: Ensure `./data` is backed up

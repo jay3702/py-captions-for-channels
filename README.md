@@ -103,9 +103,11 @@ For instant detection instead of polling:
 All settings are in `.env` (see [.env.example](.env.example) for the full reference):
 
 ```bash
-# Required
+# Required — DVR server URL
 CHANNELS_DVR_URL=http://your-channels-server:8089
-DVR_RECORDINGS_PATH=/path/to/Channels/recordings
+
+# Recordings path — use the Setup Wizard (web dashboard → ⚙ gear icon)
+# It auto-detects and configures the Docker volume for your setup.
 
 # Recording detection
 DISCOVERY_MODE=polling          # "polling" (default) or "webhook"
@@ -116,10 +118,10 @@ TRANSCODE_FOR_FIRETV=false      # Set true for Fire TV / Android clients
 KEEP_ORIGINAL=true              # Archive original .mpg after transcoding
 
 # Whitelist (only process listed shows)
-# Edit whitelist.txt or toggle shows in the web UI
+# Manage from the web UI: Settings → Whitelist, or Recordings (per-show toggle)
 
 # Safety
-DRY_RUN=false                   # Set true to test without modifying files
+DRY_RUN=true                    # Switch to false once setup is verified
 ```
 
 ### Faster Whisper Model Selection
@@ -139,9 +141,8 @@ DRY_RUN=false                   # Set true to test without modifying files
 | Document | Description |
 |----------|-------------|
 | [SETUP.md](SETUP.md) | Quick setup walkthrough |
-| [SETUP_ADVANCED.md](SETUP_ADVANCED.md) | GPU, custom caption commands, whitelist regex |
+| [SETUP_ADVANCED.md](SETUP_ADVANCED.md) | GPU, Fire TV transcoding, webhooks, whitelist regex |
 | [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) | Full Docker deployment guide |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Prerequisites and requirements |
 | [.env.example](.env.example) | All configuration options with descriptions |
 | [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) | Hardware benchmarks and sizing |
 | [docs/AUTOMATIC_WHISPER_OPTIMIZATION.md](docs/AUTOMATIC_WHISPER_OPTIMIZATION.md) | Smart encoding optimization |
