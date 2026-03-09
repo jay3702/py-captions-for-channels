@@ -26,7 +26,7 @@ def _git_short_sha() -> str:
             .strip()
         )
     except Exception:
-        return os.getenv("GIT_SHA", "unknown")
+        return os.getenv("GIT_SHA", "unknown")[:7]
 
 
 GIT_SHA = _git_short_sha()
@@ -36,8 +36,8 @@ BUILD_NUMBER = GIT_SHA
 
 
 def get_version_string() -> str:
-    """Get full version string, e.g. '1.0.0+abc1234'."""
-    return f"{VERSION}+{GIT_SHA}"
+    """Get full version string, e.g. '1.0.0.abc1234'."""
+    return f"{VERSION}.{GIT_SHA}"
 
 
 def get_version_info() -> dict:
