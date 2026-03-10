@@ -426,6 +426,14 @@ fi
 # STEP 6 — Auto-start (~/.bashrc + sudoers)
 # ════════════════════════════════════════════════════════════════════════════
 CURRENT_STEP="Auto-start setup"
+
+# dbus-launch is required to keep the WSL VM alive after all terminals close.
+# It spawns a dbus-daemon as a background process under WSL's init (PID 2),
+# which prevents WSL from shutting down when the last terminal exits.
+if ! command -v dbus-launch &>/dev/null; then
+    sudo apt-get install -y -qq dbus >> "$LOG" 2>&1
+fi
+
 MARKER="# ── py-captions auto-start"
 if ! grep -q "$MARKER" ~/.bashrc 2>/dev/null; then
     cat >> ~/.bashrc << BASHRC

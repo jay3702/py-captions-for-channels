@@ -158,6 +158,13 @@ if ($pid1 -notmatch "systemd") {
     Start-Sleep -Seconds 3
 }
 
+# Ensure dbus is installed — required for dbus-launch to keep WSL alive.
+$dbusCheck = (wsl -d $Distro -- bash -c "command -v dbus-launch 2>/dev/null" 2>$null) -join ""
+if (-not $dbusCheck.Trim()) {
+    Write-Step "Installing dbus inside $Distro (required to keep WSL alive)..."
+    wsl -d $Distro -- bash -c "sudo apt-get install -y -qq dbus >> /tmp/py_captions_install.log 2>&1"
+}
+
 # Start WSL in the user session (non-elevated = correct session, won't die on window close).
 Write-Step "Starting WSL in background (user session)..."
 Start-Process "wsl.exe" -ArgumentList "--distribution $Distro --exec dbus-launch true" -WindowStyle Hidden
