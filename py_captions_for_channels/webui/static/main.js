@@ -2232,15 +2232,19 @@ async function loadHistoricalData() {
       1
     ) * 1.1;
     
-    // Create and populate GPU chart if historical data exists
-    if (hasGpuData && gpuData && gpuProvider.available) {
+    // Create and populate GPU chart if provider is available
+    // (even if all historical metrics are null — chart will fill in live)
+    if (gpuProvider.available) {
       const gpuContainer = document.getElementById('gpu-chart-container');
       const gpuEl = document.getElementById('chart-gpu');
       const gpuUnavailable = document.getElementById('gpu-unavailable');
-      
+
       if (gpuContainer) gpuContainer.style.display = 'block';
       if (gpuUnavailable) gpuUnavailable.style.display = 'none';
-      
+
+      // Use empty arrays if no historical GPU data (idle GPU / NVML recovering)
+      const chartGpuData = (hasGpuData && gpuData) ? gpuData : [[], [], [], [], []];
+
       if (gpuEl && !monitorCharts.gpu) {
         // Wait for layout to complete before creating chart
         requestAnimationFrame(() => {
@@ -2297,16 +2301,18 @@ async function loadHistoricalData() {
               { label: 'Encode %', stroke: '#77dd77', width: 2, points: {show: false} },
               { label: 'Decode %', stroke: '#ff6961', width: 2, points: {show: false} }
             ]
-          }, gpuData, gpuEl);
+          }, chartGpuData, gpuEl);
           
           // Calculate max from GPU data
-          chartMaxValues.gpu = Math.max(
-            ...gpuData[1],
-            ...gpuData[2],
-            ...gpuData[3],
-            ...gpuData[4],
-            10
-          ) * 1.1;
+          if (hasGpuData && gpuData) {
+            chartMaxValues.gpu = Math.max(
+              ...gpuData[1],
+              ...gpuData[2],
+              ...gpuData[3],
+              ...gpuData[4],
+              10
+            ) * 1.1;
+          }
           
           console.log('GPU chart created from historical data. Width:', monitorCharts.gpu.width);
           
