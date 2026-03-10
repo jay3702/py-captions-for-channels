@@ -29,7 +29,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 if ($isAdmin) {
     Write-Step "Registering startup task '$TaskName' for distro '$Distro'..."
 
-    $action   = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d $Distro -- true"
+    $action   = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "--distribution $Distro --exec dbus-launch true"
     $trigger  = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet `
         -StartWhenAvailable `
@@ -69,7 +69,7 @@ if (-not $systemdActive) {
 # Start WSL in the user session. We are already in the non-elevated branch so
 # Start-Process here correctly targets the user's session (not admin-isolated).
 Write-Step "Starting WSL in background (user session)..."
-Start-Process "wsl.exe" -ArgumentList "-d $Distro -- true" -WindowStyle Hidden
+Start-Process "wsl.exe" -ArgumentList "--distribution $Distro --exec dbus-launch true" -WindowStyle Hidden
 Start-Sleep -Seconds 5
 
 # Wait for systemd, then enable+start Docker and bring the stack up.
