@@ -87,7 +87,6 @@ if [[ "$LOCAL_DVR" == false ]]; then
 fi
 
 NAS_SERVER="" NAS_SHARE="" NAS_USER="" NAS_PASS="" MOUNT_POINT="/mnt/channels"
-DVR_PATH_PREFIX=""
 
 if [[ "$LOCAL_DVR" == false ]]; then
     echo ""
@@ -99,16 +98,6 @@ if [[ "$LOCAL_DVR" == false ]]; then
     ask "Mount point inside WSL2 [${MOUNT_POINT}]:"
     read -r MOUNT_INPUT
     MOUNT_POINT="${MOUNT_INPUT:-$MOUNT_POINT}"
-    ask "NAS username (leave blank for guest/no auth):"
-    read -r NAS_USER
-    if [[ -n "$NAS_USER" ]]; then
-        ask "NAS password:"
-        read -rs NAS_PASS; echo ""
-    fi
-    echo ""
-    ask "DVR path prefix (what the DVR API reports before the share root, e.g. /tank/AllMedia/Channels)."
-    ask "Leave blank if DVR paths already start from the share root (most common):"
-    read -r DVR_PATH_PREFIX
 else
     MOUNT_POINT=""
     info "Skipping NAS setup (--local-dvr). Configure DVR_MEDIA_HOST_PATH manually in .env after deploy."
@@ -221,31 +210,57 @@ info "Step 3/6 — NAS mount"
 if [[ "$LOCAL_DVR" == false ]]; then
     sudo apt-get install -y -qq cifs-utils
 
-    # Credentials file
     CRED_FILE="/etc/cifs-credentials-py-captions"
-    if [[ -f "$CRED_FILE" ]]; then
-        warn "Credentials file ${CRED_FILE} already exists — overwriting"
-    fi
-    if [[ -n "$NAS_USER" ]]; then
-        printf "username=%s\npassword=%s\n" "$NAS_USER" "$NAS_PASS" \
-            | sudo tee "$CRED_FILE" > /dev/null
-        sudo chmod 600 "$CRED_FILE"
-        MOUNT_OPTS="credentials=${CRED_FILE},uid=$(id -u),gid=$(id -g),iocharset=utf8"
-    else
-        # Guest / anonymous
-        printf "username=guest\npassword=\n" | sudo tee "$CRED_FILE" > /dev/null
-        sudo chmod 600 "$CRED_FILE"
-        MOUNT_OPTS="guest,uid=$(id -u),gid=$(id -g),iocharset=utf8"
-    fi
 
     sudo mkdir -p "$MOUNT_POINT"
 
-    # Mount if not already mounted
+    # Mount with credential retry loop
     if mountpoint -q "$MOUNT_POINT"; then
         success "${MOUNT_POINT} already mounted"
     else
-        sudo mount -t cifs "//${NAS_SERVER}/${NAS_SHARE}" "$MOUNT_POINT" -o "$MOUNT_OPTS"
-        success "Mounted //${NAS_SERVER}/${NAS_SHARE} at ${MOUNT_POINT}"
+        while true; do
+            ask "NAS username (leave blank for guest/no auth):"
+            read -r NAS_USER
+            if [[ -n "$NAS_USER" ]]; then
+                ask "NAS password:"
+                read -rs NAS_PASS; echo ""
+                printf "username=%s\npassword=%s\n" "$NAS_USER" "$NAS_PASS" \
+                    | sudo tee "$CRED_FILE" > /dev/null
+                sudo chmod 600 "$CRED_FILE"
+                MOUNT_OPTS="credentials=${CRED_FILE},uid=$(id -u),gid=$(id -g),iocharset=utf8"
+            else
+                NAS_PASS=""
+                printf "username=guest\npassword=\n" | sudo tee "$CRED_FILE" > /dev/null
+                sudo chmod 600 "$CRED_FILE"
+                MOUNT_OPTS="guest,uid=$(id -u),gid=$(id -g),iocharset=utf8"
+            fi
+
+            if sudo mount -t cifs "//${NAS_SERVER}/${NAS_SHARE}" "$MOUNT_POINT" \
+                    -o "$MOUNT_OPTS" 2>/tmp/py_captions_mount_err; then
+                success "Mounted //${NAS_SERVER}/${NAS_SHARE} at ${MOUNT_POINT}"
+                break
+            else
+                MOUNT_ERR=$(cat /tmp/py_captions_mount_err 2>/dev/null)
+                error "Mount failed: $MOUNT_ERR"
+                if echo "$MOUNT_ERR" | grep -qiE "permission denied|NT_STATUS_LOGON_FAILURE|error.13.|invalid credentials"; then
+                    warn "Authentication failed — wrong username or password."
+                    ask "Retry with different credentials? [Y/n]"
+                    read -r RETRY_AUTH
+                    [[ "${RETRY_AUTH,,}" == "n" ]] && error "Cannot continue without NAS mount." && exit 1
+                elif echo "$MOUNT_ERR" | grep -qiE "no such host|connection refused|error.113.|error.111."; then
+                    warn "Cannot reach //${NAS_SERVER}/${NAS_SHARE} — check server address and share name."
+                    ask "NAS server address [${NAS_SERVER}]:"
+                    read -r _NEW; NAS_SERVER="${_NEW:-$NAS_SERVER}"
+                    ask "Share name [${NAS_SHARE}]:"
+                    read -r _NEW; NAS_SHARE="${_NEW:-$NAS_SHARE}"
+                else
+                    warn "Unexpected mount error. Check server, share name, and network."
+                    ask "Retry? [Y/n]"
+                    read -r RETRY_AUTH
+                    [[ "${RETRY_AUTH,,}" == "n" ]] && exit 1
+                fi
+            fi
+        done
     fi
 
     # Shared propagation for Docker bind mount
@@ -306,9 +321,6 @@ if [[ "$LOCAL_DVR" == false ]]; then
     set_env "DVR_MEDIA_HOST_PATH" "$MOUNT_POINT"
     set_env "DVR_MEDIA_MOUNT"     "$MOUNT_POINT"
     set_env "LOCAL_PATH_PREFIX"   "$MOUNT_POINT"
-    if [[ -n "$DVR_PATH_PREFIX" ]]; then
-        set_env "DVR_PATH_PREFIX" "$DVR_PATH_PREFIX"
-    fi
 fi
 
 success ".env configured"
