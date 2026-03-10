@@ -255,17 +255,22 @@ def _detect_nvidia_backend() -> GPUBackend:
     has_encoder = "h264_nvenc" in caps.get("encoders", "")
     has_deint = "yadif_cuda" in caps.get("filters", "")
 
+    # NVENC (encode) and CUVID (decode) are separate driver libraries.
+    # On Docker Desktop / WSL2, libnvcuvid.so is often not exposed so
+    # CUVID decoders won't appear even though NVENC works fine.
+    # Only require the encoder for the backend to be marked available;
+    # hardware decode is a bonus if present.
     return GPUBackend(
         name="nvidia",
-        hwaccel_type="cuda",
+        hwaccel_type="cuda" if decoders else "",
         encoder="h264_nvenc",
         decoders=decoders,
         deinterlace_filter=(
             "yadif_cuda=mode=send_frame:parity=auto:deint=all" if has_deint else ""
         ),
-        hwaccel_output_format="cuda",
+        hwaccel_output_format="cuda" if decoders else "",
         extra_input_flags=[],
-        available=has_encoder and len(decoders) > 0,
+        available=has_encoder,
     )
 
 
