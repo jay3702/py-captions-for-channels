@@ -47,8 +47,19 @@ services:
       
       # Experimental features
       - CHANNELS_FILES_ENABLED=${CHANNELS_FILES_ENABLED:-false}
-    
+
+      # WSL2 / Docker Desktop: expose NVIDIA video encode/decode libs so ffmpeg
+      # NVENC (h264_nvenc) and CUVID (h264_cuvid) work inside the container.
+      # These libs live on the WSL2 host but are not automatically passed through
+      # by Docker Desktop — this LD_LIBRARY_PATH addition makes them findable.
+      # No effect on Linux bare-metal (path simply won't exist, ignored).
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH:-}
+
     volumes:
+      # WSL2 / Docker Desktop: mount NVIDIA userspace libs (libnvidia-encode,
+      # libnvcuvid, etc.) so ffmpeg can load them at runtime.
+      # Safe to leave in on Linux — the path just won't exist and is skipped.
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
       # Host data directory → container /app/data
       # Change the left side to point to a volume with ample disk space.
       # Example: /mnt/data/py-captions:/app/data
