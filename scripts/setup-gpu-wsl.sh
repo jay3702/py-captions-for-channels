@@ -15,6 +15,8 @@ DEFAULT_DEPLOY_DIR="$HOME/py-captions-for-channels"
 LOG=/tmp/py_captions_install.log
 BT="py-captions-for-channels — GPU installer"
 W=72
+ISSUES_URL="https://github.com/jay3702/py-captions-for-channels/issues/new"
+CURRENT_STEP="Initializing"
 
 # ── sanity checks ────────────────────────────────────────────────────────────
 if [[ $EUID -eq 0 ]]; then
@@ -76,6 +78,38 @@ cancelled() {
     exit 0
 }
 
+# ── error reporting ───────────────────────────────────────────────────────────
+_ERROR_SHOWN=false
+_show_error() {
+    local step="$1" rc="$2"
+    _ERROR_SHOWN=true
+    local log_tail=""
+    [[ -f "$LOG" ]] && log_tail=$(tail -8 "$LOG" 2>/dev/null | sed 's/[\x00-\x08\x0b-\x1f\x7f]//g')
+    local ai_prompt="I ran the py-captions-for-channels GPU installer on WSL2 Ubuntu and it failed. Step: '${step}'. Exit code: ${rc}. Last log: $(tail -3 \"$LOG\" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
+    wt_msg "Setup Failed — ${step}" \
+"Step '${step}' failed (exit code: ${rc}).
+
+Last log output:
+${log_tail}
+
+For self-help, paste this into ChatGPT or Claude:
+-----------------------------------------------
+${ai_prompt:0:260}
+-----------------------------------------------
+Or open a GitHub issue:
+  ${ISSUES_URL}
+
+Full log: ${LOG}" 30 || true
+}
+
+_die() {
+    local rc=$? ln=$1
+    [[ "$_ERROR_SHOWN" == true ]] && exit "$rc"
+    _show_error "${CURRENT_STEP} (line ${ln})" "$rc"
+    exit "$rc"
+}
+trap '_die $LINENO' ERR
+
 # Run a block of commands under a whiptail gauge.
 # The caller provides a function name; that function:
 #   - emits plain N (0-100) lines on stdout for progress
@@ -84,6 +118,7 @@ cancelled() {
 _STATUS=$(mktemp)
 gauge() {    # gauge "Title" "Message" function_name
     local title="$1" msg="$2" fn="$3"
+    CURRENT_STEP="$title"
     echo 1 > "$_STATUS"
     {
         set +e
@@ -93,7 +128,7 @@ gauge() {    # gauge "Title" "Message" function_name
     } | whiptail --backtitle "$BT" --title "$title" --gauge "$msg" 8 "$W" 0
     local rc; rc=$(cat "$_STATUS")
     if [[ "$rc" -ne 0 ]]; then
-        wt_msg "Error" "Step failed (exit $rc).\n\nSee log for details:\n  $LOG" 11
+        _show_error "$title" "$rc"
         exit 1
     fi
 }
@@ -183,6 +218,7 @@ Proceed?" 16 || cancelled
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 1 — Docker Engine
 # ════════════════════════════════════════════════════════════════════════════
+CURRENT_STEP="Docker Engine"
 if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
     wt_info "Docker Engine" "Docker already installed — skipping."
     sleep 1
@@ -236,6 +272,7 @@ fi
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 2 — NVIDIA Container Toolkit
 # ════════════════════════════════════════════════════════════════════════════
+CURRENT_STEP="NVIDIA Container Toolkit"
 if docker info 2>/dev/null | grep -q 'nvidia'; then
     wt_info "NVIDIA Toolkit" "nvidia runtime already registered — skipping."
     sleep 1
@@ -281,6 +318,7 @@ wt_msg "GPU Test" "$GPU_MSG" 12
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 3 — NAS mount
 # ════════════════════════════════════════════════════════════════════════════
+CURRENT_STEP="NAS Mount"
 if [[ "$LOCAL_DVR" == false ]]; then
     sudo apt-get install -y -qq cifs-utils >> "$LOG" 2>&1
     sudo mkdir -p "$MOUNT_POINT"
@@ -343,6 +381,7 @@ fi
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 4 — Clone / update repo
 # ════════════════════════════════════════════════════════════════════════════
+CURRENT_STEP="Repository Clone"
 _repo_step() {
     echo 10
     if [[ -d "$DEPLOY_DIR/.git" ]]; then
@@ -357,6 +396,7 @@ gauge "Repository" "Cloning repository to ${DEPLOY_DIR}..." _repo_step
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 5 — Configure .env
 # ════════════════════════════════════════════════════════════════════════════
+CURRENT_STEP="Configuration (.env)"
 ENV_FILE="$DEPLOY_DIR/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
     cp "$DEPLOY_DIR/.env.example.nvidia" "$ENV_FILE"
@@ -385,6 +425,7 @@ fi
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 6 — Auto-start (~/.bashrc + sudoers)
 # ════════════════════════════════════════════════════════════════════════════
+CURRENT_STEP="Auto-start setup"
 MARKER="# ── py-captions auto-start"
 if ! grep -q "$MARKER" ~/.bashrc 2>/dev/null; then
     cat >> ~/.bashrc << BASHRC
@@ -428,6 +469,7 @@ fi
 # ════════════════════════════════════════════════════════════════════════════
 # LAUNCH
 # ════════════════════════════════════════════════════════════════════════════
+CURRENT_STEP="Docker Launch"
 DOCKER_CMD="docker"
 if ! groups | grep -q docker; then DOCKER_CMD="sg docker -c docker"; fi
 
