@@ -463,20 +463,21 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                 # executions that have timestamped IDs)
                 if not existing or existing.get("status") in ("completed", "failed"):
                     all_execs = tracker.get_executions(limit=1000)
-                    pending_for_path = [
+                    active_for_path = [
                         e
                         for e in all_execs
                         if e.get("path") == path
-                        and e.get("status") == "pending"
+                        and e.get("status")
+                        in ("pending", "running", "canceling", "discovered")
                         and e.get("kind") == "manual_process"
                     ]
-                    if pending_for_path:
-                        # Use the first pending execution found for this path
-                        existing = pending_for_path[0]
+                    if active_for_path:
+                        # Use the first active execution found for this path
+                        existing = active_for_path[0]
                         job_id = existing.get("id")  # Use its ID (may have timestamp)
                         LOG.info(
-                            "Found orphaned pending execution by path: "
-                            "status=%s, id=%s",
+                            "Found orphaned %s execution by path: " "status=%s, id=%s",
+                            existing.get("status"),
                             existing.get("status"),
                             existing.get("id", "")[:80],
                         )
