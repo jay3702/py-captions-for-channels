@@ -246,23 +246,30 @@ docker compose version
 
 ### Container stops when the WSL terminal is closed
 
-The setup script configures everything for background persistence. If you need to re-apply or repair it, run once from the repository folder in PowerShell:
+The setup script configures everything for background persistence. If you need to re-apply or repair it, run once from PowerShell:
 
 ```powershell
 .\scripts\autostart.ps1
 ```
 
-**How it works — boot sequence on every Windows login:**
+It will ask when to fire the startup task:
 
-1. **Task Scheduler** fires `wsl.exe --exec dbus-launch true` at Windows logon (when your user account signs in)
+| Mode | When it fires | Password required? |
+|------|--------------|-------------------|
+| **Boot** (recommended) | At Windows startup, before anyone logs in | Yes — stored encrypted by Windows |
+| **Logon** | When you sign in to Windows | No |
+
+**Why no dedicated service account?** WSL2 distros are registered per-user in the Windows registry. The startup task must run as your own account — it can't use a separate account that doesn't have the distro registered.  In Boot mode, your password is stored by Windows in LSA secrets (same mechanism used by all Windows services) and never transmitted anywhere.
+
+**How it works — boot sequence:**
+
+1. **Task Scheduler** fires `wsl.exe --exec dbus-launch true` (at boot or logon, depending on your choice)
 2. **WSL boots** with systemd as PID 1 (`/etc/wsl.conf` → `[boot] systemd=true`)
 3. **systemd** starts `docker.service` (enabled during setup)
 4. **Docker** restarts the container automatically (`restart: unless-stopped`)
 5. **`dbus-daemon`** (left running by `dbus-launch true`) keeps the WSL VM alive with no terminal open
 
-No terminal is ever needed. The container runs as long as Windows is logged in.
-
-> **Note:** The startup task fires at *user logon*, not at the Windows boot screen. If your PC requires a password at startup, the container won't start until someone signs in. For a true hands-free server, enable Windows auto-login (`netplwiz`) so the logon happens automatically on boot.
+No terminal is ever needed.
 
 **Stopping and restarting manually:**
 
@@ -270,7 +277,7 @@ No terminal is ever needed. The container runs as long as Windows is logged in.
 # Stop everything (shuts down the WSL VM and all containers inside it)
 wsl --shutdown
 
-# Start everything back up (mimics what the logon task does)
+# Start everything back up (mimics what the startup task does)
 wsl --distribution Ubuntu-22.04 --exec dbus-launch true
 ```
 
