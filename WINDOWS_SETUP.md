@@ -244,6 +244,24 @@ docker compose version
 
 ---
 
+### Container stops when the WSL terminal is closed
+
+The setup script enables systemd and registers a Windows startup task automatically. If either didn't take effect, run this once from the repository folder in PowerShell:
+
+```powershell
+.\scripts\autostart.ps1
+```
+
+`autostart.ps1` self-elevates, registers the Task Scheduler entry (so WSL wakes at Windows login), and optionally restarts WSL so systemd becomes active immediately:
+
+```powershell
+.\scripts\autostart.ps1 -Restart    # restart WSL right now + register task
+```
+
+After this, Docker and the container start automatically whenever Windows starts — no terminal needed.
+
+---
+
 ## Manual Setup Reference
 
 If you prefer to run the steps individually — for troubleshooting, partial reinstalls, or understanding what the script does — see [WINDOWS_SETUP_NVIDIA_GPU.md](WINDOWS_SETUP_NVIDIA_GPU.md) for the full manual procedure.

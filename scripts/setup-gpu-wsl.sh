@@ -497,18 +497,12 @@ fi
 #    (safe to run even if systemd isn't PID 1 yet — takes effect after restart)
 sudo systemctl enable docker >> "$LOG" 2>&1 || true
 
-# 3. Windows scheduled task — wake this distro at Windows logon
-#    WSL_DISTRO_NAME is always set by WSL2 (e.g. "Ubuntu-22.04")
-DISTRO="${WSL_DISTRO_NAME:-Ubuntu-22.04}"
-TASK_NAME="py-captions-wsl-autostart"
-if ! schtasks.exe /Query /TN "$TASK_NAME" > /dev/null 2>&1; then
-    # /F = force overwrite if it somehow exists; /DELAY lets Windows settle first
-    schtasks.exe /Create \
-        /TN "$TASK_NAME" \
-        /TR "wsl.exe -d ${DISTRO} -- true" \
-        /SC ONLOGON /DELAY 0001:30 /F >> "$LOG" 2>&1 || \
-    wt_msg "Startup Task" \
-        "Could not create the Windows startup task automatically.\n\nTo add it manually, run this in PowerShell (as Administrator):\n\n  schtasks /Create /TN py-captions-wsl-autostart /TR \"wsl.exe -d ${DISTRO} -- true\" /SC ONLOGON /DELAY 0001:30 /F" 18 || true
+# 3. Leave a flag for the PowerShell launcher to pick up — it will create the
+#    Windows scheduled task (requires admin rights, so done from PS1 side).
+if [[ "$WSL_RESTART_NEEDED" == true ]]; then
+    touch /tmp/py_captions_needs_restart
+else
+    rm -f /tmp/py_captions_needs_restart
 fi
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -564,7 +558,7 @@ fi
 
 WSL_RESTART_NOTE=""
 if [[ "$WSL_RESTART_NEEDED" == true ]]; then
-    WSL_RESTART_NOTE="\n\n*** ACTION REQUIRED ***\nsystemd was just enabled. Run this in PowerShell then\nreopen WSL — Docker and the container will start automatically:\n\n  wsl --shutdown"
+    WSL_RESTART_NOTE="\n\nNOTE: systemd was just enabled — the PowerShell\nscript will restart WSL automatically when this closes."
 fi
 
 wt_msg "Setup Complete" \

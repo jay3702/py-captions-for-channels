@@ -101,5 +101,26 @@ if ($LASTEXITCODE -ne 0) {
     Write-Fail "Installer exited with code $LASTEXITCODE"
 }
 
+# ── STEP 5 — Register Windows startup task (runs natively here, not from WSL) ──
 Write-Host ""
-Write-Ok "Setup complete — open http://localhost:8000 in your browser"
+Write-Step "Registering Windows startup task..."
+$AutostartScript = Join-Path $ScriptDir "autostart.ps1"
+
+# Check whether the bash installer flagged that a WSL restart is needed
+# (it writes this file when it newly enables systemd in /etc/wsl.conf)
+$needsRestart = (wsl -d $Distro -- test -f /tmp/py_captions_needs_restart 2>$null; $LASTEXITCODE -eq 0)
+$restartArg   = if ($needsRestart) { "-Restart" } else { "" }
+
+if (Test-Path $AutostartScript) {
+    if ($restartArg) {
+        & $AutostartScript -Distro $Distro -Restart
+    } else {
+        & $AutostartScript -Distro $Distro
+    }
+} else {
+    Write-Warn "autostart.ps1 not found — run it manually later to enable auto-start:"
+    Write-Warn "  .\scripts\autostart.ps1"
+}
+
+Write-Host ""
+Write-Ok "All done — open http://localhost:8000 in your browser"
