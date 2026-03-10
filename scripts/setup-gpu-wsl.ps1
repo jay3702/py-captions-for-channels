@@ -108,7 +108,8 @@ $AutostartScript = Join-Path $ScriptDir "autostart.ps1"
 
 # Check whether the bash installer flagged that a WSL restart is needed
 # (it writes this file when it newly enables systemd in /etc/wsl.conf)
-$needsRestart = (wsl -d $Distro -- test -f /tmp/py_captions_needs_restart 2>$null; $LASTEXITCODE -eq 0)
+wsl -d $Distro -- test -f /tmp/py_captions_needs_restart 2>$null
+$needsRestart = ($LASTEXITCODE -eq 0)
 $restartArg   = if ($needsRestart) { "-Restart" } else { "" }
 
 if (Test-Path $AutostartScript) {
