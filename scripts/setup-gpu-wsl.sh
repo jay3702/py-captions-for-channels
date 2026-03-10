@@ -460,10 +460,55 @@ if [[ ! -f "$SUDOERS_FILE" ]]; then
     cat << SUDOERS | sudo tee "$SUDOERS_FILE" > /dev/null
 # py-captions auto-start — passwordless commands
 %docker ALL=(ALL) NOPASSWD: /usr/sbin/service docker start
+%docker ALL=(ALL) NOPASSWD: /bin/systemctl start docker
 %docker ALL=(ALL) NOPASSWD: /bin/mount -t cifs *
 %docker ALL=(ALL) NOPASSWD: /bin/mount --make-shared *
 SUDOERS
     sudo chmod 440 "$SUDOERS_FILE"
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
+# STEP 7 — Persistent service (systemd + Windows startup task)
+# ════════════════════════════════════════════════════════════════════════════
+# Goal: keep py-captions running 24/7 without a WSL terminal open.
+#
+# How:
+#   1. Enable systemd in /etc/wsl.conf  → Docker runs as a proper service;
+#      systemd as PID 1 keeps the WSL VM alive even with no terminal open.
+#   2. Enable docker.service in systemd → Docker starts on WSL boot.
+#   3. Register a Windows Task Scheduler task → starts this WSL distro at
+#      Windows login so it comes up automatically after a reboot.
+# ════════════════════════════════════════════════════════════════════════════
+CURRENT_STEP="Persistent Service"
+WSL_CONF=/etc/wsl.conf
+WSL_RESTART_NEEDED=false
+
+# 1. Enable systemd
+if ! grep -q 'systemd=true' "$WSL_CONF" 2>/dev/null; then
+    WSL_RESTART_NEEDED=true
+    if grep -q '^\[boot\]' "$WSL_CONF" 2>/dev/null; then
+        sudo sed -i '/^\[boot\]/a systemd=true' "$WSL_CONF"
+    else
+        printf '\n[boot]\nsystemd=true\n' | sudo tee -a "$WSL_CONF" > /dev/null
+    fi
+fi
+
+# 2. Enable Docker as a systemd service
+#    (safe to run even if systemd isn't PID 1 yet — takes effect after restart)
+sudo systemctl enable docker >> "$LOG" 2>&1 || true
+
+# 3. Windows scheduled task — wake this distro at Windows logon
+#    WSL_DISTRO_NAME is always set by WSL2 (e.g. "Ubuntu-22.04")
+DISTRO="${WSL_DISTRO_NAME:-Ubuntu-22.04}"
+TASK_NAME="py-captions-wsl-autostart"
+if ! schtasks.exe /Query /TN "$TASK_NAME" > /dev/null 2>&1; then
+    # /F = force overwrite if it somehow exists; /DELAY lets Windows settle first
+    schtasks.exe /Create \
+        /TN "$TASK_NAME" \
+        /TR "wsl.exe -d ${DISTRO} -- true" \
+        /SC ONLOGON /DELAY 0001:30 /F >> "$LOG" 2>&1 || \
+    wt_msg "Startup Task" \
+        "Could not create the Windows startup task automatically.\n\nTo add it manually, run this in PowerShell (as Administrator):\n\n  schtasks /Create /TN py-captions-wsl-autostart /TR \"wsl.exe -d ${DISTRO} -- true\" /SC ONLOGON /DELAY 0001:30 /F" 18 || true
 fi
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -517,6 +562,11 @@ if ! groups | grep -q docker; then
     NEWGRP_NOTE="\n\nLog out and back in (or run 'newgrp docker')\n   to use Docker without sudo."
 fi
 
+WSL_RESTART_NOTE=""
+if [[ "$WSL_RESTART_NEEDED" == true ]]; then
+    WSL_RESTART_NOTE="\n\n*** ACTION REQUIRED ***\nsystemd was just enabled. Run this in PowerShell then\nreopen WSL — Docker and the container will start automatically:\n\n  wsl --shutdown"
+fi
+
 wt_msg "Setup Complete" \
 "py-captions-for-channels is running!${STARTUP_STATUS}
 
@@ -528,6 +578,6 @@ Next steps:
   1. Open ${WEB_UI_URL}
   2. Run the Setup Wizard to verify recordings mount
   3. Go to Recordings and whitelist shows to caption
-  4. Set DRY_RUN=false in .env when ready${NEWGRP_NOTE}" 22
+  4. Set DRY_RUN=false in .env when ready${NEWGRP_NOTE}${WSL_RESTART_NOTE}" 26
 
 rm -f "$_STATUS"
