@@ -66,9 +66,10 @@ if (-not $systemdActive) {
     Start-Sleep -Seconds 3
 }
 
-# Fire the startup task via Task Scheduler — runs wsl.exe in the user session.
-Write-Step "Starting WSL via scheduled task (user session)..."
-Start-ScheduledTask -TaskName $TaskName
+# Start WSL in the user session. We are already in the non-elevated branch so
+# Start-Process here correctly targets the user's session (not admin-isolated).
+Write-Step "Starting WSL in background (user session)..."
+Start-Process "wsl.exe" -ArgumentList "-d $Distro -- true" -WindowStyle Hidden
 Start-Sleep -Seconds 5
 
 # Wait for systemd, then enable+start Docker and bring the stack up.
@@ -81,6 +82,15 @@ for ($i = 0; $i -lt 20; $i++) {
 }
 
 if ($ready) {
+    # Confirm systemd is actually PID 1 (not just sysvinit reporting "running")
+    $finalPid1 = (wsl -d $Distro -- bash -c "ps -p 1 -o comm= 2>/dev/null" 2>$null) -join ""
+    $finalPid1 = $finalPid1.Trim()
+    if ($finalPid1 -notmatch "systemd") {
+        Write-Warn "systemd still not PID 1 — check that /etc/wsl.conf contains [boot] / systemd=true"
+        Write-Warn "Run: wsl -d $Distro -- cat /etc/wsl.conf"
+    } else {
+        Write-Ok "systemd is PID 1."
+    }
     Write-Step "Enabling and starting Docker service..."
     wsl -d $Distro -- bash -c "sudo systemctl enable --now docker >> /tmp/py_captions_install.log 2>&1"
     Start-Sleep -Seconds 5
@@ -92,5 +102,7 @@ if ($ready) {
 }
 
 Write-Host ""
-Write-Host "  Web dashboard: http://localhost:8000" -ForegroundColor White
-Write-Host "  WSL will start automatically at every Windows login." -ForegroundColor DarkGray
+Write-Host "  Web dashboard:         http://localhost:8000" -ForegroundColor White
+Write-Host "  Startup task:          registered (runs at every Windows login)" -ForegroundColor DarkGray
+Write-Host ""
+Write-Ok "All done — open http://localhost:8000 in your browser"
