@@ -80,11 +80,13 @@ class NvidiaNvmlProvider(GPUProvider):
 
     _MAX_CONSECUTIVE_FAILURES = 3
     _RETRY_INTERVAL = 60  # seconds before retrying after repeated failures
+    _MAX_RETRY_CYCLES = 2  # after this many backoff+retry cycles all fail, give up
 
     def __init__(self):
         self.available = False
         self._consecutive_failures = 0
         self._retry_after: Optional[float] = None
+        self._retry_cycles = 0  # counts how many backoff windows have been entered
         try:
             import warnings
 
@@ -102,13 +104,10 @@ class NvidiaNvmlProvider(GPUProvider):
             logger.warning(f"NVIDIA NVML not available: {type(e).__name__}: {e}")
 
     def is_available(self) -> bool:
-        if not self.available:
-            return False
-        # During backoff window report unavailable; after expiry retry will happen
-        # inside get_metrics() which clears _retry_after on success
-        if self._retry_after is not None and time.time() < self._retry_after:
-            return False
-        return True
+        # Reflect whether NVML successfully initialized — not whether the last
+        # poll succeeded. Polling failures use a backoff window but the chart
+        # stays visible; it just shows null metrics until polling recovers.
+        return self.available
 
     def get_name(self) -> str:
         return "NVIDIA NVML"
@@ -121,6 +120,16 @@ class NvidiaNvmlProvider(GPUProvider):
             # Backoff window expired — try again
             self._retry_after = None
             self._consecutive_failures = 0
+            if self._retry_cycles >= self._MAX_RETRY_CYCLES:
+                # Exhausted all retry cycles; permanently give up so the
+                # monitor can fall through to the next provider (nvidia-smi).
+                logger.warning(
+                    "NVIDIA NVML polling failed after "
+                    f"{self._MAX_RETRY_CYCLES} retry cycles; "
+                    "falling back to next GPU provider."
+                )
+                self.available = False
+                return super().get_metrics()
 
         if not self.available:
             return super().get_metrics()
@@ -163,11 +172,12 @@ class NvidiaNvmlProvider(GPUProvider):
             if self._consecutive_failures <= self._MAX_CONSECUTIVE_FAILURES:
                 logger.warning(f"Failed to get NVIDIA NVML metrics: {e}")
             if self._consecutive_failures == self._MAX_CONSECUTIVE_FAILURES:
+                self._retry_cycles += 1
                 logger.warning(
                     "NVIDIA NVML metrics unavailable after repeated failures "
                     "(Docker Desktop/WSL2 \u2014 GPU still used for inference). "
-                    f"Pausing NVML polling for {self._RETRY_INTERVAL}s; "
-                    "will retry automatically."
+                    f"Retry cycle {self._retry_cycles}/{self._MAX_RETRY_CYCLES}; "
+                    f"pausing for {self._RETRY_INTERVAL}s."
                 )
                 self._retry_after = time.time() + self._RETRY_INTERVAL
             return super().get_metrics()
@@ -369,7 +379,17 @@ class SystemMonitor:
             net_recv_mbps = (bytes_recv * 8 / disk_delta_time) / (1024 * 1024)  # Mbps
             net_sent_mbps = (bytes_sent * 8 / disk_delta_time) / (1024 * 1024)
 
-        # GPU
+        # GPU — if the current provider has permanently given up, reinitialize
+        # so we fall through to the next available provider (e.g. nvidia-smi).
+        if not self.gpu_provider.is_available():
+            new_provider = self._init_gpu_provider()
+            if new_provider.get_name() != self.gpu_provider.get_name():
+                logger.info(
+                    f"GPU provider switched: "
+                    f"{self.gpu_provider.get_name()} → {new_provider.get_name()}"
+                )
+            self.gpu_provider = new_provider
+
         gpu_metrics = self.gpu_provider.get_metrics()
 
         # Track GPU utilization history
