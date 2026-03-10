@@ -78,8 +78,12 @@ if ($isAdmin) {
         }
 
         Write-Step "Registering startup task '$TaskName' (at-boot + at-logon fallback)..."
+        $bootTrigger   = New-ScheduledTaskTrigger -AtStartup
+        # Delay the boot trigger 30 s — WSL needs the user session infrastructure
+        # (Lxss service, user profile) to be ready before wsl.exe will work.
+        $bootTrigger.Delay = "PT30S"
         $triggers = @(
-            New-ScheduledTaskTrigger -AtStartup
+            $bootTrigger
             New-ScheduledTaskTrigger -AtLogOn
         )
 
