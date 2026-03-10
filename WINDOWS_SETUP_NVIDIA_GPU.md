@@ -1,70 +1,120 @@
 # Windows NVIDIA GPU Setup — WSL2 Docker Engine
 
-> **This guide is for NVIDIA GPU users who want full GPU acceleration** — Whisper inference AND ffmpeg NVENC hardware encoding. If you only need CPU captioning, the simpler [Docker Desktop path in WINDOWS_SETUP.md](WINDOWS_SETUP.md) works fine.
+> **This guide is for NVIDIA GPU users who want full GPU acceleration** — Whisper inference AND ffmpeg NVENC hardware encoding. If you only need CPU captioning, the [Docker Desktop path in WINDOWS_SETUP.md](WINDOWS_SETUP.md) is simpler.
 
-Docker Desktop on Windows does **not** expose NVIDIA NVENC encoding libraries to containers. NVENC requires the full NVIDIA Container Toolkit running inside WSL2 with the standard Linux Docker Engine. This guide walks through that setup end-to-end.
-
-> **Already have Docker Desktop installed?** Uninstall it first — its leftover plugin stubs interfere with the Docker Engine installed in WSL2. See [If Docker Desktop was previously installed](#if-docker-desktop-was-previously-installed) before proceeding.
+Docker Desktop on Windows does **not** expose NVIDIA NVENC encoding libraries to containers. Full GPU acceleration requires the NVIDIA Container Toolkit running inside WSL2 with the standard Linux Docker Engine.
 
 ---
 
-## Table of Contents
+## Quick Install (Recommended)
 
-- [Prerequisites](#prerequisites)
-- [Step 1 — Set Up WSL2 with Ubuntu](#step-1--set-up-wsl2-with-ubuntu)
-- [Step 2 — Install Docker Engine in WSL2](#step-2--install-docker-engine-in-wsl2)
-- [Step 3 — Install NVIDIA Container Toolkit](#step-3--install-nvidia-container-toolkit)
-- [Step 4 — Configure NAS / Network Share](#step-4--configure-nas--network-share)
-- [Step 5 — Clone and Configure the Repository](#step-5--clone-and-configure-the-repository)
-- [Step 6 — Deploy](#step-6--deploy)
-- [Step 7 — Verify GPU and Recordings](#step-7--verify-gpu-and-recordings)
-- [Auto-Start on WSL2 Launch](#auto-start-on-wsl2-launch)
-- [If Docker Desktop was previously installed](#if-docker-desktop-was-previously-installed)
-- [Troubleshooting](#troubleshooting)
+A single setup script handles everything:
+- Installs Docker Engine + NVIDIA Container Toolkit in WSL2
+- Mounts your NAS share with the right propagation settings for Docker
+- Clones the repo, configures `.env`, sets up auto-start
+- Pulls the image and starts the container
 
----
+**Requirements before running:**
+- NVIDIA driver **≥ 520** installed on Windows — check with `nvidia-smi` in PowerShell (look for `CUDA Version: 12.x` in the header)
+- Windows 10 2004+ or Windows 11
 
-## Prerequisites
+### Option A — From PowerShell (Windows)
 
-- **Windows 10 version 2004 or later** (required for WSL2)
-- **NVIDIA driver ≥ 520 on Windows** — download from [nvidia.com/drivers](https://www.nvidia.com/Download/index.aspx)
-  - Check: open PowerShell and run `nvidia-smi`. Look for `CUDA Version: 12.x` or higher in the header row.
-- **WSL2 enabled** — see Step 1
-- **Docker Desktop uninstalled** (if previously installed) — see [cleanup steps](#if-docker-desktop-was-previously-installed)
+Handles WSL2 and Ubuntu setup automatically, then runs the bash installer inside WSL2:
 
-> The NVIDIA driver only needs to be installed on Windows. You do **not** install NVIDIA drivers inside WSL2 — the Windows driver is shared with the WSL2 kernel.
-
----
-
-## Step 1 — Set Up WSL2 with Ubuntu
-
-Skip this step if you already have Ubuntu 22.04 (or 24.04) running in WSL2.
-
-**On Windows (PowerShell):**
 ```powershell
-# Enable WSL2 with Ubuntu (reboot if prompted)
-wsl --install -d Ubuntu-22.04
+cd $env:USERPROFILE\Documents
+git clone https://github.com/jay3702/py-captions-for-channels.git
+cd py-captions-for-channels
+
+# If your DVR recordings are on a NAS:
+.\scripts\setup-gpu-wsl.ps1
+
+# If the DVR is on the same machine (no NAS):
+.\scripts\setup-gpu-wsl.ps1 -LocalDvr
 ```
 
-After the reboot and Ubuntu first-run setup, confirm WSL2 is the version in use:
-```powershell
-wsl -l -v
-```
-The `VERSION` column should show `2` for your Ubuntu distro. If it shows `1`, upgrade it:
-```powershell
-wsl --set-version Ubuntu-22.04 2
-```
+**What it prompts for:**
+1. Deploy directory (default: `~/py-captions-for-channels` inside WSL2)
+2. Channels DVR URL (`http://YOUR_DVR_IP:8089`)
+3. NAS server address, share name, mount point, and credentials
+4. DVR path prefix (only if DVR API paths need translation, e.g. `/tank/AllMedia/Channels`)
 
-**From this point on, all commands run inside WSL2** — open Ubuntu from the Start menu (search "Ubuntu") or run `wsl` in PowerShell.
+Everything else — Docker Engine, toolkit, sudoers, `.bashrc` auto-start, image pull — is automated.
 
----
+### Option B — From WSL2 Ubuntu terminal
 
-## Step 2 — Install Docker Engine in WSL2
-
-Run these commands inside your WSL2 Ubuntu terminal:
+If you already have Ubuntu 22.04 or 24.04 in WSL2:
 
 ```bash
-# Add Docker's official GPG key and repository
+# One-liner (inside Ubuntu WSL2):
+curl -fsSL https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main/scripts/setup-gpu-wsl.sh | bash
+
+# Or clone first and run locally:
+git clone https://github.com/jay3702/py-captions-for-channels.git ~/py-captions-for-channels
+bash ~/py-captions-for-channels/scripts/setup-gpu-wsl.sh
+```
+
+> **Re-running is safe** — all steps are idempotent. If something fails midway, fix the issue and re-run.
+
+---
+
+## After the Script Completes
+
+Open the dashboard from your Windows browser: **http://localhost:8000**
+
+### Confirm GPU is active
+```bash
+# In WSL2:
+cd ~/py-captions-for-channels
+docker compose logs | grep -E "NVENC|GPU backend"
+```
+Expected:
+```
+INFO  NVENC detection: h264_nvenc=found, cuvid_decoders=[h264_cuvid, hevc_cuvid]
+INFO  GPU backend: nvenc+cuvid (NVENC hardware encoding enabled)
+```
+
+### Whitelist shows and go live
+1. In the dashboard go to **Recordings** → check the shows you want captioned
+2. Click **Manual Process** on a short recording to verify
+3. Set `DRY_RUN=false` in `.env` and restart:
+   ```bash
+   nano ~/py-captions-for-channels/.env   # set DRY_RUN=false
+   cd ~/py-captions-for-channels && docker compose down && docker compose up -d
+   ```
+
+---
+
+## Auto-Start on Windows Login
+
+The setup script adds a `~/.bashrc` block that starts Docker, mounts the NAS, and launches the container whenever a WSL2 terminal opens.
+
+To start everything **automatically on Windows login** without opening a terminal:
+1. Press `Win+R`, type `shell:startup`, press Enter
+2. Right-click → **New → Shortcut**, target: `wsl.exe -d Ubuntu-22.04`
+3. Name it "py-captions"
+
+The session opens minimized, `~/.bashrc` runs, and everything comes up automatically.
+
+---
+
+## Manual Setup Reference
+
+> The scripts above handle all of this. These steps are for troubleshooting, partial reinstalls, or understanding what the script does.
+
+### WSL2 + Ubuntu
+
+```powershell
+# In PowerShell on Windows:
+wsl --install -d Ubuntu-22.04
+# After reboot, verify:
+wsl -l -v   # VERSION column should show 2
+```
+
+### Install Docker Engine in WSL2
+
+```bash
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gnupg lsb-release
 
@@ -78,53 +128,25 @@ echo \
   https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
   | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-# Install Docker Engine and the compose plugin
 sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io \
   docker-buildx-plugin docker-compose-plugin
-```
 
-Add your user to the `docker` group so you don't need `sudo` for every Docker command:
-```bash
 sudo usermod -aG docker $USER
-newgrp docker   # apply without logging out
-```
-
-Start the Docker daemon and enable it:
-```bash
 sudo service docker start
 ```
 
-Verify:
-```bash
-docker version
-docker compose version
-```
-
-### Fix the compose plugin symlink (if needed)
-
-If `docker compose version` fails but `docker-compose version` works, the apt package installed the plugin to a path Docker Engine doesn't check. Fix it:
+#### Fix compose plugin symlink (if `docker compose` not found)
 
 ```bash
-# Check if it's installed but in the wrong place
-ls /usr/libexec/docker/cli-plugins/docker-compose
-
-# If found, create the symlink Docker Engine expects:
 sudo mkdir -p /usr/local/lib/docker/cli-plugins
 sudo ln -sf /usr/libexec/docker/cli-plugins/docker-compose \
   /usr/local/lib/docker/cli-plugins/docker-compose
-
-docker compose version   # should work now
 ```
 
----
-
-## Step 3 — Install NVIDIA Container Toolkit
-
-The NVIDIA Container Toolkit injects the GPU libraries into containers at runtime — this is what enables both Whisper CUDA and ffmpeg NVENC inside Docker.
+### Install NVIDIA Container Toolkit
 
 ```bash
-# Add the NVIDIA Container Toolkit repository
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
   | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
 
@@ -135,90 +157,56 @@ curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-contai
 sudo apt-get update
 sudo apt-get install -y nvidia-container-toolkit
 
-# Configure Docker to use the nvidia runtime
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo service docker restart
+
+# Verify
+docker info | grep -i runtime   # should show: nvidia runc
+docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 ```
 
-Verify the `nvidia` runtime is registered:
-```bash
-docker info | grep -i runtime
-# Should show: Runtimes: nvidia runc
-```
-
-Test GPU passthrough:
-```bash
-docker run --rm --runtime=nvidia --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
-```
-You should see your GPU listed. If you get an error, see [Troubleshooting](#troubleshooting).
-
----
-
-## Step 4 — Configure NAS / Network Share
-
-> Skip this section if Channels DVR is on the **same machine** as this WSL2 instance. For local DVR, go straight to [Step 5](#step-5--clone-and-configure-the-repository).
-
-If your Channels DVR and recordings are on a NAS or separate server, you need to mount that share inside WSL2 so Docker can bind-mount it into the container.
-
-### Install CIFS utilities
+### Mount NAS Share
 
 ```bash
 sudo apt-get install -y cifs-utils
-```
 
-### Create a credentials file
-
-Storing credentials in a file avoids special-character issues (e.g., `!` in passwords breaks bash history expansion):
-
-```bash
-sudo nano /etc/cifs-credentials
-```
-
-Add these two lines (replace with your actual username and password):
-```
-username=YOUR_NAS_USERNAME
-password=YOUR_NAS_PASSWORD
-```
-
-Secure the file:
-```bash
+# Store credentials (avoids issues with special characters in passwords)
+sudo bash -c 'printf "username=YOUR_USER\npassword=YOUR_PASS\n" > /etc/cifs-credentials'
 sudo chmod 600 /etc/cifs-credentials
-```
 
-### Create the mount point and mount the share
-
-```bash
 sudo mkdir -p /mnt/channels
-
-# Mount the NAS share (replace with your server IP and share name)
-sudo mount -t cifs //192.168.3.150/Channels /mnt/channels \
+sudo mount -t cifs //YOUR_NAS_IP/Channels /mnt/channels \
   -o credentials=/etc/cifs-credentials,uid=$(id -u),gid=$(id -g),iocharset=utf8
 
-# Verify
-ls /mnt/channels
-```
-
-You should see your DVR recordings folders (e.g. `TV`, `Movies`).
-
-### Enable shared mount propagation for Docker
-
-Docker bind mounts require the mount point to have shared propagation:
-
-```bash
+# Required for Docker bind mount visibility
 sudo mount --make-shared /mnt/channels
 ```
 
-> **Important:** This `--make-shared` command must be run **after every mount** of `/mnt/channels`. Add it to your auto-start block in Step 8 so it runs automatically on WSL2 launch.
-
----
-
-## Step 5 — Clone and Configure the Repository
-
-Choose a deploy location inside WSL2. Using your Windows user profile (available via `/mnt/c/Users/`) makes it accessible from both Windows and WSL2:
+### Configure .env
 
 ```bash
-cd /mnt/c/Users/$USER/Documents
-git clone https://github.com/jay3702/py-captions-for-channels.git
+cp .env.example.nvidia .env
+nano .env
+```
+
+Minimum settings:
+```dotenv
+CHANNELS_DVR_URL=http://YOUR_DVR_IP:8089
+DOCKER_RUNTIME=nvidia
+NVIDIA_VISIBLE_DEVICES=all
+DVR_MEDIA_HOST_PATH=/mnt/channels
+DVR_MEDIA_MOUNT=/mnt/channels
+LOCAL_PATH_PREFIX=/mnt/channels
+# DVR_PATH_PREFIX=/tank/AllMedia/Channels  # only if DVR API paths need translation
+```
+
+### Deploy
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs -f
+```
 cd py-captions-for-channels
 ```
 
@@ -259,118 +247,6 @@ LOCAL_PATH_PREFIX=/mnt/channels             # your local mount point
 # Keep dry-run on until you've verified everything
 DRY_RUN=true
 ```
-
-> **`DVR_PATH_PREFIX`**: Only needed when the DVR server's recording paths (as returned by the API) don't match your local mount. For example, if the DVR stores at `/tank/AllMedia/Channels/TV/...` but you mount only the `Channels` subfolder, set `DVR_PATH_PREFIX=/tank/AllMedia/Channels`. Leave it unset if the paths match.
-
-Validate the config:
-```bash
-docker compose config
-```
-Check that `CHANNELS_DVR_URL` is not the placeholder value and that `runtime` shows `nvidia`.
-
----
-
-## Step 6 — Deploy
-
-```bash
-docker compose pull         # download the prebuilt image (~5.5 GB, one-time)
-docker compose up -d        # start the container
-docker compose logs -f      # watch startup (Ctrl+C to stop following)
-```
-
-Healthy startup log looks like:
-```
-INFO  Recordings mount OK: /mnt/channels (XX entries visible)
-INFO  NVENC detection: h264_nvenc=found, cuvid_decoders=[h264_cuvid, ...]
-INFO  GPU backend: nvenc+cuvid (NVENC hardware encoding enabled)
-INFO  Watcher started
-INFO  Web UI listening on 0.0.0.0:8000
-```
-
-If `NVENC detection` shows `h264_nvenc=NOT FOUND`, see [Troubleshooting](#troubleshooting).
-
-Open the web dashboard from your Windows browser:
-```
-http://localhost:8000
-```
-
----
-
-## Step 7 — Verify GPU and Recordings
-
-### Verify GPU passthrough
-
-```bash
-docker exec -it py-captions-for-channels nvidia-smi
-```
-
-You should see your GPU listed. If not, confirm `DOCKER_RUNTIME=nvidia` and `NVIDIA_VISIBLE_DEVICES=all` are set in `.env`.
-
-### Verify recordings are visible
-
-```bash
-docker exec -it py-captions-for-channels ls /mnt/channels
-```
-
-Or use the web dashboard:
-- Open **⚙ Settings → Setup Wizard**
-- The wizard verifies the recordings mount and shows the entry count
-
-### Test with a real recording
-
-1. In the dashboard, go to **Recordings** and check one or two shows you want captioned
-2. Click **Manual Process** and select a short recording
-3. With `DRY_RUN=true`, review the **History** tab to confirm the pipeline ran without errors
-4. When satisfied, set `DRY_RUN=false` in `.env` and restart:
-   ```bash
-   docker compose down && docker compose up -d
-   ```
-
----
-
-## Auto-Start on WSL2 Launch
-
-WSL2 doesn't automatically run services (like `dockerd`, NAS mounts) on Windows startup. Add this block to `~/.bashrc` so everything comes up when you open a WSL2 terminal:
-
-```bash
-nano ~/.bashrc
-```
-
-Add at the end:
-```bash
-# ── py-captions auto-start ──────────────────────────────────────────
-# Start Docker if not running
-if ! pgrep -x dockerd > /dev/null; then
-    sudo service docker start
-fi
-
-# Mount and share the NAS
-if ! mountpoint -q /mnt/channels; then
-    sudo mount -t cifs //192.168.3.150/Channels /mnt/channels \
-        -o credentials=/etc/cifs-credentials,uid=$(id -u),gid=$(id -g),iocharset=utf8
-fi
-sudo mount --make-shared /mnt/channels
-
-# Start the container if not already running
-if ! docker ps --format '{{.Names}}' | grep -q py-captions-for-channels; then
-    cd /mnt/c/Users/$USER/Documents/py-captions-for-channels
-    docker compose up -d
-fi
-# ───────────────────────────────────────────────────────────────────
-```
-
-Update the `cd` path to match wherever you cloned the repo in Step 5.
-
-The `sudo` commands (docker service, cifs mount) require passwordless sudo for these specific commands. Add to sudoers with `sudo visudo`:
-
-```
-# py-captions auto-start (add to bottom of sudoers)
-%docker ALL=(ALL) NOPASSWD: /usr/sbin/service docker start
-%docker ALL=(ALL) NOPASSWD: /sbin/mount.cifs
-%docker ALL=(ALL) NOPASSWD: /bin/mount --make-shared /mnt/channels
-```
-
-> **Optional — Windows startup:** To have WSL2 open automatically on Windows login, create a Scheduled Task that runs `wsl -d Ubuntu-22.04` at log-on. The `.bashrc` block above will then execute and bring everything up automatically.
 
 ---
 

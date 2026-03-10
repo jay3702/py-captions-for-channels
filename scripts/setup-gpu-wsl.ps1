@@ -1,0 +1,108 @@
+# setup-gpu-wsl.ps1 — Windows launcher for the py-captions GPU installer
+#
+# Run this in PowerShell (7+ recommended) on Windows.
+# It ensures WSL2 + Ubuntu are set up, copies the bash installer into WSL2, and runs it.
+#
+# Usage:
+#   .\scripts\setup-gpu-wsl.ps1
+#   .\scripts\setup-gpu-wsl.ps1 -LocalDvr      # skip NAS setup
+#   .\scripts\setup-gpu-wsl.ps1 -Distro Ubuntu-24.04
+# ---------------------------------------------------------------------------
+param(
+    [string]$Distro    = "Ubuntu-22.04",
+    [switch]$LocalDvr
+)
+
+$ErrorActionPreference = "Stop"
+
+function Write-Step($msg)    { Write-Host "▶ $msg" -ForegroundColor Cyan }
+function Write-Ok($msg)      { Write-Host "✔ $msg" -ForegroundColor Green }
+function Write-Warn($msg)    { Write-Host "⚠ $msg" -ForegroundColor Yellow }
+function Write-Fail($msg)    { Write-Host "✘ $msg" -ForegroundColor Red; exit 1 }
+
+# ── STEP 1 — Check WSL2 is available ──────────────────────────────────────
+Write-Step "Checking WSL2..."
+$wslOutput = wsl --status 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0 -and -not ($wslOutput -match "WSL")) {
+    Write-Step "WSL2 not found — installing..."
+    wsl --install --no-distribution
+    Write-Warn "WSL2 kernel installed. A reboot may be required."
+    Write-Warn "After rebooting, re-run this script."
+    Write-Warn "  powershell -File `"$PSCommandPath`""
+    exit 0
+}
+Write-Ok "WSL2 is available"
+
+# ── STEP 2 — Check / install the target distro ────────────────────────────
+Write-Step "Checking for $Distro..."
+$installed = wsl -l -q 2>&1 | Where-Object { $_ -match [regex]::Escape($Distro) }
+if (-not $installed) {
+    Write-Step "$Distro not found — installing..."
+    wsl --install -d $Distro --no-launch
+    Write-Step "Starting $Distro for first-time setup (set a username and password when prompted)..."
+    wsl -d $Distro -- echo "First-run complete"
+    Write-Ok "$Distro installed"
+} else {
+    Write-Ok "$Distro is already installed"
+}
+
+# Ensure WSL2 version
+$versionLine = wsl -l -v 2>&1 | Where-Object { $_ -match [regex]::Escape($Distro) }
+if ($versionLine -match "1\s*$") {
+    Write-Step "Upgrading $Distro to WSL2..."
+    wsl --set-version $Distro 2
+}
+
+# ── STEP 3 — Check NVIDIA driver on Windows ───────────────────────────────
+Write-Step "Checking NVIDIA driver..."
+try {
+    $smi = & nvidia-smi 2>&1 | Out-String
+    if ($smi -match "Driver Version") {
+        $driverMatch = [regex]::Match($smi, "Driver Version:\s+([\d.]+)")
+        $cudaMatch   = [regex]::Match($smi, "CUDA Version:\s+([\d.]+)")
+        Write-Ok ("NVIDIA driver {0} — CUDA {1}" -f $driverMatch.Groups[1].Value, $cudaMatch.Groups[1].Value)
+
+        $cudaVer = [version]($cudaMatch.Groups[1].Value)
+        if ($cudaVer -lt [version]"12.2") {
+            Write-Warn ("CUDA {0} detected — 12.2+ recommended. GPU may fall back to CPU." -f $cudaMatch.Groups[1].Value)
+            Write-Warn "Download latest driver: https://www.nvidia.com/Download/index.aspx"
+        }
+    }
+} catch {
+    Write-Warn "nvidia-smi not found in PATH — make sure NVIDIA drivers are installed on Windows."
+    Write-Warn "Download: https://www.nvidia.com/Download/index.aspx"
+    $cont = Read-Host "Continue anyway? [y/N]"
+    if ($cont -notmatch "^[Yy]") { exit 0 }
+}
+
+# ── STEP 4 — Copy installer into WSL2 and run it ──────────────────────────
+Write-Step "Preparing bash installer..."
+
+# The bash script lives next to this PowerShell script (in scripts/)
+$ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
+$BashScript = Join-Path $ScriptDir "setup-gpu-wsl.sh"
+
+if (-not (Test-Path $BashScript)) {
+    Write-Fail "setup-gpu-wsl.sh not found at: $BashScript`nMake sure both scripts are in the same directory."
+}
+
+# Convert Windows path to a WSL2-accessible path
+$WslBashPath = wsl -d $Distro -- wslpath -u ('"' + $BashScript.Replace('\', '\\') + '"') 2>&1
+$WslBashPath = $WslBashPath.Trim()
+
+$ExtraArgs = if ($LocalDvr) { "--local-dvr" } else { "" }
+
+Write-Ok "Launching installer inside $Distro..."
+Write-Host ""
+
+# Run the bash script inside WSL2
+# Shell expansion args: trim quotes, pass extra flags
+$bashCmd = "bash `"$WslBashPath`" $ExtraArgs"
+wsl -d $Distro -- bash -c $bashCmd
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "Installer exited with code $LASTEXITCODE"
+}
+
+Write-Host ""
+Write-Ok "Setup complete — open http://localhost:8000 in your browser"
