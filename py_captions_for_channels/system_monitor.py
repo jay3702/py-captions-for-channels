@@ -80,7 +80,7 @@ class NvidiaNvmlProvider(GPUProvider):
 
     _MAX_CONSECUTIVE_FAILURES = 3
     _RETRY_INTERVAL = 60  # seconds before retrying after repeated failures
-    _MAX_RETRY_CYCLES = 2  # after this many backoff+retry cycles all fail, give up
+    _MAX_RETRY_CYCLES = 0  # 0 = no retries; give up after first backoff window
 
     def __init__(self):
         self.available = False

@@ -2040,10 +2040,14 @@ function updateSystemMonitor() {
       const gpuContainer = document.getElementById('gpu-chart-container');
       const gpuUnavailable = document.getElementById('gpu-unavailable');
       
-      if (gpuProvider.available && metrics.gpu_util_percent !== null) {
-        const wasHidden = gpuContainer && gpuContainer.style.display === 'none';
+      if (gpuProvider.available) {
         if (gpuContainer) gpuContainer.style.display = 'flex';
         if (gpuUnavailable) gpuUnavailable.style.display = 'none';
+        
+        // Use 0 for null metrics (provider available but temporarily no data)
+        const gpuUtil = metrics.gpu_util_percent !== null ? metrics.gpu_util_percent : 0;
+        const gpuMemUsed = metrics.gpu_mem_used_mb !== null ? metrics.gpu_mem_used_mb : 0;
+        const gpuMemTotal = metrics.gpu_mem_total_mb !== null ? metrics.gpu_mem_total_mb : 0;
         
         // Create GPU chart on first use (when container is already visible)
         if (!monitorCharts.gpu && gpuEl) {
@@ -2121,12 +2125,12 @@ function updateSystemMonitor() {
         }
         
         if (monitorCharts.gpu) {
-          const vramPct = metrics.gpu_mem_total_mb > 0 
-            ? (metrics.gpu_mem_used_mb / metrics.gpu_mem_total_mb) * 100 
+          const vramPct = gpuMemTotal > 0 
+            ? (gpuMemUsed / gpuMemTotal) * 100 
             : 0;
-          console.log('Appending GPU data:', metrics.gpu_util_percent, vramPct);
+          console.log('Appending GPU data:', gpuUtil, vramPct);
           appendChartData(monitorCharts.gpu, timestamp, [
-            metrics.gpu_util_percent,
+            gpuUtil,
             vramPct,
             metrics.gpu_enc_percent != null ? metrics.gpu_enc_percent : 0,
             metrics.gpu_dec_percent != null ? metrics.gpu_dec_percent : 0
