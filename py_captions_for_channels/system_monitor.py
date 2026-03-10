@@ -151,7 +151,7 @@ class NvidiaNvmlProvider(GPUProvider):
             if self._consecutive_failures == 1:
                 logger.warning(
                     f"NVIDIA NVML metrics temporarily unavailable: {e} "
-                    "(normal when GPU is idle on Docker Desktop/WSL2)"
+                    "(normal when GPU is idle on WSL2)"
                 )
             return super().get_metrics()
 
