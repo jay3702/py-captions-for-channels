@@ -1,0 +1,36 @@
+name: Notify when GHCR image is available
+
+on:
+  workflow_run:
+    workflows: ["Docker Publish"]
+    types: [completed]
+
+jobs:
+  wait_for_image:
+    # Only run if the publish workflow succeeded
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+
+    steps:
+      - name: Wait until GHCR image is pullable (sha tag)
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: sha-${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          echo "Waiting for image to become pullable: $IMAGE:$TAG"
+
+          # up to ~5 minutes (30 * 10s)
+          for i in {1..30}; do
+            if docker manifest inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+              echo "AVAILABLE: $IMAGE:$TAG"
+              exit 0
+            fi
+            echo "Not available yet (attempt $i/30). Sleeping 10s..."
+            sleep 10
+          done
+
+          echo "Timed out waiting for availability: $IMAGE:$TAG"
+          exit 1
