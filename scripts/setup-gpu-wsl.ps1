@@ -1,16 +1,14 @@
 # setup-gpu-wsl.ps1 — Windows launcher for the py-captions GPU installer
 #
 # Run this in PowerShell (7+ recommended) on Windows.
-# It ensures WSL2 + Ubuntu are set up, copies the bash installer into WSL2, and runs it.
+# It ensures WSL2 + Ubuntu are set up, then runs the interactive bash installer inside WSL2.
 #
 # Usage:
 #   .\scripts\setup-gpu-wsl.ps1
-#   .\scripts\setup-gpu-wsl.ps1 -LocalDvr      # skip NAS setup
 #   .\scripts\setup-gpu-wsl.ps1 -Distro Ubuntu-24.04
 # ---------------------------------------------------------------------------
 param(
-    [string]$Distro    = "Ubuntu-22.04",
-    [switch]$LocalDvr
+    [string]$Distro = "Ubuntu-22.04"
 )
 
 $ErrorActionPreference = "Stop"
@@ -92,13 +90,10 @@ $drive       = $BashScript[0].ToString().ToLower()
 $winRelPath  = $BashScript.Substring(3).Replace('\', '/')
 $WslBashPath = "/mnt/$drive/$winRelPath"
 
-$ExtraArgs = @()
-if ($LocalDvr) { $ExtraArgs += "--local-dvr" }
-
 Write-Ok "Launching installer inside $Distro..."
 Write-Host ""
 
-wsl -d $Distro -- bash "$WslBashPath" @ExtraArgs
+wsl -d $Distro -- bash "$WslBashPath"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Installer exited with code $LASTEXITCODE"

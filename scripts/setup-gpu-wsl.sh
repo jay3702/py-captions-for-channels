@@ -6,7 +6,6 @@
 #
 # Usage:
 #   bash setup-gpu-wsl.sh
-#   bash setup-gpu-wsl.sh --local-dvr   # skip NAS setup
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -30,10 +29,6 @@ if ! command -v whiptail &>/dev/null; then
     echo "Installing whiptail..."
     sudo apt-get install -y -qq whiptail 2>/dev/null
 fi
-
-# ── argument parsing ──────────────────────────────────────────────────────────
-LOCAL_DVR=false
-for arg in "$@"; do [[ "$arg" == "--local-dvr" ]] && LOCAL_DVR=true; done
 
 # ── dialog helpers ────────────────────────────────────────────────────────────
 # All helpers write their result to stdout; return 1 on Cancel/Esc.
@@ -100,6 +95,7 @@ unattended. Re-running is safe — completed steps are skipped." 16
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION — gather all inputs upfront
 # ════════════════════════════════════════════════════════════════════════════
+LOCAL_DVR=false
 
 # Deploy directory
 DEPLOY_DIR=$(wt_input "Deploy Location" \

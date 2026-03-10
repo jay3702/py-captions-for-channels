@@ -56,17 +56,13 @@ cd $env:USERPROFILE\Documents
 git clone https://github.com/jay3702/py-captions-for-channels.git
 cd py-captions-for-channels
 
-# DVR recordings on a NAS:
 .\scripts\setup-gpu-wsl.ps1
-
-# DVR recordings local / no NAS:
-.\scripts\setup-gpu-wsl.ps1 -LocalDvr
 ```
 
 **The script will prompt for:**
 1. Deploy directory inside WSL2 (default: `~/py-captions-for-channels`)
 2. Channels DVR URL (`http://YOUR_DVR_IP:8089`)
-3. NAS server address, share name, and mount point (if applicable)
+3. Whether recordings are on a NAS or local — then server/share/mount if NAS
 4. NAS credentials (prompted at mount time, with retry on auth failure)
 
 **Then it runs unattended:**
