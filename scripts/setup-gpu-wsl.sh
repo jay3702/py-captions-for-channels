@@ -127,10 +127,14 @@ DEPLOY_DIR=$(wt_input "Deploy Location" \
 CHANNELS_DVR_URL=""
 while [[ -z "$CHANNELS_DVR_URL" ]]; do
     CHANNELS_DVR_URL=$(wt_input "Channels DVR" \
-        "Enter your Channels DVR server URL:" \
+        "Enter your Channels DVR server URL (port required):\n\nExample:  http://192.168.1.5:8089" \
         "http://${LAN_PREFIX}") || cancelled
     if [[ -z "$CHANNELS_DVR_URL" ]]; then
         wt_msg "Required" "Channels DVR URL is required." 8
+    elif ! echo "$CHANNELS_DVR_URL" | grep -qE '^https?://[^/:]+:[0-9]{2,5}(/.*)?$'; then
+        wt_msg "Invalid URL" \
+            "URL must include a port number.\n\nGood:  http://192.168.1.5:8089\nBad:   http://192.168.1.5\n\nPlease re-enter." 12
+        CHANNELS_DVR_URL=""   # force re-prompt
     fi
 done
 
@@ -438,24 +442,50 @@ _launch_step() {
 gauge "Starting" "Pulling image and starting container (~5 GB first run)..." _launch_step
 
 # ════════════════════════════════════════════════════════════════════════════
-# DONE
+# WAIT FOR HEALTHY STARTUP
 # ════════════════════════════════════════════════════════════════════════════
+WEB_UI_PORT=$(grep -m1 'WEB_UI_PORT' "$DEPLOY_DIR/.env" 2>/dev/null \
+    | grep -oE '[0-9]+$' || echo "8000")
+WEB_UI_URL="http://localhost:${WEB_UI_PORT}"
+
+_wait_startup() {
+    local max=90 interval=3 elapsed=0
+    while (( elapsed < max )); do
+        if curl -fsS --max-time 2 "$WEB_UI_URL" > /dev/null 2>&1; then
+            return 0
+        fi
+        sleep $interval
+        (( elapsed += interval ))
+    done
+    return 1
+}
+
+wt_info "Checking" "Waiting for the web UI to come up (up to 90 s)..."
+if _wait_startup; then
+    STARTUP_STATUS="\n\nWeb UI is up and responding at ${WEB_UI_URL}"
+else
+    # Container may still work (image pull took long, slow host, etc.) — warn but don't fail.
+    STARTUP_LOGS=$(docker logs --tail 20 py-captions-for-channels 2>&1 | tail -20)
+    wt_msg "Startup Warning" \
+        "The web UI did not respond within 90 seconds.\n\nLast container log lines:\n\n${STARTUP_LOGS}\n\nSetup is otherwise complete. Try opening\n${WEB_UI_URL} in a moment, or run:\n  docker logs py-captions-for-channels" 24 || true
+    STARTUP_STATUS="\n\nNOTE: Web UI did not respond during setup — check logs."
+fi
 NEWGRP_NOTE=""
 if ! groups | grep -q docker; then
     NEWGRP_NOTE="\n\nLog out and back in (or run 'newgrp docker')\n   to use Docker without sudo."
 fi
 
 wt_msg "Setup Complete" \
-"py-captions-for-channels is running!
+"py-captions-for-channels is running!${STARTUP_STATUS}
 
-  Web dashboard : http://localhost:8000
+  Web dashboard : ${WEB_UI_URL}
   Deploy dir    : $DEPLOY_DIR
   Install log   : $LOG
 
 Next steps:
-  1. Open http://localhost:8000
+  1. Open ${WEB_UI_URL}
   2. Run the Setup Wizard to verify recordings mount
   3. Go to Recordings and whitelist shows to caption
-  4. Set DRY_RUN=false in .env when ready${NEWGRP_NOTE}" 20
+  4. Set DRY_RUN=false in .env when ready${NEWGRP_NOTE}" 22
 
 rm -f "$_STATUS"
