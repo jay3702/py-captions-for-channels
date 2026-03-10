@@ -254,13 +254,15 @@ The setup script configures everything for background persistence. If you need t
 
 **How it works — boot sequence on every Windows login:**
 
-1. **Task Scheduler** fires `wsl.exe --exec dbus-launch true` at logon
+1. **Task Scheduler** fires `wsl.exe --exec dbus-launch true` at Windows logon (when your user account signs in)
 2. **WSL boots** with systemd as PID 1 (`/etc/wsl.conf` → `[boot] systemd=true`)
 3. **systemd** starts `docker.service` (enabled during setup)
 4. **Docker** restarts the container automatically (`restart: unless-stopped`)
 5. **`dbus-daemon`** (left running by `dbus-launch true`) keeps the WSL VM alive with no terminal open
 
 No terminal is ever needed. The container runs as long as Windows is logged in.
+
+> **Note:** The startup task fires at *user logon*, not at the Windows boot screen. If your PC requires a password at startup, the container won't start until someone signs in. For a true hands-free server, enable Windows auto-login (`netplwiz`) so the logon happens automatically on boot.
 
 **Stopping and restarting manually:**
 
