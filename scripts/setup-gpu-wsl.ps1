@@ -94,8 +94,7 @@ $WslBashPath = "/mnt/$drive/$winRelPath"
 
 Write-Ok "Launching installer inside $Distro..."
 Write-Host ""
-Write-Host "  The installer will ask for your Linux (sudo) password," -ForegroundColor DarkGray
-Write-Host "  then run the setup wizard. Standby..." -ForegroundColor DarkGray
+Read-Host "  The installer will ask for your Linux (sudo) password when it starts.`n  Press Enter to launch the setup wizard"
 Write-Host ""
 
 wsl -d $Distro -- bash "$WslBashPath"
@@ -106,8 +105,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # ── STEP 5 — Register Windows startup task (runs natively here, not from WSL) ──
 Write-Host ""
-Write-Host "  Next: registering the Windows auto-start task." -ForegroundColor DarkGray
-Write-Host "  A Windows administrator prompt (UAC) will appear — please click Yes." -ForegroundColor Yellow
+Read-Host "  Next: registering the Windows auto-start task.`n  A UAC (administrator) prompt will appear — click Yes to allow it.`n  Press Enter when ready"
 Write-Host ""
 Write-Step "Registering Windows startup task..."
 $AutostartScript = Join-Path $ScriptDir "autostart.ps1"

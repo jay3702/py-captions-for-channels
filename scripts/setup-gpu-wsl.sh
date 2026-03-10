@@ -456,16 +456,17 @@ BASHRC
 fi
 
 SUDOERS_FILE="/etc/sudoers.d/py-captions"
-if [[ ! -f "$SUDOERS_FILE" ]]; then
-    cat << SUDOERS | sudo tee "$SUDOERS_FILE" > /dev/null
+# Always (re)write so new entries are picked up on re-runs
+cat << SUDOERS | sudo tee "$SUDOERS_FILE" > /dev/null
 # py-captions auto-start — passwordless commands
 %docker ALL=(ALL) NOPASSWD: /usr/sbin/service docker start
 %docker ALL=(ALL) NOPASSWD: /bin/systemctl start docker
+%docker ALL=(ALL) NOPASSWD: /bin/systemctl enable docker
+%docker ALL=(ALL) NOPASSWD: /bin/systemctl enable --now docker
 %docker ALL=(ALL) NOPASSWD: /bin/mount -t cifs *
 %docker ALL=(ALL) NOPASSWD: /bin/mount --make-shared *
 SUDOERS
-    sudo chmod 440 "$SUDOERS_FILE"
-fi
+sudo chmod 440 "$SUDOERS_FILE"
 
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 7 — Persistent service (systemd + Windows startup task)

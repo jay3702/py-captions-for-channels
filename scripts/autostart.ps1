@@ -66,9 +66,29 @@ if (-not $systemdActive -or $Restart) {
     }
     wsl --shutdown
     Start-Sleep -Seconds 3
-    Write-Step "Starting $Distro in background (Docker will follow via systemd)..."
+    Write-Step "Starting $Distro in background (systemd will initialize)..."
     Start-Process "wsl.exe" -ArgumentList "-d $Distro -- true" -WindowStyle Hidden
-    Write-Ok "WSL restarted. Docker and the container will be up in ~15 seconds."
+
+    # Wait for systemd to be ready, then ensure docker.service is enabled+running.
+    # This is necessary because 'systemctl enable docker' in the bash installer ran
+    # before systemd was PID 1 and may have failed silently.
+    Write-Step "Waiting for systemd to initialize inside $Distro..."
+    $ready = $false
+    for ($i = 0; $i -lt 20; $i++) {
+        Start-Sleep -Seconds 3
+        $state = (wsl -d $Distro -- bash -c "systemctl is-system-running 2>/dev/null" 2>$null) -join ""
+        if ($state -match "running|degraded") { $ready = $true; break }
+    }
+    if ($ready) {
+        Write-Step "Enabling and starting Docker service..."
+        wsl -d $Distro -- bash -c "sudo systemctl enable --now docker >> /tmp/py_captions_install.log 2>&1" 2>$null
+        Start-Sleep -Seconds 5
+        # Bring up the compose stack in case the container isn't running yet
+        wsl -d $Distro -- bash -c "DEPLOY=\$(grep -o 'AUTOSTART_DEPLOY_DIR=.*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2); [ -d \"\$DEPLOY\" ] && docker compose -f \"\$DEPLOY/docker-compose.yml\" up -d >> /tmp/py_captions_install.log 2>&1 || true" 2>$null
+        Write-Ok "Docker is running. Container will be up in ~15 seconds."
+    } else {
+        Write-Warn "systemd did not report ready within 60 s — Docker may need a moment to start."
+    }
     Write-Host ""
     Write-Host "  Web dashboard: http://localhost:8000" -ForegroundColor White
 } else {
