@@ -255,7 +255,6 @@ def _detect_nvidia_backend() -> GPUBackend:
     has_encoder = "h264_nvenc" in caps.get("encoders", "")
     has_deint = "yadif_cuda" in caps.get("filters", "")
 
-    # NVENC (encode) and CUVID (decode) are separate driver libraries.
     # On Docker Desktop / WSL2, libnvcuvid.so is often not exposed so
     # CUVID decoders won't appear even though NVENC works fine.
     # Only require the encoder for the backend to be marked available;
@@ -429,6 +428,12 @@ def detect_gpu_backend(log) -> GPUBackend:
         (_detect_amf_backend, "AMD AMF"),
     ]:
         backend = detect_fn()
+        if backend.name == "nvidia":
+            nvenc_status = "found" if backend.available else "NOT FOUND"
+            log.info(
+                f"NVENC detection: h264_nvenc={nvenc_status}, "
+                f"cuvid_decoders={list(backend.decoders.keys())}"
+            )
         if backend.available:
             log.info(f"Auto-detected GPU backend: {label} ({backend.encoder})")
             _detected_backend = backend
@@ -1368,9 +1373,11 @@ def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
 
     last_progress = 0
     progress_pattern = re.compile(r"out_time_ms=(\d+)")
+    stderr_lines: list = []  # capture for error reporting
 
     try:
         for line in process.stderr:
+            stderr_lines.append(line)
             # Parse ffmpeg progress output (format: key=value)
             match = progress_pattern.search(line)
             if match and duration > 0:
@@ -1396,6 +1403,12 @@ def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
         returncode = process.wait()
 
         if returncode != 0:
+            # Log the last 20 lines of stderr so encode errors are visible
+            tail = stderr_lines[-20:] if len(stderr_lines) > 20 else stderr_lines
+            for err_line in tail:
+                stripped = err_line.rstrip()
+                if stripped:
+                    log.warning(f"ffmpeg stderr: {stripped}")
             raise subprocess.CalledProcessError(returncode, cmd)
 
         # Final progress update
