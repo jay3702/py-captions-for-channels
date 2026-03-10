@@ -30,6 +30,27 @@ if ! command -v whiptail &>/dev/null; then
     sudo apt-get install -y -qq whiptail 2>/dev/null
 fi
 
+# ── detect LAN prefix for prompt defaults ────────────────────────────────────
+# WSL2 mirrored networking: the real LAN IP appears in hostname -I.
+# WSL2 NAT mode: ask Windows PowerShell for the host's LAN IP.
+_detect_lan_prefix() {
+    local ip
+    # Mirrored mode — look for a non-loopback, non-link-local, non-WSL-NAT address
+    ip=$(hostname -I 2>/dev/null | tr ' ' '\n' \
+        | grep -Ev '^(127\.|169\.|172\.)' \
+        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
+        | head -1)
+    # NAT mode fallback — call PowerShell (always available in WSL2)
+    if [[ -z "$ip" ]] && command -v powershell.exe &>/dev/null; then
+        ip=$(powershell.exe -NoProfile -Command \
+            "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.AddressState -eq 'Preferred' -and \$_.IPAddress -notmatch '^(127\.|169\.|172\.)' } | Sort-Object PrefixLength -Descending | Select-Object -First 1 -ExpandProperty IPAddress" \
+            2>/dev/null | tr -d '\r')
+    fi
+    # Return the /24 prefix (e.g. "192.168.1.") or a bare class-C placeholder
+    echo "$ip" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.' 2>/dev/null || echo "192.168."
+}
+LAN_PREFIX=$(_detect_lan_prefix)
+
 # ── dialog helpers ────────────────────────────────────────────────────────────
 # All helpers write their result to stdout; return 1 on Cancel/Esc.
 _wt() { whiptail --backtitle "$BT" "$@" 3>&1 1>&2 2>&3; }
@@ -107,7 +128,7 @@ CHANNELS_DVR_URL=""
 while [[ -z "$CHANNELS_DVR_URL" ]]; do
     CHANNELS_DVR_URL=$(wt_input "Channels DVR" \
         "Enter your Channels DVR server URL:" \
-        "http://192.168.3.") || cancelled
+        "http://${LAN_PREFIX}") || cancelled
     if [[ -z "$CHANNELS_DVR_URL" ]]; then
         wt_msg "Required" "Channels DVR URL is required." 8
     fi
@@ -129,7 +150,7 @@ NAS_SERVER="" NAS_SHARE="" MOUNT_POINT="/mnt/channels" CRED_FILE="/etc/cifs-cred
 if [[ "$LOCAL_DVR" == false ]]; then
     NAS_SERVER=$(wt_input "NAS -- Server" \
         "NAS server address (hostname or IP):" \
-        "192.168.") || cancelled
+        "${LAN_PREFIX}") || cancelled
 
     NAS_SHARE=$(wt_input "NAS -- Share Name" \
         "Share name on ${NAS_SERVER}:" \
