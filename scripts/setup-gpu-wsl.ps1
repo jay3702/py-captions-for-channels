@@ -33,7 +33,9 @@ Write-Ok "WSL2 is available"
 
 # ── STEP 2 — Check / install the target distro ────────────────────────────
 Write-Step "Checking for $Distro..."
-$installed = wsl -l -q 2>&1 | Where-Object { $_ -match [regex]::Escape($Distro) }
+# wsl -l -q outputs UTF-16 LE; PowerShell reads it as ASCII with embedded nulls.
+# Strip them before trying to match.
+$installed = wsl -l -q 2>&1 | ForEach-Object { ($_ -replace "`0", "").Trim() } | Where-Object { $_ -match [regex]::Escape($Distro) }
 if (-not $installed) {
     Write-Step "$Distro not found — installing..."
     wsl --install -d $Distro --no-launch
@@ -45,7 +47,7 @@ if (-not $installed) {
 }
 
 # Ensure WSL2 version
-$versionLine = wsl -l -v 2>&1 | Where-Object { $_ -match [regex]::Escape($Distro) }
+$versionLine = wsl -l -v 2>&1 | ForEach-Object { ($_ -replace "`0", "").Trim() } | Where-Object { $_ -match [regex]::Escape($Distro) }
 if ($versionLine -match "1\s*$") {
     Write-Step "Upgrading $Distro to WSL2..."
     wsl --set-version $Distro 2
