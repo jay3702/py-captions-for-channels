@@ -79,10 +79,12 @@ class NvidiaNvmlProvider(GPUProvider):
     """NVIDIA GPU metrics via nvidia-ml-py (pynvml) library."""
 
     _MAX_CONSECUTIVE_FAILURES = 3
+    _RETRY_INTERVAL = 60  # seconds before retrying after repeated failures
 
     def __init__(self):
         self.available = False
         self._consecutive_failures = 0
+        self._retry_after: Optional[float] = None
         try:
             import warnings
 
@@ -100,12 +102,26 @@ class NvidiaNvmlProvider(GPUProvider):
             logger.warning(f"NVIDIA NVML not available: {type(e).__name__}: {e}")
 
     def is_available(self) -> bool:
-        return self.available
+        if not self.available:
+            return False
+        # During backoff window report unavailable; after expiry retry will happen
+        # inside get_metrics() which clears _retry_after on success
+        if self._retry_after is not None and time.time() < self._retry_after:
+            return False
+        return True
 
     def get_name(self) -> str:
         return "NVIDIA NVML"
 
     def get_metrics(self) -> Dict[str, Optional[float]]:
+        # If in backoff window, skip without logging
+        if self._retry_after is not None:
+            if time.time() < self._retry_after:
+                return super().get_metrics()
+            # Backoff window expired — try again
+            self._retry_after = None
+            self._consecutive_failures = 0
+
         if not self.available:
             return super().get_metrics()
 
@@ -132,6 +148,9 @@ class NvidiaNvmlProvider(GPUProvider):
                 pass
 
             self._consecutive_failures = 0
+            if self._retry_after is not None:
+                logger.info("NVIDIA NVML polling resumed after backoff")
+                self._retry_after = None
             return {
                 "util_percent": float(util.gpu),
                 "mem_used_mb": mem_info.used / (1024 * 1024),
@@ -146,10 +165,11 @@ class NvidiaNvmlProvider(GPUProvider):
             if self._consecutive_failures == self._MAX_CONSECUTIVE_FAILURES:
                 logger.warning(
                     "NVIDIA NVML metrics unavailable after repeated failures "
-                    "(common on Docker Desktop / WSL2 — GPU still used for inference). "
-                    "Disabling NVML polling; live GPU stats will not show in dashboard."
+                    "(Docker Desktop/WSL2 \u2014 GPU still used for inference). "
+                    f"Pausing NVML polling for {self._RETRY_INTERVAL}s; "
+                    "will retry automatically."
                 )
-                self.available = False
+                self._retry_after = time.time() + self._RETRY_INTERVAL
             return super().get_metrics()
 
 
