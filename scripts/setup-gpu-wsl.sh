@@ -529,20 +529,25 @@ WEB_UI_PORT=$(grep -m1 'WEB_UI_PORT' "$DEPLOY_DIR/.env" 2>/dev/null \
     | grep -oE '[0-9]+$' || echo "8000")
 WEB_UI_URL="http://localhost:${WEB_UI_PORT}"
 
-_wait_startup() {
-    local max=90 interval=3 elapsed=0
-    while (( elapsed < max )); do
+_STARTUP_RESULT=$(mktemp)
+{
+    _max=90 _interval=3 _elapsed=0
+    while (( _elapsed < _max )); do
+        printf '%d\n' $(( _elapsed * 100 / _max ))
         if curl -fsS --max-time 2 "$WEB_UI_URL" > /dev/null 2>&1; then
-            return 0
+            printf '100\n'
+            echo ok > "$_STARTUP_RESULT"
+            break
         fi
-        sleep $interval
-        (( elapsed += interval ))
+        sleep $_interval
+        (( _elapsed += _interval ))
     done
-    return 1
-}
+    printf '100\n'
+} | whiptail --backtitle "$BT" --title "Verifying Startup" \
+    --gauge "Checking web UI at ${WEB_UI_URL} every 3 s (up to 90 s)..." \
+    8 "$W" 0
 
-wt_info "Checking" "Waiting for the web UI to come up (up to 90 s)..."
-if _wait_startup; then
+if [[ "$(cat "$_STARTUP_RESULT")" == "ok" ]]; then
     STARTUP_STATUS="\n\nWeb UI is up and responding at ${WEB_UI_URL}"
 else
     # Container may still work (image pull took long, slow host, etc.) — warn but don't fail.
@@ -551,6 +556,7 @@ else
         "The web UI did not respond within 90 seconds.\n\nLast container log lines:\n\n${STARTUP_LOGS}\n\nSetup is otherwise complete. Try opening\n${WEB_UI_URL} in a moment, or run:\n  docker logs py-captions-for-channels" 24 || true
     STARTUP_STATUS="\n\nNOTE: Web UI did not respond during setup — check logs."
 fi
+rm -f "$_STARTUP_RESULT"
 NEWGRP_NOTE=""
 if ! groups | grep -q docker; then
     NEWGRP_NOTE="\n\nLog out and back in (or run 'newgrp docker')\n   to use Docker without sudo."

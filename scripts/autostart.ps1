@@ -49,16 +49,28 @@ Register-ScheduledTask `
     -Description "Wakes WSL2 ($Distro) at logon so py-captions-for-channels runs without a terminal" `
     -Force | Out-Null
 
-Write-Ok "Startup task registered — WSL will wake at every Windows login."
+Write-Ok "Startup task registered."
 
-# ── Optional: restart WSL so systemd takes effect immediately ─────────────
-if ($Restart) {
-    Write-Step "Shutting down WSL (systemd will be active on next start)..."
+# ── Restart WSL if systemd is not yet active as PID 1 ────────────────────
+# Required the first time systemd=true is written, AND any subsequent run
+# where WSL is still using the old init (WSL keeps whichever PID 1 it booted with).
+$pid1 = (wsl -d $Distro -- bash -c "ps -p 1 -o comm= 2>/dev/null" 2>$null) -join "" 
+$pid1 = $pid1.Trim()
+$systemdActive = ($pid1 -match "systemd")
+
+if (-not $systemdActive -or $Restart) {
+    if (-not $systemdActive) {
+        Write-Warn "systemd is not yet PID 1 (current: '$pid1') — restarting WSL to activate it..."
+    } else {
+        Write-Step "Restarting WSL as requested..."
+    }
     wsl --shutdown
     Start-Sleep -Seconds 3
-    Write-Step "Starting $Distro in background..."
+    Write-Step "Starting $Distro in background (Docker will follow via systemd)..."
     Start-Process "wsl.exe" -ArgumentList "-d $Distro -- true" -WindowStyle Hidden
-    Write-Ok "WSL restarted. Docker and the container will start in ~15 seconds."
+    Write-Ok "WSL restarted. Docker and the container will be up in ~15 seconds."
     Write-Host ""
     Write-Host "  Web dashboard: http://localhost:8000" -ForegroundColor White
+} else {
+    Write-Ok "systemd is already active — no restart needed."
 }
