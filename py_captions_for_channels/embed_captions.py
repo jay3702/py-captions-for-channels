@@ -230,7 +230,7 @@ def _test_nvenc_runtime() -> bool:
                 "-f",
                 "lavfi",
                 "-i",
-                "color=c=black:s=16x16:d=0",
+                "color=c=black:s=320x240:d=0",
                 "-frames:v",
                 "1",
                 "-c:v",
