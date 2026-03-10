@@ -110,18 +110,8 @@ Write-Host ""
 Write-Step "Registering Windows startup task..."
 $AutostartScript = Join-Path $ScriptDir "autostart.ps1"
 
-# Check whether the bash installer flagged that a WSL restart is needed
-# (it writes this file when it newly enables systemd in /etc/wsl.conf)
-wsl -d $Distro -- test -f /tmp/py_captions_needs_restart 2>$null
-$needsRestart = ($LASTEXITCODE -eq 0)
-$restartArg   = if ($needsRestart) { "-Restart" } else { "" }
-
 if (Test-Path $AutostartScript) {
-    if ($restartArg) {
-        & $AutostartScript -Distro $Distro -Restart
-    } else {
-        & $AutostartScript -Distro $Distro
-    }
+    & $AutostartScript -Distro $Distro
 } else {
     Write-Warn "autostart.ps1 not found — run it manually later to enable auto-start:"
     Write-Warn "  .\scripts\autostart.ps1"
