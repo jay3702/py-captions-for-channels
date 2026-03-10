@@ -207,6 +207,48 @@ class GPUBackend:
 
 # ---- Capability cache (populated once per process) ----
 _ffmpeg_caps_cache: dict = {}
+_nvenc_runtime_available = None  # None = untested, True/False = result
+
+
+def _test_nvenc_runtime() -> bool:
+    """Verify h264_nvenc works at runtime (libnvidia-encode.so.1 loadable).
+
+    ffmpeg may be compiled with NVENC support but the NVENC userspace library
+    (libnvidia-encode.so.1) is not exposed in all environments — notably Docker
+    Desktop on WSL2 only provides CUDA compute libs, not NVENC video libs.
+    A quick 1-frame null encode reveals this before any real work is attempted.
+    Result is cached for the process lifetime.
+    """
+    global _nvenc_runtime_available
+    if _nvenc_runtime_available is not None:
+        return _nvenc_runtime_available
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=16x16:d=0",
+                "-frames:v",
+                "1",
+                "-c:v",
+                "h264_nvenc",
+                "-f",
+                "null",
+                "-",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        _nvenc_runtime_available = result.returncode == 0
+    except Exception:
+        _nvenc_runtime_available = False
+    return _nvenc_runtime_available
 
 
 def _query_ffmpeg_capabilities() -> dict:
@@ -255,8 +297,14 @@ def _detect_nvidia_backend() -> GPUBackend:
     has_encoder = "h264_nvenc" in caps.get("encoders", "")
     has_deint = "yadif_cuda" in caps.get("filters", "")
 
-    # On Docker Desktop / WSL2, libnvcuvid.so is often not exposed so
-    # CUVID decoders won't appear even though NVENC works fine.
+    # Even when compiled in, h264_nvenc requires libnvidia-encode.so.1 at
+    # runtime. On Docker Desktop / WSL2 this library is not exposed
+    # (only CUDA compute libs are), so NVENC silently fails. Test it now to
+    # avoid a wasted encode attempt and noisy fallback during real jobs.
+    if has_encoder:
+        has_encoder = _test_nvenc_runtime()
+
+    # On Docker Desktop / WSL2, libnvcuvid.so is also often not exposed.
     # Only require the encoder for the backend to be marked available;
     # hardware decode is a bonus if present.
     return GPUBackend(
