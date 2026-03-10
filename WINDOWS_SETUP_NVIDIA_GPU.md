@@ -1,107 +1,14 @@
-# Windows NVIDIA GPU Setup — WSL2 Docker Engine
+# Windows Setup — Manual Reference
 
-> **This guide is for NVIDIA GPU users who want full GPU acceleration** — Whisper inference AND ffmpeg NVENC hardware encoding. If you only need CPU captioning, the [Docker Desktop path in WINDOWS_SETUP.md](WINDOWS_SETUP.md) is simpler.
+> **For the recommended automated setup, see [WINDOWS_SETUP.md](WINDOWS_SETUP.md).** That guide runs `setup-gpu-wsl.ps1` which handles everything on this page automatically.
 
-Docker Desktop on Windows does **not** expose NVIDIA NVENC encoding libraries to containers. Full GPU acceleration requires the NVIDIA Container Toolkit running inside WSL2 with the standard Linux Docker Engine.
-
----
-
-## Quick Install (Recommended)
-
-A single setup script handles everything:
-- Installs Docker Engine + NVIDIA Container Toolkit in WSL2
-- Mounts your NAS share with the right propagation settings for Docker
-- Clones the repo, configures `.env`, sets up auto-start
-- Pulls the image and starts the container
-
-**Requirements before running:**
-- NVIDIA driver **≥ 520** installed on Windows — check with `nvidia-smi` in PowerShell (look for `CUDA Version: 12.x` in the header)
-- Windows 10 2004+ or Windows 11
-
-### Option A — From PowerShell (Windows)
-
-Handles WSL2 and Ubuntu setup automatically, then runs the bash installer inside WSL2:
-
-```powershell
-cd $env:USERPROFILE\Documents
-git clone https://github.com/jay3702/py-captions-for-channels.git
-cd py-captions-for-channels
-
-# If your DVR recordings are on a NAS:
-.\scripts\setup-gpu-wsl.ps1
-
-# If the DVR is on the same machine (no NAS):
-.\scripts\setup-gpu-wsl.ps1 -LocalDvr
-```
-
-**What it prompts for:**
-1. Deploy directory (default: `~/py-captions-for-channels` inside WSL2)
-2. Channels DVR URL (`http://YOUR_DVR_IP:8089`)
-3. NAS server address, share name, mount point, and credentials
-4. DVR path prefix (only if DVR API paths need translation, e.g. `/tank/AllMedia/Channels`)
-
-Everything else — Docker Engine, toolkit, sudoers, `.bashrc` auto-start, image pull — is automated.
-
-### Option B — From WSL2 Ubuntu terminal
-
-If you already have Ubuntu 22.04 or 24.04 in WSL2:
-
-```bash
-# One-liner (inside Ubuntu WSL2):
-curl -fsSL https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main/scripts/setup-gpu-wsl.sh | bash
-
-# Or clone first and run locally:
-git clone https://github.com/jay3702/py-captions-for-channels.git ~/py-captions-for-channels
-bash ~/py-captions-for-channels/scripts/setup-gpu-wsl.sh
-```
-
-> **Re-running is safe** — all steps are idempotent. If something fails midway, fix the issue and re-run.
+This document is a step-by-step reference for each installation task — useful for troubleshooting, reinstalling individual components, or understanding what the setup script does.
 
 ---
 
-## After the Script Completes
+## Manual Setup Steps
 
-Open the dashboard from your Windows browser: **http://localhost:8000**
-
-### Confirm GPU is active
-```bash
-# In WSL2:
-cd ~/py-captions-for-channels
-docker compose logs | grep -E "NVENC|GPU backend"
-```
-Expected:
-```
-INFO  NVENC detection: h264_nvenc=found, cuvid_decoders=[h264_cuvid, hevc_cuvid]
-INFO  GPU backend: nvenc+cuvid (NVENC hardware encoding enabled)
-```
-
-### Whitelist shows and go live
-1. In the dashboard go to **Recordings** → check the shows you want captioned
-2. Click **Manual Process** on a short recording to verify
-3. Set `DRY_RUN=false` in `.env` and restart:
-   ```bash
-   nano ~/py-captions-for-channels/.env   # set DRY_RUN=false
-   cd ~/py-captions-for-channels && docker compose down && docker compose up -d
-   ```
-
----
-
-## Auto-Start on Windows Login
-
-The setup script adds a `~/.bashrc` block that starts Docker, mounts the NAS, and launches the container whenever a WSL2 terminal opens.
-
-To start everything **automatically on Windows login** without opening a terminal:
-1. Press `Win+R`, type `shell:startup`, press Enter
-2. Right-click → **New → Shortcut**, target: `wsl.exe -d Ubuntu-22.04`
-3. Name it "py-captions"
-
-The session opens minimized, `~/.bashrc` runs, and everything comes up automatically.
-
----
-
-## Manual Setup Reference
-
-> The scripts above handle all of this. These steps are for troubleshooting, partial reinstalls, or understanding what the script does.
+> The automated installer (`setup-gpu-wsl.ps1`) handles all of this. These steps are for troubleshooting, partial reinstalls, or understanding what the script does.
 
 ### WSL2 + Ubuntu
 

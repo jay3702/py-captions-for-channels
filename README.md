@@ -56,7 +56,7 @@ See [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for detailed benc
 
 ## Quick Start
 
-**Windows users:** see [WINDOWS_SETUP.md](WINDOWS_SETUP.md) — Docker Desktop must be running before any `docker` command will work, and there are a few Windows-specific path gotchas.
+**Windows users:** see [WINDOWS_SETUP.md](WINDOWS_SETUP.md) — one script installs everything (WSL2, Docker Engine, GPU toolkit, NAS mount, and the container) with a guided TUI.
 
 ```bash
 git clone https://github.com/jay3702/py-captions-for-channels.git
@@ -85,18 +85,18 @@ The pre-built image includes FFmpeg with NVENC/NVDEC support, Faster Whisper wit
 > docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
 > ```
 
-### GPU Acceleration (Optional)
+### GPU Acceleration
 
-`docker compose up -d` works on any machine. To enable NVIDIA GPU acceleration,
-add two lines to your `.env`:
+NVIDIA GPU acceleration requires the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) (`nvidia-container-toolkit`) installed on the Docker host. **Windows users:** this is handled automatically by `setup-gpu-wsl.ps1`.
+
+With the toolkit installed, add two lines to `.env`:
 
 ```dotenv
 DOCKER_RUNTIME=nvidia
 NVIDIA_VISIBLE_DEVICES=all
 ```
 
-Requires the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
-Without it, everything works the same on CPU — just slower (~10 min per hour for TVE, ~10–15 min for OTA vs ~1–5 min with GPU).
+Without GPU, everything works on CPU — just slower (~10 min per hour for TVE, ~10–15 min for OTA vs ~1–5 min with GPU).
 
 ### ChannelWatch Integration (Optional)
 
@@ -150,7 +150,7 @@ DRY_RUN=true                    # Switch to false once setup is verified
 | Document | Description |
 |----------|-------------|
 | [SETUP.md](SETUP.md) | Quick setup walkthrough |
-| [WINDOWS_SETUP.md](WINDOWS_SETUP.md) | Windows-specific setup guide |
+| [WINDOWS_SETUP.md](WINDOWS_SETUP.md) | Windows setup — automated one-script install (WSL2 + Docker Engine + GPU) |
 | [SETUP_ADVANCED.md](SETUP_ADVANCED.md) | GPU, Fire TV transcoding, webhooks, whitelist regex |
 | [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) | Full Docker deployment guide |
 | [.env.example.nvidia](.env.example.nvidia) | Minimal starter config — NVIDIA GPU |

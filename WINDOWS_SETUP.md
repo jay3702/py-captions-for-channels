@@ -1,403 +1,253 @@
 # Windows Setup Guide
 
-> This guide covers Windows-specific steps and gotchas. For the general setup flow see [SETUP.md](SETUP.md).
+This guide uses **WSL2 + Docker Engine** — the only Windows Docker configuration that supports full NVIDIA GPU acceleration (Whisper CUDA + ffmpeg NVENC). Docker Desktop is not supported for this project.
 
-> **NVIDIA GPU users (NVENC hardware encoding):** Docker Desktop does not expose NVIDIA encoding libraries (NVENC/CUVID) to containers. If you want full GPU acceleration — both Whisper inference and ffmpeg hardware encoding — use the **[WSL2 Docker Engine guide](WINDOWS_SETUP_NVIDIA_GPU.md)** instead of this one. This Docker Desktop guide supports CPU captioning and basic Whisper CUDA inference, but ffmpeg NVENC will not work.
+> **Why not Docker Desktop?** Docker Desktop cannot expose the NVIDIA encoding runtime (`libnvidia-encode`) to containers, so ffmpeg NVENC never works. It also requires a paid commercial license for organisations ≥ 250 employees. Docker Engine inside WSL2 has none of these limitations and works identically for CPU-only setups too.
 
-> **All commands in this guide are for [PowerShell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows).** Windows 10/11 ships with PowerShell 5.1 (`powershell.exe`), but PowerShell 7+ is recommended.
+> **No GPU?** The same script works for CPU-only captioning. Just skip the NVIDIA driver check — the `setup-gpu-wsl.ps1` handles it gracefully.
+
+> **All commands in this guide are for [PowerShell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows).** PowerShell 7+ is recommended.
 >
-> **Install PowerShell 7** — use whichever option works for you:
+> **Install PowerShell 7:**
 >
 > | Option | Command / Link |
 > |--------|---------------|
 > | winget (Windows 11 / Win 10 21H2+) | `winget install Microsoft.PowerShell` |
-> | Microsoft Store | Search **"PowerShell"** and install from Microsoft |
-> | Direct download (.msi) | [github.com/PowerShell/PowerShell/releases](https://github.com/PowerShell/PowerShell/releases) |
+> | Microsoft Store | Search **"PowerShell"** |
+> | Direct download | [github.com/PowerShell/PowerShell/releases](https://github.com/PowerShell/PowerShell/releases) |
 >
-> **Don't have winget?** Install the **App Installer** from the [Microsoft Store](https://apps.microsoft.com/detail/9nblggh4nns1) to get it, or use one of the other options above.
->
-> Once installed, launch **PowerShell 7** by searching "pwsh" in the Start menu (not the older "Windows PowerShell").
+> Launch **PowerShell 7** by searching "pwsh" in the Start menu.
 
 ---
 
 ## Table of Contents
 
-> **NVIDIA GPU (NVENC) users** — use the [WSL2 Docker Engine guide](WINDOWS_SETUP_NVIDIA_GPU.md) instead.
-
-- [Prerequisites](#prerequisites)
-- [Step 1 — Install and Start Docker Desktop](#step-1--install-and-start-docker-desktop)
-- [Step 2 — Clone the Repository](#step-2--clone-the-repository)
-- [Step 2a — Verify DVR Network Share Access (remote DVR only)](#step-2a--verify-dvr-network-share-access-remote-dvr-only)
-- [Step 3 — Configure .env](#step-3--configure-env)
-- [Step 4 — GPU Setup (NVIDIA)](#step-4--gpu-setup-nvidia)
-- [Step 5 — Pre-deploy Verification](#step-5--pre-deploy-verification)
-- [Step 6 — Deploy](#step-6--deploy)
-- [Step 7 — Post-deploy: Recordings and GPU Check](#step-7--post-deploy-recordings-and-gpu-check)
-- [Path Syntax Rules](#path-syntax-rules)
+- [Requirements](#requirements)
+- [Quick Install](#quick-install)
+- [After the Script Completes](#after-the-script-completes)
+- [Auto-Start on Windows Login](#auto-start-on-windows-login)
+- [Updating](#updating)
+- [Teardown / Uninstall](#teardown--uninstall)
 - [Troubleshooting](#troubleshooting)
+- [Manual Setup Reference](#manual-setup-reference)
 
 ---
 
-## Prerequisites
+## Requirements
 
-- **Windows 10 version 2004 or later** (required for WSL2)
-- **[Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)** — uses the WSL2 backend
-- **WSL2** — installed automatically by Docker Desktop; or install manually:
-  ```powershell
-  wsl --install
-  ```
-- Git for Windows (comes with Git Bash, or use [winget](https://winget.run/)):
+- **Windows 10 version 2004 or later**, or **Windows 11**
+- **NVIDIA GPU driver ≥ 520** — download from [nvidia.com/drivers](https://www.nvidia.com/Download/index.aspx)
+  - Check with `nvidia-smi` in PowerShell — the `CUDA Version` in the header must be **12.2 or higher**
+  - CPU-only users: no GPU requirement
+- **Git for Windows:**
   ```powershell
   winget install Git.Git
   ```
 
 ---
 
-## Step 1 — Install and Start Docker Desktop
+## Quick Install
 
-1. Download and install [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)
-2. During setup, choose **WSL2** as the backend (default on modern Windows)
-3. After installation, **start Docker Desktop from the Start menu or taskbar**
-
-> **The most common error:** Running `docker compose` before Docker Desktop has finished starting gives:
-> ```
-> open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.
-> ```
-> **Fix:** Wait for the Docker Desktop whale icon in the taskbar notification area to stop animating, then try again.
-
-Verify Docker is running:
-```powershell
-docker version
-```
-
----
-
-## Step 2 — Clone the Repository
+A single script handles everything — WSL2, Ubuntu, Docker Engine, NVIDIA Container Toolkit, NAS mount, repo clone, `.env` configuration, and container launch:
 
 ```powershell
-cd $env:USERPROFILE\Documents   # or wherever you want it
+# In PowerShell — clone anywhere on Windows, just to get the scripts
+cd $env:USERPROFILE\Documents
 git clone https://github.com/jay3702/py-captions-for-channels.git
 cd py-captions-for-channels
+
+# DVR recordings on a NAS:
+.\scripts\setup-gpu-wsl.ps1
+
+# DVR recordings local / no NAS:
+.\scripts\setup-gpu-wsl.ps1 -LocalDvr
 ```
+
+**The script will prompt for:**
+1. Deploy directory inside WSL2 (default: `~/py-captions-for-channels`)
+2. Channels DVR URL (`http://YOUR_DVR_IP:8089`)
+3. NAS server address, share name, and mount point (if applicable)
+4. NAS credentials (prompted at mount time, with retry on auth failure)
+
+**Then it runs unattended:**
+- Installs WSL2 + Ubuntu 22.04 (if not present)
+- Installs Docker Engine + NVIDIA Container Toolkit inside WSL2
+- Mounts the NAS share with the correct propagation settings for Docker
+- Clones the repo inside WSL2 and configures `.env`
+- Adds a `~/.bashrc` auto-start block (Docker + NAS mount + container)
+- Pulls the image and starts the container
+
+> **Re-running is safe** — all steps are idempotent. If something fails midway, fix the issue and re-run.
+
+> **Ubuntu-24.04:** To use Ubuntu 24.04 instead of 22.04:
+> ```powershell
+> .\scripts\setup-gpu-wsl.ps1 -Distro Ubuntu-24.04
+> ```
 
 ---
 
-## Step 2a — Verify DVR Network Share Access (remote DVR only)
+## After the Script Completes
 
-> Skip this if Channels DVR is running on the same Windows machine.
+Open the dashboard from Windows: **http://localhost:8000**
 
-If your Channels DVR is on a NAS, Linux server, or another Windows machine, confirm Windows can reach the recordings folder before you configure Docker. The Setup Wizard handles all path formatting — you just need the server name (or IP) and the share name.
+### Confirm GPU is active (NVIDIA only)
 
-### Step 1 — Find the recordings path in Channels DVR
-
-Open the Channels DVR web UI on the DVR server and go to **Settings → General**. The **DVR Storage** (or "Server Enabled") field shows the full path where recordings are stored — e.g. `/mnt/storage/dvr` or `D:\Channels`. This is the folder that must be accessible via network share from the Windows machine running this tool.
-
-### Step 2 — Find or create the share
-
-List existing shares on that server to find one that covers that path:
-
-```powershell
-net view \\YOUR_DVR_SERVER
+In WSL2:
+```bash
+cd ~/py-captions-for-channels
+docker compose logs | grep -E "NVENC|GPU backend"
+```
+Expected:
+```
+INFO  NVENC detection: h264_nvenc=found, cuvid_decoders=[h264_cuvid, hevc_cuvid]
+INFO  GPU backend: nvenc+cuvid (NVENC hardware encoding enabled)
 ```
 
-The share name could be anything — `Channels`, `DVR`, `media`, `recordings`, etc. If none of the listed shares expose the recordings folder, you'll need to create one:
+### Verify recordings via Setup Wizard
 
-- **Windows DVR server:** File Explorer → right-click the recordings folder → Properties → Sharing
-- **NAS:** check your NAS admin UI for the share covering that path
-- **Linux (Samba):** add a share entry to `/etc/samba/smb.conf` pointing to the recordings directory
-
-### Step 3 — Verify access from this machine
-
-```powershell
-# Use the share name you identified above
-Get-ChildItem "\\YOUR_DVR_SERVER\YOUR_SHARE_NAME"
-```
-
-You should see the DVR's recording folders (e.g. `TV`, `Movies`). If access is denied or the path is not found, resolve the share permissions before continuing.
-
-> **What the wizard needs:** When the Setup Wizard runs, it will ask for the server address and share name separately — e.g. `YOUR_DVR_SERVER` and `Channels`. You do not need to type UNC paths or backslashes manually.
-
----
-
-## Step 3 — Configure .env
-
-Choose the starter file that matches your hardware:
-
-```powershell
-# CPU-only (no GPU):
-copy .env.example.cpu .env
-
-# NVIDIA GPU:
-copy .env.example.nvidia .env
-
-# Intel GPU:
-copy .env.example.intel .env
-
-# AMD GPU:
-copy .env.example.amd .env
-```
-
-Open it with Notepad or VS Code:
-```powershell
-notepad .env
-# or:
-code .env
-```
-
-Set `CHANNELS_DVR_URL` to your DVR's IP address. Leave `DRY_RUN=true` until you've verified the setup.
-
-### Configure the recordings volume
-
-> **The recordings volume must be configured before the first deploy.** The Setup Wizard (Step 7) can update these settings later, but the container cannot start without a valid initial configuration.
-
-Your `.env` file has two option blocks — **use Option A or Option B, not both.** Comment out the one you are not using.
-
-**Option A — DVR is on this machine (same Windows PC running Docker):**
-
-Open Channels DVR → **Settings → General** and note the DVR storage path. Fill it in as `DVR_MEDIA_DEVICE` using forward slashes:
-
-```dotenv
-DVR_MEDIA_TYPE=none
-DVR_MEDIA_DEVICE=C:/path/to/your/Channels/DVR
-DVR_MEDIA_OPTS=bind
-DVR_MEDIA_MOUNT=/mnt/media
-```
-
-**Option B — DVR is on a different machine (NAS, Linux server, another Windows PC):**
-
-Docker Desktop handles the share as a plain bind mount via `DVR_MEDIA_HOST_PATH`. The `DVR_MEDIA_TYPE`, `DVR_MEDIA_DEVICE`, and `DVR_MEDIA_OPTS` lines from Option A are not used here — leave them commented out.
-
-**Step 1 — Store credentials in Windows Credential Manager (keeps passwords out of files)**
-
-```powershell
-cmdkey /add:YOUR_DVR_SERVER /user:USERNAME /pass:PASSWORD
-```
-
-Verify the share is accessible:
-
-```powershell
-Get-ChildItem \\YOUR_DVR_SERVER\YOUR_SHARE_NAME
-```
-
-**Step 1b (optional) — Map a persistent drive letter**
-
-A drive letter is more reliable than a bare UNC path on Windows. Run once in PowerShell:
-
-```powershell
-net use Z: \\YOUR_DVR_SERVER\YOUR_SHARE_NAME /persistent:yes
-```
-
-Replace `Z:` with any free drive letter. If credentials are already stored (Step 1), no `/user:` needed. Verify: `Get-ChildItem Z:\`
-
-**Step 2 — Comment out Option A and fill in Option B:**
-
-With a mapped drive letter (Step 1b):
-
-```dotenv
-DVR_MEDIA_HOST_PATH=Z:/
-DVR_MEDIA_MOUNT=/mnt/media
-# DVR_PATH_PREFIX — leave unset; configure via the Setup Wizard (Step 7)
-```
-
-Or directly via UNC path (credentials must be in Credential Manager from Step 1):
-
-```dotenv
-DVR_MEDIA_HOST_PATH=//YOUR_DVR_SERVER/YOUR_SHARE_NAME
-DVR_MEDIA_MOUNT=/mnt/media
-# DVR_PATH_PREFIX — leave unset; configure via the Setup Wizard (Step 7)
-```
-
-> **Any slash style is accepted** — `\\server\share`, `//server/share` — the path is normalized automatically.
-
-> **`LOCAL_PATH_PREFIX`** is set automatically from `DVR_MEDIA_MOUNT` — you do not need to include it in `.env`. It only needs to be set explicitly when using `DVR_PATH_PREFIX` for path translation (when the DVR server reports a different internal path from the mount point).
-
----
-
-## Step 4 — GPU Setup (NVIDIA)
-
-> **Want NVENC hardware encoding?** Docker Desktop only exposes CUDA compute libraries — Whisper GPU inference will work, but ffmpeg NVENC (hardware video encoding) will not. For full GPU acceleration stop here and follow the **[WSL2 Docker Engine guide](WINDOWS_SETUP_NVIDIA_GPU.md)** instead.
-
-For Whisper CUDA inference only (no NVENC), Docker Desktop with the WSL2 backend passes the GPU through automatically.
-
-### Requirements
-
-- NVIDIA driver **≥ 520** — download from [nvidia.com/drivers](https://www.nvidia.com/Download/index.aspx)  
-  Check the current version: `nvidia-smi` — look for "CUDA Version" ≥ 12.2
-- Docker Desktop using the **WSL2 backend** (default)
-
-### Enable GPU in .env
-
-Your `.env.example.nvidia` starter already includes these; confirm they are present:
-
-```dotenv
-DOCKER_RUNTIME=nvidia
-NVIDIA_VISIBLE_DEVICES=all
-```
-
-> GPU passthrough inside the container is verified in Step 7, after the container is running.
->
-> **Note:** ffmpeg NVENC (`h264_nvenc`) will show as not found in the startup logs with Docker Desktop. This is expected — Docker Desktop does not expose the NVIDIA encoding runtime libraries. Captioning still works; only the final ffmpeg subtitle-embedding step uses CPU instead of GPU.
-
----
-
-## Step 5 — Pre-deploy Verification
-
-Before pulling the image, confirm everything is in order:
-
-### 1. Docker is running
-```powershell
-docker version
-```
-You should see both Client and Server versions. If you get a pipe error, Docker Desktop is not running — start it and wait for the whale icon to stop animating.
-
-### 2. GPU is visible on the host (NVIDIA only)
-```powershell
-nvidia-smi
-```
-The CUDA Version is in the **top-right corner of the first header row** — easy to miss:
-```
-+----------------------------------------------------------+
-| NVIDIA-SMI 581.95   Driver Version: 581.95   CUDA Version: 13.0  |
-```
-Confirm the **CUDA Version** shown is **12.2 or higher**. If it's lower, GPU acceleration will fall back to CPU and the container logs a warning at startup.
-
-### 3. Validate your .env
-```powershell
-docker compose config
-```
-This resolves all `${VAR}` substitutions and prints the final compose configuration. Look for obvious issues:
-- `CHANNELS_DVR_URL` should not be `http://<CHANNELS_DVR_SERVER>:8089` (the placeholder)
-- `DOCKER_RUNTIME` should show `nvidia` if you're using GPU
-- No lines like `image: ` with an empty value
-
-If any substitution looks wrong, edit `.env` and re-run `docker compose config` before proceeding.
-
----
-
-## Step 6 — Deploy
-
-```powershell
-docker compose pull        # download the prebuilt image (~5.5 GB, one-time)
-docker compose up -d       # start the container
-docker compose logs -f     # watch startup logs (Ctrl+C to exit)
-```
-
-The startup log should end with something like:
-```
-INFO  Watcher started
-INFO  Web UI listening on 0.0.0.0:8000
-```
-If it exits immediately instead, see Troubleshooting below.
-
----
-
-## Step 7 — Post-deploy: Recordings and GPU Check
-
-### Verify GPU passthrough (NVIDIA only)
-
-With the container running:
-```powershell
-docker exec -it py-captions-for-channels nvidia-smi
-```
-You should see your GPU listed. If not, check that `DOCKER_RUNTIME=nvidia` and `NVIDIA_VISIBLE_DEVICES=all` are in `.env` and that your driver version is ≥ 520.
-
-### Verify recordings access via Setup Wizard
-
-Open the web dashboard:
-```
-http://localhost:8000
-```
-
-Navigate to: **⚙ gear icon → Setup Wizard**
-
-The wizard auto-detects your DVR's media folder and verifies that the volume settings configured in Step 3 are working correctly. It can also regenerate the correct `DVR_MEDIA_*` values if you need to update them (e.g. the DVR server moved or the share changed). After the wizard writes updated values to `.env`, restart the container to apply them:
-
-```powershell
-docker compose down
-docker compose up -d
-```
+Navigate to **⚙ gear icon → Setup Wizard** in the dashboard. The wizard auto-detects the DVR media folder and verifies the volume mount is working.
 
 ### Whitelist shows and go live
 
-In the dashboard, go to **Recordings**, check the shows you want captioned, then:
+1. In the dashboard go to **Recordings** → check the shows you want captioned
+2. Click **Manual Process** on a short recording to verify end-to-end
+3. Set `DRY_RUN=false` in `.env` and restart:
+   ```bash
+   nano ~/py-captions-for-channels/.env   # set DRY_RUN=false
+   cd ~/py-captions-for-channels && docker compose down && docker compose up -d
+   ```
 
-```powershell
-# Edit .env: set DRY_RUN=false
-notepad .env
+---
 
-# Restart to apply
+## Auto-Start on Windows Login
+
+The setup script already adds a `~/.bashrc` block that starts Docker, mounts the NAS, and launches the container whenever a WSL2 terminal opens.
+
+To start everything **automatically on Windows login** without opening a terminal:
+
+1. Press `Win+R`, type `shell:startup`, press Enter
+2. Right-click → **New → Shortcut**, target: `wsl.exe -d Ubuntu-22.04`
+3. Name it "py-captions"
+
+The session opens minimized, `~/.bashrc` runs, and everything comes up automatically.
+
+---
+
+## Updating
+
+```bash
+# In WSL2
+cd ~/py-captions-for-channels
+git pull
+docker compose pull
 docker compose down
 docker compose up -d
 ```
 
-New recordings that match your whitelist will now be processed automatically.
-
 ---
 
-## Path Syntax Rules
+## Teardown / Uninstall
 
-> **Always use forward slashes in `.env` — even on Windows.**
+A teardown script reverses everything the installer created:
 
-| Context | Correct | Wrong |
-|---------|---------|-------|
-| `.env` values | `DVR_MEDIA_HOST_PATH=Z:/` | `Z:\` |
-| `.env` values | `DVR_MEDIA_DEVICE=//192.168.1.100/share` | `\\192.168.1.100\share` |
-| `.env` values | `DVR_MEDIA_MOUNT=/mnt/channels` | `C:\mnt\channels` |
-| `.env` comment describing a Windows DVR path | `D:/DVR` | `D:\DVR` |
+```bash
+# In WSL2
+bash /mnt/c/Users/YOUR_USERNAME/Documents/py-captions-for-channels/scripts/teardown-wsl.sh
 
-Docker and the Python code inside the container run on Linux (via WSL2). Backslashes in `.env` cause silent failures. Forward slashes work everywhere.
+# Also remove the deploy directory and data:
+bash .../teardown-wsl.sh --all
+```
+
+Or manually:
+```bash
+cd ~/py-captions-for-channels
+docker compose down
+docker rmi ghcr.io/jay3702/py-captions-for-channels:latest
+sudo umount /mnt/channels    # if NAS was mounted
+```
 
 ---
 
 ## Troubleshooting
 
-### "The system cannot find the file specified" / pipe error
+### Script fails: "WSL2 not found" or Ubuntu install hangs
 
-Docker Desktop is not running. Start it from the Start menu or taskbar and wait for the whale icon to stop animating.
-
-### Volume mount fails: `no such file or directory` / `failed to mount local volume`
-
-```
-Error response from daemon: failed to mount local volume: mount /mnt/media ... no such file or directory
-```
-
-The `DVR_MEDIA_*` variables in `.env` are not set (or are set to a path that doesn't exist). The container cannot start without a valid volume configuration — go back to **Step 3** and configure them before retrying `docker compose up -d`.
-
-### `docker compose up` starts but container exits immediately
-
-Check the logs:
+WSL2 may need a reboot after first install:
 ```powershell
+wsl --install --no-distribution
+# Reboot, then re-run setup-gpu-wsl.ps1
+```
+
+### GPU test fails: unknown or invalid runtime `nvidia`
+
+The NVIDIA Container Toolkit runtime is not registered:
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo service docker restart
+docker info | grep -i runtime   # should show: nvidia runc
+```
+
+### NVENC not found / `h264_nvenc=NOT FOUND`
+
+1. Confirm the container is using the nvidia runtime:
+   ```bash
+   docker inspect py-captions-for-channels | grep -i runtime
+   ```
+2. Confirm `.env` has `DOCKER_RUNTIME=nvidia` and `NVIDIA_VISIBLE_DEVICES=all`
+3. Test manually:
+   ```bash
+   docker exec -it py-captions-for-channels \
+     ffmpeg -f lavfi -i color=c=black:s=320x240:d=0 -frames:v 1 -c:v h264_nvenc -f null - 2>&1
+   ```
+   - `Cannot load libnvidia-encode.so.1` → nvidia runtime not active for the container
+   - `No NVENC capable devices found` → GPU doesn't support NVENC (rare on GeForce ≥ GTX 700)
+
+### NAS mount not visible in container
+
+```bash
+# Confirm mount and shared propagation
+mountpoint /mnt/channels && ls /mnt/channels
+cat /proc/mounts | grep channels   # should show: ... shared ...
+
+# Re-apply propagation if missing, then restart container
+sudo mount --make-shared /mnt/channels
+docker compose down && docker compose up -d
+```
+
+### `mount error(13): Permission denied` (CIFS)
+
+```bash
+sudo cat /etc/cifs-credentials-py-captions   # confirm username= and password= are correct
+```
+
+### Container exits immediately on `docker compose up`
+
+```bash
 docker compose logs
 ```
-The most common causes are a missing or malformed `.env`, or a volume mount path that doesn't exist.
+Most common causes: missing `.env`, `CHANNELS_DVR_URL` still set to placeholder, or recordings mount path doesn't exist.
 
-### Cannot reach http://localhost:8000
+### Web dashboard not accessible from Windows (`http://localhost:8000`)
 
-Check that the container is running:
-```powershell
-docker compose ps
+WSL2 auto-forwards ports to Windows. If localhost doesn't work:
+```bash
+ip addr show eth0 | grep "inet "   # get WSL2 IP
+# Browse to http://WSL2_IP:8000
 ```
-If it shows "Exited", check the logs above. If running, confirm Windows Firewall isn't blocking port 8000.
 
-### GPU not detected / falling back to CPU
+### `docker compose` not found after Docker Desktop was previously installed
 
-- Confirm NVIDIA driver ≥ 520: run `nvidia-smi` in PowerShell
-- Confirm Docker Desktop uses WSL2 backend: **Settings → General → Use the WSL2 based engine**
-- Confirm `.env` has `DOCKER_RUNTIME=nvidia` and `NVIDIA_VISIBLE_DEVICES=all`
-- After making changes, restart: `docker compose down && docker compose up -d`
+Docker Desktop leaves stubs in `/usr/local/lib/docker/cli-plugins/` that shadow the real binaries:
+```bash
+sudo rm -f /usr/local/lib/docker/cli-plugins/docker-compose
+sudo rm -f /usr/local/lib/docker/cli-plugins/docker-buildx
+sudo ln -sf /usr/libexec/docker/cli-plugins/docker-compose \
+  /usr/local/lib/docker/cli-plugins/docker-compose
+docker compose version
+```
 
-### ffmpeg NVENC not working (startup log shows `h264_nvenc=NOT FOUND`)
+---
 
-This is expected on Docker Desktop. Docker Desktop exposes CUDA compute libraries but not the NVIDIA encoding runtime (`libnvidia-encode.so`). ffmpeg NVENC and CUVID hardware decode require the full NVIDIA Container Toolkit running against the Linux Docker Engine.
+## Manual Setup Reference
 
-To enable NVENC, switch to the **[WSL2 Docker Engine setup](WINDOWS_SETUP_NVIDIA_GPU.md)**.
-
-### Recordings not found inside container
-
-- In the web dashboard run the Setup Wizard again
-- Make sure all `.env` paths use forward slashes
-- Check the container can reach the share: `docker exec -it py-captions-for-channels ls /mnt/channels`
-
-### SMB share: CIFS mount errors (`invalid argument`, `no such file or directory`)
-
-The Docker Desktop CIFS named volume driver on Windows has unpredictable path-normalization behaviour and is not reliable. Use the `DVR_MEDIA_HOST_PATH` approach instead — see **Step 3** ("DVR on a different machine").
+If you prefer to run the steps individually — for troubleshooting, partial reinstalls, or understanding what the script does — see [WINDOWS_SETUP_NVIDIA_GPU.md](WINDOWS_SETUP_NVIDIA_GPU.md) for the full manual procedure.
