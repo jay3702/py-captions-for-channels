@@ -2,6 +2,8 @@
 
 > This guide covers Windows-specific steps and gotchas. For the general setup flow see [SETUP.md](SETUP.md).
 
+> **NVIDIA GPU users (NVENC hardware encoding):** Docker Desktop does not expose NVIDIA encoding libraries (NVENC/CUVID) to containers. If you want full GPU acceleration — both Whisper inference and ffmpeg hardware encoding — use the **[WSL2 Docker Engine guide](WINDOWS_SETUP_NVIDIA_GPU.md)** instead of this one. This Docker Desktop guide supports CPU captioning and basic Whisper CUDA inference, but ffmpeg NVENC will not work.
+
 > **All commands in this guide are for [PowerShell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows).** Windows 10/11 ships with PowerShell 5.1 (`powershell.exe`), but PowerShell 7+ is recommended.
 >
 > **Install PowerShell 7** — use whichever option works for you:
@@ -19,6 +21,8 @@
 ---
 
 ## Table of Contents
+
+> **NVIDIA GPU (NVENC) users** — use the [WSL2 Docker Engine guide](WINDOWS_SETUP_NVIDIA_GPU.md) instead.
 
 - [Prerequisites](#prerequisites)
 - [Step 1 — Install and Start Docker Desktop](#step-1--install-and-start-docker-desktop)
@@ -211,7 +215,9 @@ DVR_MEDIA_MOUNT=/mnt/media
 
 ## Step 4 — GPU Setup (NVIDIA)
 
-On Windows, Docker Desktop with the WSL2 backend passes NVIDIA GPUs through automatically — no Container Toolkit installation is required (unlike Linux).
+> **Want NVENC hardware encoding?** Docker Desktop only exposes CUDA compute libraries — Whisper GPU inference will work, but ffmpeg NVENC (hardware video encoding) will not. For full GPU acceleration stop here and follow the **[WSL2 Docker Engine guide](WINDOWS_SETUP_NVIDIA_GPU.md)** instead.
+
+For Whisper CUDA inference only (no NVENC), Docker Desktop with the WSL2 backend passes the GPU through automatically.
 
 ### Requirements
 
@@ -229,6 +235,8 @@ NVIDIA_VISIBLE_DEVICES=all
 ```
 
 > GPU passthrough inside the container is verified in Step 7, after the container is running.
+>
+> **Note:** ffmpeg NVENC (`h264_nvenc`) will show as not found in the startup logs with Docker Desktop. This is expected — Docker Desktop does not expose the NVIDIA encoding runtime libraries. Captioning still works; only the final ffmpeg subtitle-embedding step uses CPU instead of GPU.
 
 ---
 
@@ -377,6 +385,12 @@ If it shows "Exited", check the logs above. If running, confirm Windows Firewall
 - Confirm Docker Desktop uses WSL2 backend: **Settings → General → Use the WSL2 based engine**
 - Confirm `.env` has `DOCKER_RUNTIME=nvidia` and `NVIDIA_VISIBLE_DEVICES=all`
 - After making changes, restart: `docker compose down && docker compose up -d`
+
+### ffmpeg NVENC not working (startup log shows `h264_nvenc=NOT FOUND`)
+
+This is expected on Docker Desktop. Docker Desktop exposes CUDA compute libraries but not the NVIDIA encoding runtime (`libnvidia-encode.so`). ffmpeg NVENC and CUVID hardware decode require the full NVIDIA Container Toolkit running against the Linux Docker Engine.
+
+To enable NVENC, switch to the **[WSL2 Docker Engine setup](WINDOWS_SETUP_NVIDIA_GPU.md)**.
 
 ### Recordings not found inside container
 

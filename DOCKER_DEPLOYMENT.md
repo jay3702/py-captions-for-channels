@@ -62,6 +62,10 @@ NVIDIA_VISIBLE_DEVICES=all
 > Check with `nvidia-smi` — "CUDA Version" must show 12.2 or higher.
 > If it is lower, GPU acceleration silently falls back to CPU and a warning is logged at startup.
 
+> **Windows users:** Docker Desktop exposes CUDA compute libraries but not the NVIDIA encoding runtime (`libnvidia-encode.so`), so ffmpeg NVENC hardware encoding will not work. For full GPU acceleration (Whisper CUDA + ffmpeg NVENC), use the **[WSL2 Docker Engine setup](WINDOWS_SETUP_NVIDIA_GPU.md)** instead of Docker Desktop. See [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for the Docker Desktop path (Whisper CUDA only).
+>
+> **Linux users:** install [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) and run `sudo nvidia-ctk runtime configure --runtime=docker` before starting the container.
+
 ### Recordings path (DVR media mount)
 
 Use the **Setup Wizard** in the web dashboard (⚙ gear icon → **Setup Wizard**) to configure
