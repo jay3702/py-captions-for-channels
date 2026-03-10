@@ -42,12 +42,18 @@ if ($isAdmin) {
                     -MultipleInstances IgnoreNew
 
     if ($TriggerType -eq "Boot") {
-        # ── At-boot: fires before anyone logs in ─────────────────────────
-        # Task Scheduler needs stored credentials because there is no interactive
-        # session at boot time.  The password is encrypted by Windows (LSA secrets)
-        # and never transmitted anywhere.
+        # ── Boot mode: AtStartup + AtLogon (both triggers on same task) ──
+        #
+        # AtStartup fires at Windows startup (before login) — best effort,
+        # may fail if WSL's user profile isn't loaded yet.
+        # AtLogon fires when the user signs in — guaranteed fallback.
+        # MultipleInstances=IgnoreNew means if boot fires first, the logon
+        # trigger is silently skipped (harmless double-fire prevention).
+        #
+        # Stored credentials are required for AtStartup (no interactive session).
+        # Password is encrypted by Windows (LSA secrets) — never transmitted.
         Write-Host ""
-        Write-Host "  Task will fire at system BOOT, before anyone logs in." -ForegroundColor White
+        Write-Host "  Task will fire at system BOOT and again at logon (as fallback)." -ForegroundColor White
         Write-Host ""
         Write-Host "  WSL2 distros are registered per-user, so the task must run as:" -ForegroundColor DarkGray
         Write-Host "    $env:USERDOMAIN\$env:USERNAME" -ForegroundColor White
@@ -71,28 +77,31 @@ if ($isAdmin) {
             if (-not $validated) { Write-Warn "Incorrect password — try again." }
         }
 
-        Write-Step "Registering at-boot startup task '$TaskName'..."
-        $trigger = New-ScheduledTaskTrigger -AtStartup
+        Write-Step "Registering startup task '$TaskName' (at-boot + at-logon fallback)..."
+        $triggers = @(
+            New-ScheduledTaskTrigger -AtStartup
+            New-ScheduledTaskTrigger -AtLogOn
+        )
 
         Register-ScheduledTask `
             -TaskName    $TaskName `
             -Action      $action `
-            -Trigger     $trigger `
+            -Trigger     $triggers `
             -Settings    $settings `
             -RunLevel    Highest `
             -User        "$env:USERDOMAIN\$env:USERNAME" `
             -Password    $plain `
-            -Description "Starts WSL2 ($Distro) at system boot for py-captions-for-channels (runs before login)" `
+            -Description "Starts WSL2 ($Distro) at boot (+ logon fallback) for py-captions-for-channels" `
             -Force | Out-Null
 
         # Wipe plaintext password from memory immediately
         $plain = $null
         [GC]::Collect()
 
-        Write-Ok "Startup task registered — fires at system boot (before login)."
+        Write-Ok "Startup task registered — fires at system boot, with logon as fallback."
 
     } else {
-        # ── At-logon: fires when the user signs in — no password needed ──
+        # ── Logon-only mode: fires when the user signs in — no password needed ──
         Write-Step "Registering at-logon startup task '$TaskName'..."
         $trigger = New-ScheduledTaskTrigger -AtLogOn
 

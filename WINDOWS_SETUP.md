@@ -256,8 +256,10 @@ It will ask when to fire the startup task:
 
 | Mode | When it fires | Password required? |
 |------|--------------|-------------------|
-| **Boot** (recommended) | At Windows startup, before anyone logs in | Yes — stored encrypted by Windows |
+| **Boot** (recommended) | At Windows startup AND at logon as fallback | Yes — stored encrypted by Windows |
 | **Logon** | When you sign in to Windows | No |
+
+Boot mode registers both triggers on the same task. If WSL starts successfully at boot, the logon trigger is silently skipped (`MultipleInstances = IgnoreNew`). If the boot trigger fails (e.g. user profile not yet loaded), logon fires as a guaranteed fallback.
 
 **Why no dedicated service account?** WSL2 distros are registered per-user in the Windows registry. The startup task must run as your own account — it can't use a separate account that doesn't have the distro registered.  In Boot mode, your password is stored by Windows in LSA secrets (same mechanism used by all Windows services) and never transmitted anywhere.
 
