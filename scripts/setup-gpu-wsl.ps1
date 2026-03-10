@@ -75,7 +75,7 @@ try {
     if ($cont -notmatch "^[Yy]") { exit 0 }
 }
 
-# ── STEP 4 — Copy installer into WSL2 and run it ──────────────────────────
+# ── STEP 4 — Run installer inside WSL2 ───────────────────────────────────
 Write-Step "Preparing bash installer..."
 
 # The bash script lives next to this PowerShell script (in scripts/)
@@ -86,19 +86,19 @@ if (-not (Test-Path $BashScript)) {
     Write-Fail "setup-gpu-wsl.sh not found at: $BashScript`nMake sure both scripts are in the same directory."
 }
 
-# Convert Windows path to a WSL2-accessible path
-$WslBashPath = wsl -d $Distro -- wslpath -u ('"' + $BashScript.Replace('\', '\\') + '"') 2>&1
-$WslBashPath = $WslBashPath.Trim()
+# Convert Windows path to WSL2 path without calling wslpath (avoids quoting issues)
+# e.g. C:\Users\jay\...  →  /mnt/c/Users/jay/...
+$drive       = $BashScript[0].ToString().ToLower()
+$winRelPath  = $BashScript.Substring(3).Replace('\', '/')
+$WslBashPath = "/mnt/$drive/$winRelPath"
 
-$ExtraArgs = if ($LocalDvr) { "--local-dvr" } else { "" }
+$ExtraArgs = @()
+if ($LocalDvr) { $ExtraArgs += "--local-dvr" }
 
 Write-Ok "Launching installer inside $Distro..."
 Write-Host ""
 
-# Run the bash script inside WSL2
-# Shell expansion args: trim quotes, pass extra flags
-$bashCmd = "bash `"$WslBashPath`" $ExtraArgs"
-wsl -d $Distro -- bash -c $bashCmd
+wsl -d $Distro -- bash "$WslBashPath" @ExtraArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Installer exited with code $LASTEXITCODE"
