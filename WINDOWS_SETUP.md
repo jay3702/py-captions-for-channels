@@ -246,19 +246,33 @@ docker compose version
 
 ### Container stops when the WSL terminal is closed
 
-The setup script enables systemd and registers a Windows startup task automatically. If either didn't take effect, run this once from the repository folder in PowerShell:
+The setup script configures everything for background persistence. If you need to re-apply or repair it, run once from the repository folder in PowerShell:
 
 ```powershell
 .\scripts\autostart.ps1
 ```
 
-`autostart.ps1` self-elevates, registers the Task Scheduler entry (so WSL wakes at Windows login), and optionally restarts WSL so systemd becomes active immediately:
+**How it works — boot sequence on every Windows login:**
+
+1. **Task Scheduler** fires `wsl.exe --exec dbus-launch true` at logon
+2. **WSL boots** with systemd as PID 1 (`/etc/wsl.conf` → `[boot] systemd=true`)
+3. **systemd** starts `docker.service` (enabled during setup)
+4. **Docker** restarts the container automatically (`restart: unless-stopped`)
+5. **`dbus-daemon`** (left running by `dbus-launch true`) keeps the WSL VM alive with no terminal open
+
+No terminal is ever needed. The container runs as long as Windows is logged in.
+
+**Stopping and restarting manually:**
 
 ```powershell
-.\scripts\autostart.ps1 -Restart    # restart WSL right now + register task
+# Stop everything (shuts down the WSL VM and all containers inside it)
+wsl --shutdown
+
+# Start everything back up (mimics what the logon task does)
+wsl --distribution Ubuntu-22.04 --exec dbus-launch true
 ```
 
-After this, Docker and the container start automatically whenever Windows starts — no terminal needed.
+After `wsl --shutdown`, opening any WSL terminal will also bring Docker and the container back up via the `.bashrc` auto-start as a fallback.
 
 ---
 
