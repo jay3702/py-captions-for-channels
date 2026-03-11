@@ -122,6 +122,10 @@ $cloneDir = "$env:USERPROFILE\Documents\py-captions-for-channels"
 if (Test-Path $cloneDir) {
     $rmClone = Read-Host "  Remove Windows clone directory '$cloneDir'? [y/N]"
     if ($rmClone -match "^[Yy]$") {
+        # Must cd out of the target tree before deleting it — PowerShell (and Windows)
+        # will refuse to remove a directory that is the current working directory or an
+        # ancestor of it.  Jump to USERPROFILE first which is always safe.
+        Set-Location $env:USERPROFILE
         Remove-Item -Recurse -Force $cloneDir
         Write-Ok "Clone directory removed."
     } else {

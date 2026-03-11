@@ -39,8 +39,27 @@ $installed = wsl -l -q 2>&1 | ForEach-Object { ($_ -replace "`0", "").Trim() } |
 if (-not $installed) {
     Write-Step "$Distro not found — installing..."
     wsl --install -d $Distro --no-launch
+
+    # The WSL service can take a few seconds to register a freshly installed distro.
+    # Poll until it appears in 'wsl -l -q' (up to ~10 s) before trying to use it.
+    $retries = 0
+    do {
+        Start-Sleep -Seconds 2
+        $installed = wsl -l -q 2>&1 |
+            ForEach-Object { ($_ -replace "`0", "").Trim() } |
+            Where-Object { $_ -match [regex]::Escape($Distro) }
+        $retries++
+    } while (-not $installed -and $retries -lt 5)
+
+    if (-not $installed) {
+        Write-Fail "'$Distro' still not found after install — try rebooting and re-running this script."
+    }
+
+    # First-run setup requires interactive input (new Linux username + password).
+    # Running with '-- echo' bypasses the setup wizard; open an interactive session instead.
     Write-Step "Starting $Distro for first-time setup (set a username and password when prompted)..."
-    wsl -d $Distro -- echo "First-run complete"
+    Write-Host "  Enter your new Linux username and password, then type 'exit' to return here." -ForegroundColor Yellow
+    wsl -d $Distro
     Write-Ok "$Distro installed"
 } else {
     Write-Ok "$Distro is already installed"
