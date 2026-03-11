@@ -131,8 +131,18 @@ if ($distroInstalled) {
     $LinuxDeployDir = $DeployDir -replace '^~', '$HOME'
 
     Write-Step "Removing deploy directory '$DeployDir' (inside $Distro)..."
-    # sudo needed: Docker creates data/ files owned by root
-    wsl -d $Distro -- bash -c "sudo rm -rf `"$LinuxDeployDir`" 2>/dev/null; exit 0" 2>$null | Out-Null
+    # Access via the Windows \\wsl.localhost path — no need to start systemd or sudo.
+    # Convert ~/foo  →  \\wsl.localhost\Distro\home\user\foo
+    $wslUser = (wsl -d $Distro -- bash -c "echo \$USER" 2>$null) -join "" | ForEach-Object { $_.Trim() }
+    $linuxRelPath = ($DeployDir -replace '^~/', "home/$wslUser/") -replace '/', '\'
+    $winPath = "\\wsl.localhost\$Distro\$linuxRelPath"
+    if (Test-Path $winPath) {
+        Remove-Item -Recurse -Force $winPath -ErrorAction SilentlyContinue
+        if (Test-Path $winPath) {
+            # Some files may be owned by root (Docker data/) — fall back to wsl rm
+            wsl -d $Distro -- bash -c "rm -rf `"$LinuxDeployDir`" 2>/dev/null; exit 0" 2>$null | Out-Null
+        }
+    }
     Write-Ok "Deploy directory removed."
 
     Write-Step "Removing .bashrc autostart block (inside $Distro)..."
