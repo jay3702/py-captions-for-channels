@@ -152,9 +152,8 @@ Start-Process powershell -Verb RunAs `
 Write-Host ""
 $cloneDir = "$env:USERPROFILE\Documents\py-captions-for-channels"
 if (Test-Path $cloneDir) {
-    $rmClone = Read-Host "  Remove Windows clone directory '$cloneDir'? [y/N]"
-    if ($rmClone -match "^[Yy]$") {
-        # Step out to USERPROFILE in case CWD is still inside the clone dir.
+    $rmClone = Read-Host "  Remove Windows clone directory '$cloneDir'? [Y/n]"
+    if ($rmClone -notmatch "^[Nn]") {
         Set-Location $env:USERPROFILE
         Remove-Item -Recurse -Force $cloneDir
         Write-Ok "Clone directory removed."
