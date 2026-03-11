@@ -148,9 +148,10 @@ Start-Process powershell -Verb RunAs `
     -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Distro `"$Distro`" -ElevatedOnly" `
     -Wait
 
-# Offer to remove the Windows clone directory
+# Offer to remove the Windows clone directory.
+# Use $_repoRoot (where this script actually lives) rather than a hardcoded path.
 Write-Host ""
-$cloneDir = "$env:USERPROFILE\Documents\py-captions-for-channels"
+$cloneDir = $_repoRoot
 if (Test-Path $cloneDir) {
     $rmClone = Read-Host "  Remove Windows clone directory '$cloneDir'? [Y/n]"
     if ($rmClone -notmatch "^[Nn]") {
