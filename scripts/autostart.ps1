@@ -21,9 +21,11 @@
 #   .\scripts\autostart.ps1 -Distro Ubuntu-24.04
 # ---------------------------------------------------------------------------
 param(
-    [string]$Distro      = "Ubuntu-22.04",
-    [string]$TriggerType = "",   # "Boot" or "Logon"; empty = ask interactively
-    [switch]$RegisterOnly        # internal: re-launched elevated to register task + firewall + portproxy
+    [string]$Distro       = "Ubuntu-22.04",
+    [string]$TriggerType  = "",     # "Boot" or "Logon"; empty = ask interactively
+    [switch]$RegisterOnly,          # internal: re-launched elevated to register task + firewall + portproxy
+    [switch]$ProxyOnly,             # internal: re-launched elevated just to refresh portproxy rules
+    [string]$WslIp        = ""      # internal: WSL2 IP passed to -ProxyOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -261,16 +263,19 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 # context runs in an isolated session and dies when the UAC window closes.
 if ($isAdmin) {
 
-    # ── ProxyOnly: refresh portproxy rules with current WSL IP (called after WSL starts) ──
+    # ── ProxyOnly: refresh portproxy rules with the current WSL2 VM IP ────
+    # connectaddress=127.0.0.1 does NOT work for externally proxied connections
+    # (WSL2 localhost forwarding only intercepts native Windows process sockets).
+    # We must use the actual WSL2 VM IP (172.x.x.x) as the connect target.
     if ($ProxyOnly) {
         if (-not $WslIp) { exit 1 }
-        Write-Step "Refreshing portproxy rules (WSL IP: $WslIp)..."
+        Write-Step "Refreshing portproxy rules (WSL2 IP: $WslIp)..."
         foreach ($port in @(8000, 9000)) {
             netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>$null | Out-Null
             netsh interface portproxy add    v4tov4 listenport=$port listenaddress=0.0.0.0 `
                 connectport=$port connectaddress=$WslIp | Out-Null
         }
-        Write-Ok "Portproxy: LAN:8000 and LAN:9000 → WSL ($WslIp)"
+        Write-Ok "Portproxy: LAN:8000 and LAN:9000 → WSL2 ($WslIp)"
         exit 0
     }
 
@@ -452,13 +457,19 @@ if ($ready) {
     Write-Warn "systemd did not report ready within 60 s — Docker may need a moment."
 }
 
-# ── Refresh portproxy so LAN machines can reach ports 8000 and 9000 ─────
-# WSL2's internal IP changes on every restart, so we refresh every time.
-# Requires elevation; -ProxyOnly re-launches this script as admin just for this.
+# ── Refresh portproxy with the actual WSL2 VM IP ────────────────────────
+# Must use the real 172.x.x.x IP — portproxy forwards bypass WSL2 localhost
+# forwarding, so connectaddress=127.0.0.1 only reaches Windows, not WSL2.
+# Retry up to ~30 s to allow WSL2 networking to settle after first start.
 Write-Step "Refreshing LAN portproxy rules (WSL2 IP changes on every restart)..."
-$wslIp = (wsl -d $Distro -- bash -c "hostname -I 2>/dev/null | awk '{print `$1}'" 2>$null) -join ""
-$wslIp = $wslIp.Trim()
-if ($wslIp -match '^\d+\.\d+\.\d+\.\d+$') {
+$wslIp = ""
+for ($i = 0; $i -lt 10; $i++) {
+    $raw = (wsl -d $Distro -- bash -c "hostname -I 2>/dev/null | awk '{print `$1}'" 2>`$null) -join ""
+    $raw = $raw.Trim()
+    if ($raw -match '^\d+\.\d+\.\d+\.\d+$') { $wslIp = $raw; break }
+    Start-Sleep -Seconds 3
+}
+if ($wslIp) {
     Start-Process powershell -Verb RunAs `
         -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -ProxyOnly -WslIp `"$wslIp`"" `
         -Wait
