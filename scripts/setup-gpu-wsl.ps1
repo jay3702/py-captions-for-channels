@@ -38,28 +38,30 @@ Write-Step "Checking for $Distro..."
 $installed = wsl -l -q 2>&1 | ForEach-Object { ($_ -replace "`0", "").Trim() } | Where-Object { $_ -match [regex]::Escape($Distro) }
 if (-not $installed) {
     Write-Step "$Distro not found — installing..."
-    wsl --install -d $Distro --no-launch
+    # Note: do NOT pass --no-launch; without an initial launch the distro is downloaded
+    # but never initialized, so it won't appear in 'wsl -l' until it has been run at
+    # least once.  wsl --install will open an Ubuntu terminal window for first-time setup.
+    Write-Host ""
+    Write-Host "  A new terminal window will open for Ubuntu first-time setup." -ForegroundColor Yellow
+    Write-Host "  Create your Linux username and password there, then close that window." -ForegroundColor Yellow
+    Write-Host "  Come back here and press Enter when done." -ForegroundColor Yellow
+    Write-Host ""
+    Read-Host "  Press Enter to start the Ubuntu installation"
 
-    # The WSL service can take a few seconds to register a freshly installed distro.
-    # Poll until it appears in 'wsl -l -q' (up to ~10 s) before trying to use it.
-    $retries = 0
-    do {
-        Start-Sleep -Seconds 2
-        $installed = wsl -l -q 2>&1 |
-            ForEach-Object { ($_ -replace "`0", "").Trim() } |
-            Where-Object { $_ -match [regex]::Escape($Distro) }
-        $retries++
-    } while (-not $installed -and $retries -lt 5)
+    wsl --install -d $Distro
+
+    Write-Host ""
+    Read-Host "  Press Enter once you have finished Ubuntu first-time setup (created username + password)"
+
+    # Confirm the distro is now visible
+    $installed = wsl -l -q 2>&1 |
+        ForEach-Object { ($_ -replace "`0", "").Trim() } |
+        Where-Object { $_ -match [regex]::Escape($Distro) }
 
     if (-not $installed) {
-        Write-Fail "'$Distro' still not found after install — try rebooting and re-running this script."
+        Write-Fail "'$Distro' still not found — please complete the Ubuntu setup in the terminal window that opened, then re-run this script."
     }
 
-    # First-run setup requires interactive input (new Linux username + password).
-    # Running with '-- echo' bypasses the setup wizard; open an interactive session instead.
-    Write-Step "Starting $Distro for first-time setup (set a username and password when prompted)..."
-    Write-Host "  Enter your new Linux username and password, then type 'exit' to return here." -ForegroundColor Yellow
-    wsl -d $Distro
     Write-Ok "$Distro installed"
 } else {
     Write-Ok "$Distro is already installed"
