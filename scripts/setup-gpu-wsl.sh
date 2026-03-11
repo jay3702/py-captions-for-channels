@@ -141,6 +141,104 @@ gauge() {    # gauge "Title" "Message" function_name
 }
 
 # ════════════════════════════════════════════════════════════════════════════
+# PRE-FLIGHT CHECKS  (run before Welcome so problems surface immediately)
+# ════════════════════════════════════════════════════════════════════════════
+CURRENT_STEP="Pre-flight checks"
+_PREFLIGHT_WARN=()
+
+# ── Docker snap conflict ──────────────────────────────────────────────────────
+# snap-installed Docker runs in a confined sandbox; NVIDIA GPU passthrough and
+# the standard /var/run/docker.sock path both break inside a snap jail.
+# Must remove it before installing Docker Engine (apt).
+if command -v snap &>/dev/null && snap list docker &>/dev/null; then
+    wt_msg "Pre-flight: Snap Docker Detected" \
+"A snap-packaged version of Docker is installed.
+
+It conflicts with Docker Engine (apt) which this installer needs for
+NVIDIA GPU passthrough to work correctly.
+
+To fix this, close this dialog and run:
+  sudo snap remove docker
+
+Then re-run this installer." 16 || true
+    exit 1
+fi
+
+# ── Ports 8000 / 9000 already in use ─────────────────────────────────────────
+_busy_ports=()
+for _p in 8000 9000; do
+    if ss -tlnH "sport = :${_p}" 2>/dev/null | grep -q ":${_p}"; then
+        _busy_ports+=("$_p")
+    fi
+done
+if [[ ${#_busy_ports[@]} -gt 0 ]]; then
+    _PREFLIGHT_WARN+=("Port(s) ${_busy_ports[*]} are already in use inside WSL.")
+fi
+
+# ── ufw status ────────────────────────────────────────────────────────────────
+# If ufw is active, ports 8000/9000 must be open or Docker Compose will still
+# bind them on the container side but Windows-side portproxy connections will
+# be refused at the Linux kernel level.
+if command -v ufw &>/dev/null && sudo ufw status 2>/dev/null | grep -q "Status: active"; then
+    _ufw_missing=()
+    for _p in 8000 9000; do
+        if ! sudo ufw status 2>/dev/null | grep -qE "^${_p}[/ ]"; then
+            _ufw_missing+=("$_p")
+        fi
+    done
+    if [[ ${#_ufw_missing[@]} -gt 0 ]]; then
+        _PREFLIGHT_WARN+=("ufw is active but port(s) ${_ufw_missing[*]} are not open.")
+        if wt_yesno "Pre-flight: ufw Ports" \
+"ufw (firewall) is active and port(s) ${_ufw_missing[*]} are not open.
+
+This will block inbound connections to the web UI.
+
+Allow these ports now?" 12; then
+            for _p in "${_ufw_missing[@]}"; do
+                sudo ufw allow "$_p/tcp" >> "$LOG" 2>&1 || true
+            done
+            _PREFLIGHT_WARN=( "${_PREFLIGHT_WARN[@]/ufw is active*/}" )  # clear that warning
+        fi
+    fi
+fi
+
+# ── Stale container ───────────────────────────────────────────────────────────
+if command -v docker &>/dev/null && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^py-captions$"; then
+    if wt_yesno "Pre-flight: Existing Container" \
+"A Docker container named 'py-captions' already exists.
+
+This may be a leftover from a previous install. Remove it now so
+docker compose can start a fresh container?" 12; then
+        docker rm -f py-captions >> "$LOG" 2>&1 || true
+    else
+        _PREFLIGHT_WARN+=("Existing container 'py-captions' kept — docker compose may fail.")
+    fi
+fi
+
+# ── Disk space (~5 GB needed for images + model cache) ───────────────────────
+_free_kb=$(df --output=avail "$HOME" 2>/dev/null | tail -1)
+if [[ -n "$_free_kb" && "$_free_kb" -lt $((5 * 1024 * 1024)) ]]; then
+    _free_gb=$(awk "BEGIN { printf \"%.1f\", $_free_kb / 1048576 }" 2>/dev/null || echo "?")
+    _PREFLIGHT_WARN+=("Only ${_free_gb} GB free in \$HOME — Docker images + Whisper models need ~5 GB.")
+fi
+
+# ── Show accumulated warnings ─────────────────────────────────────────────────
+if [[ ${#_PREFLIGHT_WARN[@]} -gt 0 ]]; then
+    _warn_text=""
+    for _w in "${_PREFLIGHT_WARN[@]}"; do
+        [[ -n "$_w" ]] && _warn_text+="  • $_w\n"
+    done
+    if [[ -n "$_warn_text" ]]; then
+        wt_msg "Pre-flight Warnings" \
+"The following issues were detected:
+
+${_warn_text}
+You can continue, but these may cause problems.
+To abort and fix them first, press Cancel on the next dialog." 18 || true
+    fi
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
 # WELCOME
 # ════════════════════════════════════════════════════════════════════════════
 wt_msg "Welcome" \

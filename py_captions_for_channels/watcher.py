@@ -329,6 +329,10 @@ async def process_manual_process_queue(state, pipeline, api, parser):
             # Create pending execution only if:
             # 1. No execution exists for the base job_id, OR
             # 2. Previous execution is terminal AND no active retries exist
+            #
+            # NOTE: "cancelled" is intentionally excluded — user-cancelled jobs
+            # must not be automatically re-queued.  The processing loop below
+            # will clean up the queue entry when it encounters a cancelled execution.
             should_create = False
             if not existing:
                 # Double-check: even if no execution with base job_id exists,
@@ -339,7 +343,6 @@ async def process_manual_process_queue(state, pipeline, api, parser):
             elif existing.get("status") in (
                 "completed",
                 "failed",
-                "cancelled",
                 "dry_run",
             ):
                 if not path_has_active_exec:
@@ -385,12 +388,16 @@ async def process_manual_process_queue(state, pipeline, api, parser):
             exec_id = None
 
             try:
-                # Skip items that already failed (don't retry automatically)
+                # Skip items that are failed or cancelled — don't retry automatically.
+                # Also clear them from the queue so they don't re-appear after restart.
                 existing = tracker.get_execution(job_id)
-                if existing and existing.get("status") == "failed":
+                if existing and existing.get("status") in ("failed", "cancelled"):
                     LOG.info(
-                        "Skipping failed item (use manual queue to retry): %s", path
+                        "Skipping %s item, removing from queue: %s",
+                        existing.get("status"),
+                        path,
                     )
+                    state.clear_manual_process_request(path)
                     continue
 
                 LOG.info("Manual processing: %s", path)
