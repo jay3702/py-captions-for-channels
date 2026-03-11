@@ -136,7 +136,7 @@ $WslBashPath = "/mnt/$drive/$winRelPath"
 
 Write-Ok "Launching installer inside $Distro..."
 Write-Host ""
-Read-Host "  The installer will ask for your Linux (sudo) password when it starts.`n  Press Enter to launch the setup wizard"
+Read-Host "  The installer will ask for your Linux (sudo) password immediately when it starts.`n  Press Enter to launch the setup wizard"
 Write-Host ""
 
 wsl -d $Distro -- bash "$WslBashPath"

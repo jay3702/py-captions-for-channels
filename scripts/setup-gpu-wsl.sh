@@ -26,6 +26,10 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
     echo "This script must be run inside WSL2." >&2; exit 1
 fi
 
+# ── prime sudo early so all later silent sudo calls don't hang ───────────────
+echo "This installer needs sudo access for apt-get, Docker, and config files."
+sudo -v
+
 # ── ensure whiptail is available ─────────────────────────────────────────────
 if ! command -v whiptail &>/dev/null; then
     echo "Installing whiptail..."
