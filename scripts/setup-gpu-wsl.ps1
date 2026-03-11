@@ -139,7 +139,9 @@ Write-Host ""
 Read-Host "  The installer will ask for your Linux (sudo) password immediately when it starts.`n  Press Enter to launch the setup wizard"
 Write-Host ""
 
-wsl -d $Distro -- bash "$WslBashPath"
+# Run bash directly (not via `--`) so WSL allocates a proper PTY.
+# Without a PTY, ncurses/whiptail cannot draw its TUI.
+wsl -d $Distro bash "$WslBashPath"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Installer exited with code $LASTEXITCODE"

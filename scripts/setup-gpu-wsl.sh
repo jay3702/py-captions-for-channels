@@ -18,6 +18,9 @@ W=72
 ISSUES_URL="https://github.com/jay3702/py-captions-for-channels/issues/new"
 CURRENT_STEP="Initializing"
 
+# ── ensure TERM is set so ncurses/whiptail can draw its TUI ─────────────────
+export TERM="${TERM:-xterm-256color}"
+
 # ── sanity checks ────────────────────────────────────────────────────────────
 if [[ $EUID -eq 0 ]]; then
     echo "Do not run as root. Run as your normal user." >&2; exit 1
