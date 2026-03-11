@@ -126,8 +126,12 @@ Write-Ok "WSL stopped."
 
 # ── Step 2: WSL-side file cleanup (deploy dir + sudoers + .bashrc) ────────
 if ($distroInstalled) {
+    # Replace leading ~ with $HOME so bash expands it correctly.
+    # Tilde is NOT expanded inside single-quoted bash strings.
+    $LinuxDeployDir = $DeployDir -replace '^~', '$HOME'
+
     Write-Step "Removing deploy directory '$DeployDir' (inside $Distro)..."
-    wsl -d $Distro -- bash -c "rm -rf '$DeployDir' 2>/dev/null; exit 0" 2>$null | Out-Null
+    wsl -d $Distro -- bash -c "rm -rf `"$LinuxDeployDir`" 2>/dev/null; exit 0" 2>$null | Out-Null
     Write-Ok "Deploy directory removed."
 
     Write-Step "Removing .bashrc autostart block (inside $Distro)..."
