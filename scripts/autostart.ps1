@@ -447,15 +447,12 @@ Start-Process powershell -Verb RunAs `
     -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Distro `"$Distro`" -TriggerType `"$TriggerType`" -RegisterOnly" `
     -Wait
 
-# ── Restart WSL if systemd is not yet PID 1 ──────────────────────────────
-$pid1 = (wsl -d $Distro -- bash -c "ps -p 1 -o comm= 2>/dev/null" 2>$null) -join ""
-$pid1 = $pid1.Trim()
-
-if ($pid1 -notmatch "systemd") {
-    Write-Warn "systemd is not yet PID 1 (current: '$pid1') — restarting WSL..."
-    wsl --shutdown
-    Start-Sleep -Seconds 3
-}
+# ── Shut down WSL to pick up .wslconfig changes ───────────────────────────
+# Required for networkingMode=mirrored (or any .wslconfig change) to take effect.
+# Also ensures systemd starts cleanly as PID 1 on the next launch.
+Write-Step "Restarting WSL to apply configuration..."
+wsl --shutdown
+Start-Sleep -Seconds 3
 
 # Ensure dbus is installed — required for dbus-launch to keep WSL alive.
 $dbusCheck = (wsl -d $Distro -- bash -c "command -v dbus-launch 2>/dev/null" 2>$null) -join ""
