@@ -420,9 +420,10 @@ _repo_step() {
         # Existing valid clone — just update it
         git -C "$DEPLOY_DIR" pull --ff-only >> "$LOG" 2>&1
     else
-        # Directory exists but has no .git (leftover from failed/partial install) — remove it
+        # Directory exists but has no .git (leftover from failed/partial install) — remove it.
+        # Use sudo because Docker may have created data/ files owned by root.
         if [[ -d "$DEPLOY_DIR" ]]; then
-            rm -rf "$DEPLOY_DIR" >> "$LOG" 2>&1
+            sudo rm -rf "$DEPLOY_DIR" >> "$LOG" 2>&1
         fi
         git clone "$REPO_URL" "$DEPLOY_DIR" >> "$LOG" 2>&1
     fi
