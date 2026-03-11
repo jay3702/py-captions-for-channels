@@ -10,11 +10,16 @@
 #
 #   Logon mode: fires when you sign in — simpler, no password needed.
 #
-# Also configures Windows Firewall and portproxy so the web UI is reachable
+# Also configures Windows Firewall and LAN access so the web UI is reachable
 # from other devices on the LAN (e.g. http://koa:8000 from another PC).
-# Portproxy uses 127.0.0.1 as the connect address — WSL2's localhost forwarding
-# means the Windows localhost reliably reaches the WSL2 container, and this
-# avoids having to track the WSL2 VM's IP (which changes on every restart).
+#
+# LAN strategy (auto-selected):
+#   Win 11 22H2+ (build ≥ 22621):  WSL2 mirrored networking — sets
+#     networkingMode=mirrored in .wslconfig so WSL2 shares the host IP.
+#     No portproxy needed; works across reboots without any refresh.
+#   Windows 10 / older:  netsh portproxy — forwards LAN traffic to the
+#     WSL2 VM IP (172.x.x.x), refreshed each startup via a -ProxyOnly
+#     elevated re-launch after WSL2 is running.
 #
 # Usage (PowerShell, any directory):
 #   .\scripts\autostart.ps1
