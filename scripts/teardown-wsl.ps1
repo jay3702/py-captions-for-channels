@@ -103,30 +103,30 @@ $distroInstalled = wsl -l -q 2>&1 |
     ForEach-Object { ($_ -replace "`0", "").Trim() } |
     Where-Object { $_ -match [regex]::Escape($Distro) }
 
-if ($distroInstalled) {
-    Write-Step "Stopping and removing Docker container (inside $Distro)..."
-    wsl -d $Distro -- bash -c "docker compose -f '$DeployDir/docker-compose.yml' down --volumes 2>/dev/null; docker rm -f py-captions-for-channels 2>/dev/null; exit 0" 2>$null | Out-Null
-    Write-Ok "Container removed (or was not running)."
+# ── Step 1: Shut down WSL first ───────────────────────────────────────────
+# Kill Docker, unmount NAS shares, and release all file locks before we try
+# to delete anything.  WSL restarts automatically when we run the next wsl command.
+Write-Step "Shutting down WSL (stops Docker and releases all file locks)..."
+wsl --shutdown 2>$null | Out-Null
+Start-Sleep -Seconds 3
+Write-Ok "WSL stopped."
 
+# ── Step 2: WSL-side file cleanup (deploy dir + sudoers + .bashrc) ────────
+if ($distroInstalled) {
     Write-Step "Removing deploy directory '$DeployDir' (inside $Distro)..."
-    wsl -d $Distro -- bash -c "rm -rf '$DeployDir'; sudo rm -f /etc/sudoers.d/py-captions; exit 0" 2>$null | Out-Null
+    wsl -d $Distro -- bash -c "rm -rf '$DeployDir' 2>/dev/null; exit 0" 2>$null | Out-Null
     Write-Ok "Deploy directory removed."
 
-    Write-Step "Removing installer's ~/.bashrc autostart block (inside $Distro)..."
-    # The installer wraps its block with sentinel comments:
-    #   # ── py-captions auto-start ─────...  (start)
-    #   # ──────────────────────────────...   (end, 20+ dashes, no other text)
-    wsl -d $Distro -- bash -c "sed -i '/# .\{0,4\}py-captions auto-start/,/# -\{20,\}\s*$/d' ~/.bashrc 2>/dev/null; exit 0" 2>$null | Out-Null
-    Write-Ok ".bashrc cleaned."
+    Write-Step "Removing sudoers file and .bashrc autostart block (inside $Distro)..."
+    wsl -d $Distro -- bash -c "
+        sudo rm -f /etc/sudoers.d/py-captions 2>/dev/null
+        sed -i '/# .*py-captions auto-start/,/# -\{20,\}/d' ~/.bashrc 2>/dev/null
+        exit 0
+    " 2>$null | Out-Null
+    Write-Ok "sudoers and .bashrc cleaned."
 } else {
     Write-Skip "Distro '$Distro' not installed — skipping WSL-side cleanup."
 }
-
-# ── Step 2: Shut down WSL ─────────────────────────────────────────────────
-Write-Step "Shutting down WSL..."
-wsl --shutdown 2>$null | Out-Null
-Start-Sleep -Seconds 2
-Write-Ok "WSL stopped."
 
 # ── Step 3: Elevated removals (task + firewall + portproxy) ──────────────
 Write-Step "Requesting administrator rights to remove task, firewall rules, and portproxy..."
