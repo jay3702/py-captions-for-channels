@@ -417,8 +417,13 @@ CURRENT_STEP="Repository Clone"
 _repo_step() {
     echo 10
     if [[ -d "$DEPLOY_DIR/.git" ]]; then
-        git -C "$DEPLOY_DIR" pull --ff-only  >> "$LOG" 2>&1
+        # Existing valid clone — just update it
+        git -C "$DEPLOY_DIR" pull --ff-only >> "$LOG" 2>&1
     else
+        # Directory exists but has no .git (leftover from failed/partial install) — remove it
+        if [[ -d "$DEPLOY_DIR" ]]; then
+            rm -rf "$DEPLOY_DIR" >> "$LOG" 2>&1
+        fi
         git clone "$REPO_URL" "$DEPLOY_DIR" >> "$LOG" 2>&1
     fi
     echo 100
