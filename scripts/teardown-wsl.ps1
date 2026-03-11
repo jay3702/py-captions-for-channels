@@ -1,20 +1,26 @@
-# teardown-wsl.ps1 — Completely remove the py-captions-for-channels WSL installation
+# teardown-wsl.ps1 — Remove the py-captions-for-channels installation
 #
-# Removes everything the installer set up:
+# By default this only removes the py-captions artifacts and leaves your WSL
+# distro and everything else inside it completely untouched:
+#   - Docker container + volumes (inside WSL)
+#   - Deploy directory inside WSL  (default: ~/py-captions-for-channels)
 #   - Windows Task Scheduler task
-#   - Windows Firewall rules
-#   - netsh portproxy rules
-#   - The WSL2 distro (wsl --unregister) — DESTROYS all data inside it
+#   - Windows Firewall rules (ports 8000, 9000)
+#   - netsh portproxy rules (ports 8000, 9000)
 #   - Optionally: the Windows clone directory
+#
+# The WSL distro itself is NOT touched unless you pass -UnregisterDistro.
 #
 # Usage:
 #   .\scripts\teardown-wsl.ps1
 #   .\scripts\teardown-wsl.ps1 -Distro Ubuntu-24.04
-#   .\scripts\teardown-wsl.ps1 -KeepDistro   # remove everything except the WSL distro
+#   .\scripts\teardown-wsl.ps1 -DeployDir "~/my-install-dir"
+#   .\scripts\teardown-wsl.ps1 -UnregisterDistro   # DESTROYS the whole distro + all data
 # ---------------------------------------------------------------------------
 param(
-    [string]$Distro      = "Ubuntu-22.04",
-    [switch]$KeepDistro,           # skip wsl --unregister (keep WSL distro intact)
+    [string]$Distro            = "Ubuntu-22.04",
+    [string]$DeployDir         = "~/py-captions-for-channels",   # Linux path inside WSL
+    [switch]$UnregisterDistro,     # opt-in nuclear option: wsl --unregister
     [switch]$ElevatedOnly          # internal: re-launched elevated to do privileged removals
 )
 
@@ -70,14 +76,18 @@ if ($isAdmin) {
 
 # ── Non-elevated branch ───────────────────────────────────────────────────
 Write-Host ""
-Write-Host "  py-captions-for-channels — Full Teardown" -ForegroundColor Red
+Write-Host "  py-captions-for-channels — Teardown" -ForegroundColor Red
 Write-Host ""
 Write-Host "  This will remove:" -ForegroundColor White
+Write-Host "    • Docker container 'py-captions-for-channels' (inside $Distro)" -ForegroundColor White
+Write-Host "    • Deploy directory '$DeployDir' (inside $Distro)" -ForegroundColor White
 Write-Host "    • Windows Task Scheduler task '$TaskName'" -ForegroundColor White
 Write-Host "    • Windows Firewall rules (ports 8000, 9000)" -ForegroundColor White
 Write-Host "    • netsh portproxy rules (ports 8000, 9000)" -ForegroundColor White
-if (-not $KeepDistro) {
-    Write-Host "    • WSL2 distro '$Distro' and ALL data inside it" -ForegroundColor Red
+if ($UnregisterDistro) {
+    Write-Host ""
+    Write-Host "  !! -UnregisterDistro specified:" -ForegroundColor Red
+    Write-Host "     WSL2 distro '$Distro' and ALL data inside it will be DESTROYED." -ForegroundColor Red
 }
 Write-Host ""
 $confirm = Read-Host "  Type YES to continue"
@@ -87,33 +97,47 @@ if ($confirm -ne "YES") {
 }
 Write-Host ""
 
-# Stop WSL first so the distro isn't locked during unregister
+# ── Step 1: WSL-side cleanup (container + deploy dir) ────────────────────
+$distroInstalled = wsl -l -q 2>&1 |
+    ForEach-Object { ($_ -replace "`0", "").Trim() } |
+    Where-Object { $_ -match [regex]::Escape($Distro) }
+
+if ($distroInstalled) {
+    Write-Step "Stopping and removing Docker container (inside $Distro)..."
+    wsl -d $Distro -- bash -c "docker compose -f '$DeployDir/docker-compose.yml' down --volumes 2>/dev/null; docker rm -f py-captions-for-channels 2>/dev/null; exit 0" 2>$null | Out-Null
+    Write-Ok "Container removed (or was not running)."
+
+    Write-Step "Removing deploy directory '$DeployDir' (inside $Distro)..."
+    # Also remove the sudoers file the installer wrote
+    wsl -d $Distro -- bash -c "rm -rf '$DeployDir'; sudo rm -f /etc/sudoers.d/py-captions; exit 0" 2>$null | Out-Null
+    Write-Ok "Deploy directory removed."
+} else {
+    Write-Skip "Distro '$Distro' not installed — skipping WSL-side cleanup."
+}
+
+# ── Step 2: Shut down WSL ─────────────────────────────────────────────────
 Write-Step "Shutting down WSL..."
 wsl --shutdown 2>$null | Out-Null
 Start-Sleep -Seconds 2
 Write-Ok "WSL stopped."
 
-# Elevated removals (task + firewall + portproxy)
+# ── Step 3: Elevated removals (task + firewall + portproxy) ──────────────
 Write-Step "Requesting administrator rights to remove task, firewall rules, and portproxy..."
 Start-Process powershell -Verb RunAs `
     -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Distro `"$Distro`" -ElevatedOnly" `
     -Wait
 
-# Unregister the WSL distro (destroys all data)
-if (-not $KeepDistro) {
-    $installed = wsl -l -q 2>&1 |
-        ForEach-Object { ($_ -replace "`0", "").Trim() } |
-        Where-Object { $_ -match [regex]::Escape($Distro) }
-
-    if ($installed) {
-        Write-Step "Unregistering WSL2 distro '$Distro' (this destroys all data inside it)..."
+# ── Step 4: Optionally unregister the whole distro ───────────────────────
+if ($UnregisterDistro) {
+    if ($distroInstalled) {
+        Write-Step "Unregistering WSL2 distro '$Distro' (destroys ALL data inside it)..."
         wsl --unregister $Distro
         Write-Ok "WSL2 distro '$Distro' removed."
     } else {
         Write-Skip "WSL2 distro '$Distro' — not found, skipping."
     }
 } else {
-    Write-Skip "WSL2 distro '$Distro' — kept (--KeepDistro specified)."
+    Write-Skip "WSL2 distro '$Distro' left intact (use -UnregisterDistro to remove it)."
 }
 
 # Offer to remove the Windows clone directory
@@ -134,8 +158,9 @@ if (Test-Path $cloneDir) {
 }
 
 Write-Host ""
-Write-Ok "Teardown complete. The system is back to a clean state."
-Write-Host "  To reinstall, clone the repo and run:" -ForegroundColor DarkGray
+Write-Ok "Teardown complete."
+Write-Host "  Your WSL distro '$Distro' is intact." -ForegroundColor DarkGray
+Write-Host "  To reinstall, run:" -ForegroundColor DarkGray
 Write-Host "    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass" -ForegroundColor DarkGray
 Write-Host "    .\scripts\setup-gpu-wsl.ps1" -ForegroundColor DarkGray
 Write-Host ""
