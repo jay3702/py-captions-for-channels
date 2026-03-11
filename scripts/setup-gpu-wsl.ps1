@@ -20,13 +20,34 @@ function Write-Fail($msg)    { Write-Host "✘ $msg" -ForegroundColor Red; exit 
 
 # ── STEP 1 — Check WSL2 is available ──────────────────────────────────────
 Write-Step "Checking WSL2..."
-$wslOutput = wsl --status 2>&1 | Out-String
-if ($LASTEXITCODE -ne 0 -and -not ($wslOutput -match "WSL")) {
-    Write-Step "WSL2 not found — installing..."
+# Use 'wsl -l' rather than 'wsl --status': the latter can transiently fail
+# right after 'wsl --shutdown', giving a false "not installed" signal.
+$wslCheck = wsl -l 2>&1 | Out-String
+$wslInstalled = ($LASTEXITCODE -eq 0) -or ($wslCheck -notmatch 'not enabled|optional component|0x8007019e')
+if (-not $wslInstalled) {
+    Write-Host ""
+    Write-Host "  WSL2 is not installed on this machine." -ForegroundColor Yellow
+    Write-Host "  This installer will now install the WSL kernel and components," -ForegroundColor White
+    Write-Host "  then stop. You must REBOOT before continuing." -ForegroundColor White
+    Write-Host ""
+    Write-Host "  After rebooting, re-run this script:" -ForegroundColor White
+    Write-Host "    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass" -ForegroundColor White
+    Write-Host "    $PSCommandPath" -ForegroundColor White
+    Write-Host ""
+    Read-Host "  Press Enter to install WSL (a reboot prompt will follow)"
+    Write-Host ""
+    Write-Step "Installing WSL kernel and components..."
+    Write-Host "  (Enabling Virtual Machine Platform + Windows Subsystem for Linux)" -ForegroundColor DarkGray
     wsl --install --no-distribution
-    Write-Warn "WSL2 kernel installed. A reboot may be required."
-    Write-Warn "After rebooting, re-run this script."
-    Write-Warn "  powershell -File `"$PSCommandPath`""
+    Write-Host ""
+    Write-Ok "WSL components installed."
+    Write-Warn "A reboot is required before WSL will work."
+    Write-Host ""
+    $reboot = Read-Host "  Reboot now? [Y/n]"
+    if ($reboot -notmatch '^[Nn]') {
+        Restart-Computer -Force
+    }
+    Write-Host "  Please reboot manually, then re-run this script." -ForegroundColor Yellow
     exit 0
 }
 Write-Ok "WSL2 is available"

@@ -1,26 +1,30 @@
 # teardown-wsl.ps1 — Remove the py-captions-for-channels installation
 #
-# By default this only removes the py-captions artifacts and leaves your WSL
-# distro and everything else inside it completely untouched:
-#   - Docker container + volumes (inside WSL)
-#   - Deploy directory inside WSL  (default: ~/py-captions-for-channels)
-#   - Windows Task Scheduler task
-#   - Windows Firewall rules (ports 8000, 9000)
-#   - netsh portproxy rules (ports 8000, 9000)
-#   - Optionally: the Windows clone directory
+# Removes only py-captions artifacts — your WSL distro and everything
+# else inside it are left completely untouched.
 #
-# The WSL distro itself is NOT touched unless you pass -UnregisterDistro.
+# What is removed:
+#   Inside WSL:
+#     - Docker container py-captions-for-channels + its volumes
+#     - Deploy directory (default: ~/py-captions-for-channels)
+#     - /etc/sudoers.d/py-captions
+#     - ~/.bashrc autostart block added by the installer
+#   On Windows:
+#     - Task Scheduler task 'py-captions-wsl-autostart'
+#     - Firewall rules (ports 8000, 9000)
+#     - netsh portproxy rules (ports 8000, 9000)
+#     - Optionally: the Windows clone directory
+#
+# The WSL distro itself is NEVER touched.
 #
 # Usage:
 #   .\scripts\teardown-wsl.ps1
 #   .\scripts\teardown-wsl.ps1 -Distro Ubuntu-24.04
 #   .\scripts\teardown-wsl.ps1 -DeployDir "~/my-install-dir"
-#   .\scripts\teardown-wsl.ps1 -UnregisterDistro   # DESTROYS the whole distro + all data
 # ---------------------------------------------------------------------------
 param(
-    [string]$Distro            = "Ubuntu-22.04",
-    [string]$DeployDir         = "~/py-captions-for-channels",   # Linux path inside WSL
-    [switch]$UnregisterDistro,     # opt-in nuclear option: wsl --unregister
+    [string]$Distro    = "Ubuntu-22.04",
+    [string]$DeployDir = "~/py-captions-for-channels",   # Linux path inside WSL
     [switch]$ElevatedOnly          # internal: re-launched elevated to do privileged removals
 )
 
@@ -84,11 +88,8 @@ Write-Host "    • Deploy directory '$DeployDir' (inside $Distro)" -ForegroundC
 Write-Host "    • Windows Task Scheduler task '$TaskName'" -ForegroundColor White
 Write-Host "    • Windows Firewall rules (ports 8000, 9000)" -ForegroundColor White
 Write-Host "    • netsh portproxy rules (ports 8000, 9000)" -ForegroundColor White
-if ($UnregisterDistro) {
-    Write-Host ""
-    Write-Host "  !! -UnregisterDistro specified:" -ForegroundColor Red
-    Write-Host "     WSL2 distro '$Distro' and ALL data inside it will be DESTROYED." -ForegroundColor Red
-}
+Write-Host ""
+Write-Host "  Your WSL distro '$Distro' and its contents will NOT be touched." -ForegroundColor DarkGray
 Write-Host ""
 $confirm = Read-Host "  Type YES to continue"
 if ($confirm -ne "YES") {
@@ -108,9 +109,15 @@ if ($distroInstalled) {
     Write-Ok "Container removed (or was not running)."
 
     Write-Step "Removing deploy directory '$DeployDir' (inside $Distro)..."
-    # Also remove the sudoers file the installer wrote
     wsl -d $Distro -- bash -c "rm -rf '$DeployDir'; sudo rm -f /etc/sudoers.d/py-captions; exit 0" 2>$null | Out-Null
     Write-Ok "Deploy directory removed."
+
+    Write-Step "Removing installer's ~/.bashrc autostart block (inside $Distro)..."
+    # The installer wraps its block with sentinel comments:
+    #   # ── py-captions auto-start ─────...  (start)
+    #   # ──────────────────────────────...   (end, 20+ dashes, no other text)
+    wsl -d $Distro -- bash -c "sed -i '/# .\{0,4\}py-captions auto-start/,/# -\{20,\}\s*$/d' ~/.bashrc 2>/dev/null; exit 0" 2>$null | Out-Null
+    Write-Ok ".bashrc cleaned."
 } else {
     Write-Skip "Distro '$Distro' not installed — skipping WSL-side cleanup."
 }
@@ -126,19 +133,6 @@ Write-Step "Requesting administrator rights to remove task, firewall rules, and 
 Start-Process powershell -Verb RunAs `
     -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Distro `"$Distro`" -ElevatedOnly" `
     -Wait
-
-# ── Step 4: Optionally unregister the whole distro ───────────────────────
-if ($UnregisterDistro) {
-    if ($distroInstalled) {
-        Write-Step "Unregistering WSL2 distro '$Distro' (destroys ALL data inside it)..."
-        wsl --unregister $Distro
-        Write-Ok "WSL2 distro '$Distro' removed."
-    } else {
-        Write-Skip "WSL2 distro '$Distro' — not found, skipping."
-    }
-} else {
-    Write-Skip "WSL2 distro '$Distro' left intact (use -UnregisterDistro to remove it)."
-}
 
 # Offer to remove the Windows clone directory
 Write-Host ""
