@@ -141,19 +141,54 @@ if ($isAdmin) {
         }
     }
 
-    # ── Portproxy rules — forward LAN traffic into WSL2 ─────────────────
-    # connectaddress=127.0.0.1 works because WSL2's localhost forwarding
-    # (localhostForwarding=true by default) maps Windows localhost → WSL2.
-    # These rules are static — no need to refresh when the WSL2 VM IP changes.
-    Write-Step "Setting up portproxy for LAN access..."
-    foreach ($port in @(8000, 9000)) {
-        netsh interface portproxy delete v4tov4 `
-            listenport=$port listenaddress=0.0.0.0 2>$null | Out-Null
-        netsh interface portproxy add v4tov4 `
-            listenport=$port listenaddress=0.0.0.0 `
-            connectport=$port connectaddress=127.0.0.1 | Out-Null
+    # ── LAN networking: mirrored mode (Win 11 22H2+) or portproxy fallback ──
+    $osBuild = [System.Environment]::OSVersion.Version.Build
+    $useMirrored = $false
+    if ($osBuild -ge 22621) {
+        # Mirrored networking: WSL2 shares the Windows host IP — no portproxy needed.
+        # The change takes effect on the next wsl --shutdown (done below).
+        $wslConfigPath = "$env:USERPROFILE\.wslconfig"
+        if (Test-Path $wslConfigPath) {
+            $existing = Get-Content $wslConfigPath -Raw
+            if ($existing -match 'networkingMode\s*=\s*mirrored') {
+                Write-Ok "WSL2 mirrored networking already set in .wslconfig"
+                $useMirrored = $true
+            } elseif ($existing -match 'networkingMode\s*=') {
+                Write-Warn ".wslconfig has a different networkingMode — leaving it unchanged. Portproxy will be used instead."
+            } elseif ($existing -match '\[wsl2\]') {
+                Set-Content $wslConfigPath ($existing -replace '(\[wsl2\])', "`$1`nnetworkingMode=mirrored")
+                Write-Ok "Added networkingMode=mirrored to existing .wslconfig"
+                $useMirrored = $true
+            } else {
+                Add-Content $wslConfigPath "`n[wsl2]`nnetworkingMode=mirrored`n"
+                Write-Ok "Appended [wsl2] / networkingMode=mirrored to .wslconfig"
+                $useMirrored = $true
+            }
+        } else {
+            Set-Content $wslConfigPath "[wsl2]`nnetworkingMode=mirrored`n"
+            Write-Ok "Created .wslconfig with networkingMode=mirrored"
+            $useMirrored = $true
+        }
+        if ($useMirrored) {
+            # Remove any stale portproxy rules left from a previous install
+            foreach ($port in @(8000, 9000)) {
+                netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>$null | Out-Null
+            }
+        }
     }
-    Write-Ok "Portproxy: LAN:8000 and LAN:9000 → WSL2 (via localhost forwarding)"
+    if (-not $useMirrored) {
+        # Older Windows (or conflicting .wslconfig): portproxy with a placeholder connect address.
+        # The non-elevated branch refreshes these with the real WSL2 VM IP after start.
+        Write-Step "Setting up portproxy for LAN access..."
+        foreach ($port in @(8000, 9000)) {
+            netsh interface portproxy delete v4tov4 `
+                listenport=$port listenaddress=0.0.0.0 2>$null | Out-Null
+            netsh interface portproxy add v4tov4 `
+                listenport=$port listenaddress=0.0.0.0 `
+                connectport=$port connectaddress=127.0.0.1 | Out-Null
+        }
+        Write-Ok "Portproxy placeholder rules set (will be refreshed with actual WSL2 IP after start)"
+    }
 
     exit 0
 }
@@ -457,25 +492,32 @@ if ($ready) {
     Write-Warn "systemd did not report ready within 60 s — Docker may need a moment."
 }
 
-# ── Refresh portproxy with the actual WSL2 VM IP ────────────────────────
-# Must use the real 172.x.x.x IP — portproxy forwards bypass WSL2 localhost
-# forwarding, so connectaddress=127.0.0.1 only reaches Windows, not WSL2.
-# Retry up to ~30 s to allow WSL2 networking to settle after first start.
-Write-Step "Refreshing LAN portproxy rules (WSL2 IP changes on every restart)..."
-$wslIp = ""
-for ($i = 0; $i -lt 10; $i++) {
-    $raw = (wsl -d $Distro -- bash -c "hostname -I 2>/dev/null | awk '{print `$1}'" 2>`$null) -join ""
-    $raw = $raw.Trim()
-    if ($raw -match '^\d+\.\d+\.\d+\.\d+$') { $wslIp = $raw; break }
-    Start-Sleep -Seconds 3
-}
-if ($wslIp) {
-    Start-Process powershell -Verb RunAs `
-        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -ProxyOnly -WslIp `"$wslIp`"" `
-        -Wait
-    Write-Ok "LAN access configured — other devices can reach http://$(hostname):8000"
+# ── LAN access: mirrored networking (Win 11 22H2+) or portproxy ─────────
+$wslConfigPath = "$env:USERPROFILE\.wslconfig"
+$usingMirrored = (Test-Path $wslConfigPath) -and ((Get-Content $wslConfigPath -Raw) -match 'networkingMode\s*=\s*mirrored')
+
+if ($usingMirrored) {
+    Write-Ok "LAN access ready — WSL2 mirrored networking is active (host IP: $(hostname))"
 } else {
-    Write-Warn "Could not determine WSL2 IP — portproxy skipped. LAN access may not work."
+    # Portproxy fallback: must use actual WSL2 VM IP (172.x.x.x).
+    # connectaddress=127.0.0.1 does NOT work — portproxy bypasses WSL2 localhost forwarding.
+    # Retry up to ~30 s to allow WSL2 networking to settle after first start.
+    Write-Step "Refreshing LAN portproxy rules (WSL2 IP changes on every restart)..."
+    $wslIp = ""
+    for ($i = 0; $i -lt 10; $i++) {
+        $raw = (wsl -d $Distro -- bash -c "hostname -I 2>/dev/null | awk '{print `$1}'" 2>`$null) -join ""
+        $raw = $raw.Trim()
+        if ($raw -match '^\d+\.\d+\.\d+\.\d+$') { $wslIp = $raw; break }
+        Start-Sleep -Seconds 3
+    }
+    if ($wslIp) {
+        Start-Process powershell -Verb RunAs `
+            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -ProxyOnly -WslIp `"$wslIp`"" `
+            -Wait
+        Write-Ok "LAN access configured — other devices can reach http://$(hostname):8000"
+    } else {
+        Write-Warn "Could not determine WSL2 IP — portproxy skipped. LAN access may not work."
+    }
 }
 
 $taskNote = if ($TriggerType -eq "Boot") { "at system boot (before login)" } else { "at Windows logon" }
