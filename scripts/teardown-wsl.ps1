@@ -130,13 +130,10 @@ if ($distroInstalled) {
     wsl -d $Distro -- bash -c "rm -rf '$DeployDir' 2>/dev/null; exit 0" 2>$null | Out-Null
     Write-Ok "Deploy directory removed."
 
-    Write-Step "Removing sudoers file and .bashrc autostart block (inside $Distro)..."
-    wsl -d $Distro -- bash -c "
-        sudo rm -f /etc/sudoers.d/py-captions 2>/dev/null
-        sed -i '/# .*py-captions auto-start/,/# -\{20,\}/d' ~/.bashrc 2>/dev/null
-        exit 0
-    " 2>$null | Out-Null
-    Write-Ok "sudoers and .bashrc cleaned."
+    Write-Step "Removing .bashrc autostart block (inside $Distro)..."
+    wsl -d $Distro -- bash -c "sed -i '/# .*py-captions auto-start/,/# -\{20,\}/d' ~/.bashrc 2>/dev/null; exit 0" 2>$null | Out-Null
+    Write-Ok ".bashrc cleaned."
+    Write-Skip "(leaving /etc/sudoers.d/py-captions — it is harmless and overwritten on reinstall)"
 } else {
     Write-Skip "Distro '$Distro' not installed — skipping WSL-side cleanup."
 }
