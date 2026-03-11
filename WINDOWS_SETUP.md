@@ -56,6 +56,7 @@ cd $env:USERPROFILE\Documents
 git clone https://github.com/jay3702/py-captions-for-channels.git
 cd py-captions-for-channels
 
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\scripts\setup-gpu-wsl.ps1
 ```
 
