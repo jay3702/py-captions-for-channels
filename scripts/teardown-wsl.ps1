@@ -36,6 +36,19 @@ function Write-Step($msg) { Write-Host "▶ $msg" -ForegroundColor Cyan }
 function Write-Warn($msg) { Write-Host "⚠ $msg" -ForegroundColor Yellow }
 function Write-Skip($msg) { Write-Host "  $msg" -ForegroundColor DarkGray }
 
+# Ensure Ctrl+C actually stops the script rather than being swallowed.
+[Console]::TreatControlCAsInput = $false
+trap { Write-Host ""; Write-Host "  Aborted." -ForegroundColor Yellow; exit 1 }
+
+# If we are running from inside the clone directory, step out now.
+# Trying to delete a directory that is an ancestor of the CWD fails on Windows.
+$_scriptParent = Split-Path -Parent $PSCommandPath   # …/py-captions-for-channels/scripts
+$_repoRoot     = Split-Path -Parent $_scriptParent    # …/py-captions-for-channels
+if ($PWD.Path -like "$_repoRoot*") {
+    Write-Host "  (Stepping out of repo directory before teardown)" -ForegroundColor DarkGray
+    Set-Location (Split-Path -Parent $_repoRoot)
+}
+
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
                [Security.Principal.WindowsBuiltInRole]"Administrator")
 
@@ -140,9 +153,7 @@ $cloneDir = "$env:USERPROFILE\Documents\py-captions-for-channels"
 if (Test-Path $cloneDir) {
     $rmClone = Read-Host "  Remove Windows clone directory '$cloneDir'? [y/N]"
     if ($rmClone -match "^[Yy]$") {
-        # Must cd out of the target tree before deleting it — PowerShell (and Windows)
-        # will refuse to remove a directory that is the current working directory or an
-        # ancestor of it.  Jump to USERPROFILE first which is always safe.
+        # Step out to USERPROFILE in case CWD is still inside the clone dir.
         Set-Location $env:USERPROFILE
         Remove-Item -Recurse -Force $cloneDir
         Write-Ok "Clone directory removed."
