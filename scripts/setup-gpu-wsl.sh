@@ -162,14 +162,45 @@ DEPLOY_DIR=$(wt_input "Deploy Location" \
 CHANNELS_DVR_URL=""
 while [[ -z "$CHANNELS_DVR_URL" ]]; do
     CHANNELS_DVR_URL=$(wt_input "Channels DVR" \
-        "Enter your Channels DVR server URL (port required):\n\nExample:  http://192.168.1.5:8089" \
+        "Enter your Channels DVR server URL (port required):\n\nExample:  http://192.168.1.5:8089\n\nTip: open http://localhost:57000 on the DVR machine to find the address." \
         "http://${LAN_PREFIX}") || cancelled
+
     if [[ -z "$CHANNELS_DVR_URL" ]]; then
         wt_msg "Required" "Channels DVR URL is required." 8
-    elif ! echo "$CHANNELS_DVR_URL" | grep -qE '^https?://[^/:]+:[0-9]{2,5}(/.*)?$'; then
+        continue
+    fi
+
+    # ── Format check ──────────────────────────────────────────────────────
+    # Must be http(s)://host-or-ip:port
+    if ! echo "$CHANNELS_DVR_URL" | grep -qE '^https?://[^/:]+:[0-9]{2,5}(/.*)?$'; then
         wt_msg "Invalid URL" \
             "URL must include a port number.\n\nGood:  http://192.168.1.5:8089\nBad:   http://192.168.1.5\n\nPlease re-enter." 12
-        CHANNELS_DVR_URL=""   # force re-prompt
+        CHANNELS_DVR_URL=""
+        continue
+    fi
+
+    # ── IPv4 octet sanity check ────────────────────────────────────────────
+    # If the host portion looks like an IP, make sure it has exactly four octets.
+    _host=$(echo "$CHANNELS_DVR_URL" | grep -oE '//[^/:]+' | tr -d '/')
+    if echo "$_host" | grep -qE '^[0-9]+(\.[0-9]+)*$'; then
+        _octets=$(echo "$_host" | tr -cd '.' | wc -c)
+        if [[ "$_octets" -ne 3 ]]; then
+            wt_msg "Invalid IP" \
+                "That IP address doesn't look right:\n  $_host\n\nA valid IPv4 address has four parts separated by dots.\n\nExample:  192.168.1.5\n\nPlease re-enter." 14
+            CHANNELS_DVR_URL=""
+            continue
+        fi
+    fi
+
+    # ── Reachability test ─────────────────────────────────────────────────
+    if curl -fsS --max-time 5 "${CHANNELS_DVR_URL%/}/dvr" >/dev/null 2>&1; then
+        wt_info "Channels DVR" "✔ Connected to Channels DVR at\n  $CHANNELS_DVR_URL"
+    else
+        if ! wt_yesno "Cannot Reach Server" \
+            "Could not connect to:\n  $CHANNELS_DVR_URL\n\nCommon causes:\n  • Wrong IP address or port\n  • Channels DVR not running\n  • Firewall blocking the connection\n\nContinue anyway? (Yes = use this URL, No = re-enter)" 16; then
+            CHANNELS_DVR_URL=""   # re-prompt
+        fi
+        # If Yes, proceed with the URL as-is (might be intentional / DVR offline temporarily)
     fi
 done
 
@@ -303,17 +334,18 @@ fi
 
 # GPU sanity test
 wt_info "GPU Test" "Testing GPU passthrough inside Docker..."
-GPU_MSG=""
+GPU_OK=false
 if docker run --rm --gpus all --runtime=nvidia nvidia/cuda:12.1.0-base-ubuntu22.04 \
         nvidia-smi -L >> "$LOG" 2>&1; then
+    GPU_OK=true
     GPU_NAME=$(docker run --rm --gpus all --runtime=nvidia \
         nvidia/cuda:12.1.0-base-ubuntu22.04 \
         nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "GPU detected")
-    GPU_MSG="GPU visible in container:\n     $GPU_NAME"
+    wt_msg "GPU Test" "✔ GPU visible in container:\n  $GPU_NAME\n\nGPU acceleration will be enabled." 12
 else
-    GPU_MSG="GPU test failed — GPU may still work at runtime.\n\nCheck that nvidia-smi works in Windows PowerShell\nand your CUDA version is 12.2 or higher."
+    wt_msg "GPU Test" \
+        "GPU test failed.\n\nThe container will run in CPU mode (slower transcription).\n\nTo fix later:\n  1. Ensure 'nvidia-smi' works in Windows PowerShell\n  2. Ensure CUDA 12.2+ driver is installed\n  3. Re-run this installer — it is safe to run again." 16
 fi
-wt_msg "GPU Test" "$GPU_MSG" 12
 
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 3 — NAS mount
@@ -414,8 +446,13 @@ set_env() {
 }
 
 set_env "CHANNELS_DVR_URL"       "$CHANNELS_DVR_URL"
-set_env "DOCKER_RUNTIME"         "nvidia"
-set_env "NVIDIA_VISIBLE_DEVICES" "all"
+if [[ "$GPU_OK" == true ]]; then
+    set_env "DOCKER_RUNTIME"         "nvidia"
+    set_env "NVIDIA_VISIBLE_DEVICES" "all"
+else
+    set_env "DOCKER_RUNTIME"         "runc"
+    set_env "NVIDIA_VISIBLE_DEVICES" ""
+fi
 if [[ "$LOCAL_DVR" == false ]]; then
     set_env "DVR_MEDIA_HOST_PATH" "$MOUNT_POINT"
     set_env "DVR_MEDIA_MOUNT"     "$MOUNT_POINT"
