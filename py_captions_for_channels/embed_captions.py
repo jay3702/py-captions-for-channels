@@ -869,6 +869,7 @@ def wait_for_file_stability(
     interval=STABLE_INTERVAL,
     consecutive=STABLE_CONSECUTIVE,
     timeout=STABLE_TIMEOUT,
+    job_id=None,
 ):
     """
     Wait until file size is stable for N consecutive checks, or abort after timeout.
@@ -879,6 +880,20 @@ def wait_for_file_stability(
     stable_count = 0
     elapsed = 0
     while True:
+        # Check for cancellation via DB so a zombie process self-terminates
+        if job_id:
+            try:
+                db_gen = get_db()
+                db = next(db_gen)
+                svc = ExecutionService(db)
+                execution = svc.get_execution(job_id)
+                if execution and execution.get("status") in ("cancelled", "canceling"):
+                    log.warning(
+                        "Job cancellation detected in DB, stopping file stability wait"
+                    )
+                    sys.exit(0)
+            except Exception:
+                pass  # Don't fail the stability check if the DB query fails
         try:
             size = os.stat(path).st_size
         except Exception as e:
@@ -1786,7 +1801,7 @@ def main():
     else:
         run_step(
             "file_stability",
-            lambda: wait_for_file_stability(input_source, log),
+            lambda: wait_for_file_stability(input_source, log, job_id=job_id),
             input_path=input_source,
             misc_label="Waiting for file stability",
         )

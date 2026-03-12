@@ -589,9 +589,26 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                         path,
                         result.returncode,
                     )
-                    # Log stderr output for debugging
+                    # Log stderr output for debugging.
+                    # Filter out benign GPU/NVML init lines that always go to
+                    # stderr but are not error conditions.
                     if result.stderr:
-                        LOG.error("stderr output: %s", result.stderr.strip())
+                        _BENIGN_STDERR = (
+                            "NVML GPU provider initialized",
+                            "NVIDIA SMI GPU provider",
+                            "Selected GPU provider",
+                        )
+                        meaningful_stderr = "\n".join(
+                            line
+                            for line in result.stderr.strip().splitlines()
+                            if not any(b in line for b in _BENIGN_STDERR)
+                        ).strip()
+                        if meaningful_stderr:
+                            LOG.error("stderr output: %s", meaningful_stderr)
+                        else:
+                            LOG.debug(
+                                "stderr output (benign): %s", result.stderr.strip()
+                            )
                     if result.stdout:
                         # stdout lines were already forwarded in real-time by pipeline;
                         # keep the full dump only at debug level for post-mortem review.
@@ -1266,9 +1283,26 @@ async def main():
                         if result.success:
                             pipeline._log_job_statistics(result, exec_id, LOG)
                         else:
-                            # Log stderr output for failed jobs
+                            # Log stderr output for failed jobs.
+                            # Filter benign GPU/NVML init lines (always on stderr).
                             if result.stderr:
-                                LOG.error("stderr output: %s", result.stderr.strip())
+                                _BENIGN_STDERR = (
+                                    "NVML GPU provider initialized",
+                                    "NVIDIA SMI GPU provider",
+                                    "Selected GPU provider",
+                                )
+                                meaningful_stderr = "\n".join(
+                                    line
+                                    for line in result.stderr.strip().splitlines()
+                                    if not any(b in line for b in _BENIGN_STDERR)
+                                ).strip()
+                                if meaningful_stderr:
+                                    LOG.error("stderr output: %s", meaningful_stderr)
+                                else:
+                                    LOG.debug(
+                                        "stderr output (benign): %s",
+                                        result.stderr.strip(),
+                                    )
                             if result.stdout:
                                 # stdout forwarded live; keep dump at debug only.
                                 LOG.debug(

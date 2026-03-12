@@ -272,8 +272,13 @@ if ($ready) {
     Write-Step "Enabling and starting Docker service..."
     wsl -d $Distro -- bash -c "sudo systemctl enable --now docker >> /tmp/py_captions_install.log 2>&1"
     Start-Sleep -Seconds 5
-    Write-Step "Starting container..."
-    wsl -d $Distro -- bash -c "DEPLOY=`$(grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2); [ -d `"`$DEPLOY`" ] && docker compose -f `"`$DEPLOY/docker-compose.yml`" up -d >> /tmp/py_captions_install.log 2>&1 || true"
+    # Use bash -i (interactive) so ~/.bashrc is sourced before starting the container.
+    # The py-captions autostart block in .bashrc re-mounts the CIFS share and runs
+    # 'mount --make-shared' before 'docker compose up -d'.  Without -i, WSL has just
+    # restarted (wsl --shutdown above) and the CIFS share is not remounted, so Docker
+    # bind-mounts an empty /mnt/channels and all files appear missing inside the container.
+    Write-Step "Remounting NAS share and starting container..."
+    wsl -d $Distro -- bash -i -c "DEPLOY=`$(grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2); [ -d `"`$DEPLOY`" ] && docker compose -f `"`$DEPLOY/docker-compose.yml`" up -d >> /tmp/py_captions_install.log 2>&1 || true"
     Write-Ok "Docker is running. py-captions-for-channels will be up in ~15 seconds."
 } else {
     Write-Warn "systemd did not report ready within 60 s — Docker may need a moment."
@@ -487,8 +492,13 @@ if ($ready) {
     Write-Step "Enabling and starting Docker service..."
     wsl -d $Distro -- bash -c "sudo systemctl enable --now docker >> /tmp/py_captions_install.log 2>&1"
     Start-Sleep -Seconds 5
-    Write-Step "Starting container..."
-    wsl -d $Distro -- bash -c "DEPLOY=`$(grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2); [ -d `"`$DEPLOY`" ] && docker compose -f `"`$DEPLOY/docker-compose.yml`" up -d >> /tmp/py_captions_install.log 2>&1 || true"
+    # Use bash -i (interactive) so ~/.bashrc is sourced before starting the container.
+    # The py-captions autostart block in .bashrc re-mounts the CIFS share and runs
+    # 'mount --make-shared' before 'docker compose up -d'.  Without -i, WSL has just
+    # restarted (wsl --shutdown above) and the CIFS share is not remounted, so Docker
+    # bind-mounts an empty /mnt/channels and all files appear missing inside the container.
+    Write-Step "Remounting NAS share and starting container..."
+    wsl -d $Distro -- bash -i -c "DEPLOY=`$(grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2); [ -d `"`$DEPLOY`" ] && docker compose -f `"`$DEPLOY/docker-compose.yml`" up -d >> /tmp/py_captions_install.log 2>&1 || true"
     Write-Ok "Docker is running. py-captions-for-channels will be up in ~15 seconds."
 } else {
     Write-Warn "systemd did not report ready within 60 s — Docker may need a moment."
