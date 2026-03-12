@@ -116,10 +116,26 @@ $distroInstalled = wsl -l -q 2>&1 |
     ForEach-Object { ($_ -replace "`0", "").Trim() } |
     Where-Object { $_ -match [regex]::Escape($Distro) }
 
-# ── Step 1: Shut down WSL first ───────────────────────────────────────────
+# ── Step 1a: Stop and remove the Docker container while WSL is still up ──
+# Must happen BEFORE wsl --shutdown.  If we just shutdown WSL, Docker records
+# the container as "stopped unexpectedly" and restart: unless-stopped fires it
+# again on the next WSL start — leaving a stale container running before setup.
+if ($distroInstalled) {
+    Write-Step "Stopping and removing py-captions container (inside $Distro)..."
+    wsl -d $Distro -- bash -c "
+        if command -v docker &>/dev/null; then
+            docker stop  py-captions-for-channels 2>/dev/null || true
+            docker rm    py-captions-for-channels 2>/dev/null || true
+            docker rmi   ghcr.io/jay3702/py-captions-for-channels:latest 2>/dev/null || true
+        fi
+        exit 0" 2>$null | Out-Null
+    Write-Ok "Container stopped and removed."
+}
+
+# ── Step 1b: Shut down WSL ────────────────────────────────────────────────
 # Kill Docker, unmount NAS shares, and release all file locks before we try
 # to delete anything.  WSL restarts automatically when we run the next wsl command.
-Write-Step "Shutting down WSL (stops Docker and releases all file locks)..."
+Write-Step "Shutting down WSL (releases file locks)..."
 wsl --shutdown 2>$null | Out-Null
 Start-Sleep -Seconds 3
 Write-Ok "WSL stopped."

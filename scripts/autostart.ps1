@@ -286,7 +286,7 @@ if ($ready) {
     Start-Sleep -Seconds 15
     $chkDep = (wsl -d $Distro -- bash -c "grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2" 2>$null) -join ""; $chkDep = $chkDep.Trim()
     if ($chkDep) {
-        $chkMmt = (wsl -d $Distro -- bash -c "grep '^DVR_MEDIA_HOST_PATH=' '$chkDep/.env' 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"'" 2>$null) -join ""; $chkMmt = $chkMmt.Trim()
+        $chkMmt = (wsl -d $Distro -- bash -c "grep '^DVR_MEDIA_HOST_PATH=' '$chkDep/.env' 2>/dev/null | head -1 | cut -d= -f2-" 2>$null) -join ""; $chkMmt = $chkMmt.Trim().Trim('"')
         if (-not $chkMmt) { $chkMmt = "/mnt/channels" }
         $chkVis = (wsl -d $Distro -- bash -c "docker exec py-captions-for-channels sh -c 'ls $chkMmt 2>/dev/null | wc -l' 2>/dev/null" 2>$null) -join ""; $chkVis = $chkVis.Trim()
         if ($chkVis -eq "0" -and (wsl -d $Distro -- bash -c "mountpoint -q '$chkMmt' 2>/dev/null && echo yes" 2>$null) -match "yes") {
@@ -526,7 +526,7 @@ if ($ready) {
     Start-Sleep -Seconds 15
     $chkDep = (wsl -d $Distro -- bash -c "grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2" 2>$null) -join ""; $chkDep = $chkDep.Trim()
     if ($chkDep) {
-        $chkMmt = (wsl -d $Distro -- bash -c "grep '^DVR_MEDIA_HOST_PATH=' '$chkDep/.env' 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"'" 2>$null) -join ""; $chkMmt = $chkMmt.Trim()
+        $chkMmt = (wsl -d $Distro -- bash -c "grep '^DVR_MEDIA_HOST_PATH=' '$chkDep/.env' 2>/dev/null | head -1 | cut -d= -f2-" 2>$null) -join ""; $chkMmt = $chkMmt.Trim().Trim('"')
         if (-not $chkMmt) { $chkMmt = "/mnt/channels" }
         $chkVis = (wsl -d $Distro -- bash -c "docker exec py-captions-for-channels sh -c 'ls $chkMmt 2>/dev/null | wc -l' 2>/dev/null" 2>$null) -join ""; $chkVis = $chkVis.Trim()
         if ($chkVis -eq "0" -and (wsl -d $Distro -- bash -c "mountpoint -q '$chkMmt' 2>/dev/null && echo yes" 2>$null) -match "yes") {
