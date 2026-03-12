@@ -684,8 +684,14 @@ BASHRC
     if [[ "$LOCAL_DVR" == false ]]; then
         cat >> ~/.bashrc << BASHRC
 if ! mountpoint -q ${MOUNT_POINT}; then
-    sudo mount -t cifs //${NAS_SERVER}/${NAS_SHARE} ${MOUNT_POINT} \\
-        -o credentials=${CRED_FILE},uid=\$(id -u),gid=\$(id -g),iocharset=utf8 2>/dev/null
+    # Retry up to 3 times — WSL networking may not be ready immediately after restart
+    for _pcc_try in 1 2 3; do
+        sudo mount -t cifs //${NAS_SERVER}/${NAS_SHARE} ${MOUNT_POINT} \\
+            -o credentials=${CRED_FILE},uid=\$(id -u),gid=\$(id -g),iocharset=utf8 2>/dev/null \\
+            && break
+        [ \$_pcc_try -lt 3 ] && sleep \$(( _pcc_try * 2 ))
+    done
+    unset _pcc_try
 fi
 sudo mount --make-shared ${MOUNT_POINT} 2>/dev/null
 BASHRC

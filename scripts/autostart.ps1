@@ -279,7 +279,27 @@ if ($ready) {
     # bind-mounts an empty /mnt/channels and all files appear missing inside the container.
     Write-Step "Remounting NAS share and starting container..."
     wsl -d $Distro -- bash -i -c "DEPLOY=`$(grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2); [ -d `"`$DEPLOY`" ] && docker compose -f `"`$DEPLOY/docker-compose.yml`" up -d >> /tmp/py_captions_install.log 2>&1 || true"
-    Write-Ok "Docker is running. py-captions-for-channels will be up in ~15 seconds."
+    # Verify the container can see recordings.  If WSL networking wasn't ready when
+    # ~/.bashrc ran the CIFS mount, the container may have an empty bind-mount.  Detect
+    # the mismatch and restart the container automatically.
+    Write-Step "Verifying recordings are visible in container..."
+    Start-Sleep -Seconds 15
+    $chkDep = (wsl -d $Distro -- bash -c "grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2" 2>$null) -join ""; $chkDep = $chkDep.Trim()
+    if ($chkDep) {
+        $chkMmt = (wsl -d $Distro -- bash -c "grep '^DVR_MEDIA_HOST_PATH=' '$chkDep/.env' 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"'" 2>$null) -join ""; $chkMmt = $chkMmt.Trim()
+        if (-not $chkMmt) { $chkMmt = "/mnt/channels" }
+        $chkVis = (wsl -d $Distro -- bash -c "docker exec py-captions-for-channels sh -c 'ls $chkMmt 2>/dev/null | wc -l' 2>/dev/null" 2>$null) -join ""; $chkVis = $chkVis.Trim()
+        if ($chkVis -eq "0" -and (wsl -d $Distro -- bash -c "mountpoint -q '$chkMmt' 2>/dev/null && echo yes" 2>$null) -match "yes") {
+            Write-Warn "Recordings not visible in container ($chkMmt) — CIFS arrived after start. Restarting..."
+            wsl -d $Distro -- bash -c "cd '$chkDep' && docker compose restart 2>/dev/null" 2>&1 | Out-Null
+            Start-Sleep -Seconds 15
+            Write-Ok "Container restarted. Recordings should now be visible."
+        } else {
+            Write-Ok "Docker is running. py-captions-for-channels will be up in ~15 seconds."
+        }
+    } else {
+        Write-Ok "Docker is running. py-captions-for-channels will be up in ~15 seconds."
+    }
 } else {
     Write-Warn "systemd did not report ready within 60 s — Docker may need a moment."
 }
@@ -499,7 +519,27 @@ if ($ready) {
     # bind-mounts an empty /mnt/channels and all files appear missing inside the container.
     Write-Step "Remounting NAS share and starting container..."
     wsl -d $Distro -- bash -i -c "DEPLOY=`$(grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2); [ -d `"`$DEPLOY`" ] && docker compose -f `"`$DEPLOY/docker-compose.yml`" up -d >> /tmp/py_captions_install.log 2>&1 || true"
-    Write-Ok "Docker is running. py-captions-for-channels will be up in ~15 seconds."
+    # Verify the container can see recordings.  If WSL networking wasn't ready when
+    # ~/.bashrc ran the CIFS mount, the container may have an empty bind-mount.  Detect
+    # the mismatch and restart the container automatically.
+    Write-Step "Verifying recordings are visible in container..."
+    Start-Sleep -Seconds 15
+    $chkDep = (wsl -d $Distro -- bash -c "grep -o 'AUTOSTART_DEPLOY_DIR=[^ ]*' ~/.bashrc 2>/dev/null | head -1 | cut -d= -f2" 2>$null) -join ""; $chkDep = $chkDep.Trim()
+    if ($chkDep) {
+        $chkMmt = (wsl -d $Distro -- bash -c "grep '^DVR_MEDIA_HOST_PATH=' '$chkDep/.env' 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\"'" 2>$null) -join ""; $chkMmt = $chkMmt.Trim()
+        if (-not $chkMmt) { $chkMmt = "/mnt/channels" }
+        $chkVis = (wsl -d $Distro -- bash -c "docker exec py-captions-for-channels sh -c 'ls $chkMmt 2>/dev/null | wc -l' 2>/dev/null" 2>$null) -join ""; $chkVis = $chkVis.Trim()
+        if ($chkVis -eq "0" -and (wsl -d $Distro -- bash -c "mountpoint -q '$chkMmt' 2>/dev/null && echo yes" 2>$null) -match "yes") {
+            Write-Warn "Recordings not visible in container ($chkMmt) — CIFS arrived after start. Restarting..."
+            wsl -d $Distro -- bash -c "cd '$chkDep' && docker compose restart 2>/dev/null" 2>&1 | Out-Null
+            Start-Sleep -Seconds 15
+            Write-Ok "Container restarted. Recordings should now be visible."
+        } else {
+            Write-Ok "Docker is running. py-captions-for-channels will be up in ~15 seconds."
+        }
+    } else {
+        Write-Ok "Docker is running. py-captions-for-channels will be up in ~15 seconds."
+    }
 } else {
     Write-Warn "systemd did not report ready within 60 s — Docker may need a moment."
 }
