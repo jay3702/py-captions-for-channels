@@ -684,6 +684,9 @@ BASHRC
     if [[ "$LOCAL_DVR" == false ]]; then
         cat >> ~/.bashrc << BASHRC
 if ! mountpoint -q ${MOUNT_POINT}; then
+    # Ensure the mount point directory exists — Docker volume creation fails with
+    # "no such file or directory" if the target dir is missing, even on retries.
+    sudo mkdir -p ${MOUNT_POINT}
     # Retry up to 3 times — WSL networking may not be ready immediately after restart
     for _pcc_try in 1 2 3; do
         sudo mount -t cifs //${NAS_SERVER}/${NAS_SHARE} ${MOUNT_POINT} \\

@@ -121,15 +121,19 @@ $distroInstalled = wsl -l -q 2>&1 |
 # the container as "stopped unexpectedly" and restart: unless-stopped fires it
 # again on the next WSL start — leaving a stale container running before setup.
 if ($distroInstalled) {
-    Write-Step "Stopping and removing py-captions container (inside $Distro)..."
+    Write-Step "Stopping and removing py-captions container and volumes (inside $Distro)..."
     wsl -d $Distro -- bash -c "
         if command -v docker &>/dev/null; then
             docker stop  py-captions-for-channels 2>/dev/null || true
             docker rm    py-captions-for-channels 2>/dev/null || true
             docker rmi   ghcr.io/jay3702/py-captions-for-channels:latest 2>/dev/null || true
+            # Remove the named media volume — it stores driver_opts (device path) at creation
+            # time and does NOT update when .env changes.  Stale device paths cause
+            # 'no such file or directory' on the next compose up.
+            docker volume rm py-captions-for-channels_channels_media 2>/dev/null || true
         fi
         exit 0" 2>$null | Out-Null
-    Write-Ok "Container stopped and removed."
+    Write-Ok "Container, image, and media volume removed."
 }
 
 # ── Step 1b: Shut down WSL ────────────────────────────────────────────────
