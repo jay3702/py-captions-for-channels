@@ -154,7 +154,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Glances with GPU plugin support and orjson for API responses
 RUN pip install --no-cache-dir 'glances[gpu]==4.0.5' orjson
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/wsl/lib:$LD_LIBRARY_PATH
 
 # Copy application code
 ARG GIT_SHA=unknown

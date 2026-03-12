@@ -564,6 +564,15 @@ else
     set_env "DOCKER_RUNTIME"         "runc"
     set_env "NVIDIA_VISIBLE_DEVICES" ""
 fi
+
+# WSL2 NVENC: libnvidia-encode.so.1 lives at /usr/lib/wsl/lib on the WSL host
+# but is NOT automatically mounted by the nvidia container runtime.
+# Bind-mount that path into the container so ffmpeg can find it.
+if [[ -d /usr/lib/wsl/lib ]]; then
+    set_env "WSL_LIB_PATH" "/usr/lib/wsl/lib"
+else
+    set_env "WSL_LIB_PATH" "/tmp"
+fi
 if [[ "$LOCAL_DVR" == false ]]; then
     set_env "DVR_MEDIA_HOST_PATH"  "$MOUNT_POINT"
     set_env "DVR_MEDIA_MOUNT"      "$MOUNT_POINT"

@@ -64,6 +64,13 @@ services:
       #   Use forward slashes. When unset, falls back to the named volume below (Linux default).
       # Set DVR_MEDIA_MOUNT to the container path (also set LOCAL_PATH_PREFIX to match).
       - ${DVR_MEDIA_HOST_PATH:-channels_media}:${DVR_MEDIA_MOUNT:-/mnt/media}
+      # WSL2 NVENC: bind-mount the WSL NVIDIA libs so ffmpeg can use NVENC.
+      # libnvidia-encode.so.1 lives at /usr/lib/wsl/lib on the WSL host but is
+      # NOT automatically exposed by the nvidia container runtime.
+      # WSL2: set WSL_LIB_PATH=/usr/lib/wsl/lib in .env (setup wizard does this).
+      # Native Linux / non-WSL: set WSL_LIB_PATH=/tmp (or leave unset — /tmp is
+      # the default, a harmless empty mount that doesn't affect anything).
+      - ${WSL_LIB_PATH:-/tmp}:/usr/lib/wsl/lib:ro
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
