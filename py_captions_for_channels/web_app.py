@@ -612,7 +612,12 @@ def load_env_settings() -> dict:
             "CHANNELS_DVR_URL": config.CHANNELS_DVR_URL,
             "CHANNELS_API_URL": config.CHANNELS_API_URL,
             "CHANNELWATCH_URL": config.CHANNELWATCH_URL,
-            "DVR_RECORDINGS_PATH": config.DVR_RECORDINGS_PATH,
+            # DVR_RECORDINGS_PATH and LOCAL_PATH_PREFIX are the same path
+            # (where recordings are accessible inside the container). Prefer
+            # LOCAL_PATH_PREFIX so NAS deployments show the correct mount path
+            # even when DVR_RECORDINGS_PATH still holds the .env.example placeholder.
+            "DVR_RECORDINGS_PATH": config.LOCAL_PATH_PREFIX
+            or config.DVR_RECORDINGS_PATH,
             "WHISPER_DEVICE": config.WHISPER_DEVICE,
             # Path-mapping vars are passed via docker-compose environment: block;
             # use the live env var as fallback if .env parsing missed them.
@@ -626,11 +631,13 @@ def load_env_settings() -> dict:
                 if key in runtime_values:
                     value = merged[category][key].get("value", "")
                     # If value contains placeholder text or is empty, use runtime value
+                    schema_default = merged[category][key].get("default", "")
                     if (
                         not value
                         or "<" in value
                         or ">" in value
-                        or value == runtime_values[key]
+                        or value.startswith("/path/to/")
+                        or (schema_default and value == schema_default)
                     ):
                         # Only update if runtime value differs from default
                         runtime_val = runtime_values[key]

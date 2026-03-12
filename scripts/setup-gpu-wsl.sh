@@ -565,9 +565,10 @@ else
     set_env "NVIDIA_VISIBLE_DEVICES" ""
 fi
 if [[ "$LOCAL_DVR" == false ]]; then
-    set_env "DVR_MEDIA_HOST_PATH" "$MOUNT_POINT"
-    set_env "DVR_MEDIA_MOUNT"     "$MOUNT_POINT"
-    set_env "LOCAL_PATH_PREFIX"   "$MOUNT_POINT"
+    set_env "DVR_MEDIA_HOST_PATH"  "$MOUNT_POINT"
+    set_env "DVR_MEDIA_MOUNT"      "$MOUNT_POINT"
+    set_env "LOCAL_PATH_PREFIX"    "$MOUNT_POINT"
+    set_env "DVR_RECORDINGS_PATH" "$MOUNT_POINT"
 
     # ── Auto-detect DVR_PATH_PREFIX ───────────────────────────────────────
     # The prefix is the portion of the DVR's recording paths that comes
