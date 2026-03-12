@@ -274,7 +274,9 @@ def _query_ffmpeg_capabilities() -> dict:
                 text=True,
                 check=False,
             )
-            _ffmpeg_caps_cache[key] = result.stdout
+            # Some ffmpeg builds write capability lists to stderr instead of
+            # stdout.  Combine both so substring checks work regardless.
+            _ffmpeg_caps_cache[key] = result.stdout + result.stderr
         except Exception:
             _ffmpeg_caps_cache[key] = ""
 
