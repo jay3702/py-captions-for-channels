@@ -568,6 +568,93 @@ if [[ "$LOCAL_DVR" == false ]]; then
     set_env "DVR_MEDIA_HOST_PATH" "$MOUNT_POINT"
     set_env "DVR_MEDIA_MOUNT"     "$MOUNT_POINT"
     set_env "LOCAL_PATH_PREFIX"   "$MOUNT_POINT"
+
+    # ── Auto-detect DVR_PATH_PREFIX ───────────────────────────────────────
+    # The prefix is the portion of the DVR's recording paths that comes
+    # before the Channels category folders (TV/, Movies/, etc.).
+    # It must be stripped so local mount paths line up with API-returned paths.
+    _DVR_PREFIX_PY=$(mktemp --suffix=.py)
+    cat > "$_DVR_PREFIX_PY" << 'PYEOF'
+import json, re, sys, os.path, urllib.request
+
+dvr_url = sys.argv[1].rstrip('/')
+prefix = ''
+
+# Strategy 1 – ask /dvr for its storage path
+try:
+    with urllib.request.urlopen(dvr_url + '/dvr', timeout=5) as r:
+        d = json.loads(r.read())
+    for k in ('StoragePath', 'storage_path', 'Path', 'MediaFolder'):
+        v = d.get(k, '')
+        if v and len(v) > 1:
+            prefix = v.rstrip('/\\')
+            break
+except Exception:
+    pass
+
+# Strategy 2 – split first recording path on known category folder names
+# Strategy 3 – longest common prefix across first 20 paths (fallback)
+if not prefix:
+    try:
+        with urllib.request.urlopen(dvr_url + '/api/v1/all', timeout=10) as r:
+            recs = json.loads(r.read())
+        paths = [r.get('path') or r.get('Path', '') for r in recs
+                 if r.get('path') or r.get('Path')]
+        pat = re.compile(
+            r'(?:^|[/\\])'
+            r'(TV|Movies?|Sports?|Kids|Other|TV Shows?|TV Series'
+            r'|Documentar(?:y|ies)|News|Comedy|Drama|Music|Fitness)'
+            r'[/\\]',
+            re.I,
+        )
+        for p in paths:
+            m = pat.search(p)
+            if m:
+                pfx = p[:m.start()].rstrip('/\\')
+                if pfx:
+                    prefix = pfx
+                    break
+        if not prefix and paths:
+            norm = [p.replace('\\', '/') for p in paths[:20]]
+            try:
+                common = os.path.commonpath(norm)
+                if common and common not in ('/', ''):
+                    prefix = common.rstrip('/')
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+if prefix:
+    print(prefix)
+PYEOF
+
+    wt_info "Path Detection" "Querying Channels DVR to detect media folder path prefix…"
+    _DETECTED_PREFIX=$(python3 "$_DVR_PREFIX_PY" "$CHANNELS_DVR_URL" 2>/dev/null || true)
+    rm -f "$_DVR_PREFIX_PY"
+
+    if [[ -n "$_DETECTED_PREFIX" ]]; then
+        _DVR_PREFIX=$(wt_input "DVR Media Folder Path" \
+"Detected DVR media folder prefix — confirm or edit:
+
+  $_DETECTED_PREFIX
+
+This is stripped from DVR file paths so they map correctly
+to the local mount at $MOUNT_POINT.
+(Leave as-is unless your DVR uses a different base path.)" \
+            "$_DETECTED_PREFIX") || _DVR_PREFIX="$_DETECTED_PREFIX"
+    else
+        _DVR_PREFIX=$(wt_input "DVR Media Folder Path" \
+"Could not auto-detect the DVR media folder prefix.
+
+Enter the base path that Channels DVR uses for its recordings
+(e.g.  /tank/AllMedia/Channels  or  /media/DVR).
+
+Leave empty to configure later via the web UI Settings." \
+            "") || true
+    fi
+
+    [[ -n "$_DVR_PREFIX" ]] && set_env "DVR_PATH_PREFIX" "$_DVR_PREFIX"
 fi
 
 # ════════════════════════════════════════════════════════════════════════════
