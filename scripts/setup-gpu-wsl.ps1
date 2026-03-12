@@ -82,9 +82,53 @@ foreach ($port in @(8000, 9000)) {
 }
 if ($usedPorts) {
     Write-Warn "Port(s) already in use on Windows: $($usedPorts -join ', ')"
-    Write-Warn "If these belong to a previous py-captions install, run teardown-wsl.ps1 first."
-    $cont = Read-Host "  Continue anyway? [y/N]"
-    if ($cont -notmatch "^[Yy]") { exit 0 }
+    Write-Warn "This usually means a previous py-captions install is still running."
+    Write-Host ""
+    Write-Host "  Options:" -ForegroundColor White
+    Write-Host "    C = Clean up automatically (stop container + remove portproxy rules)" -ForegroundColor White
+    Write-Host "    S = Skip / continue anyway" -ForegroundColor White
+    Write-Host "    Q = Quit" -ForegroundColor White
+    Write-Host ""
+    $portChoice = Read-Host "  Choice [C/s/q]"
+    if ($portChoice -match "^[Qq]") { Write-Host "  Aborted." -ForegroundColor Yellow; exit 0 }
+    if ($portChoice -notmatch "^[Ss]") {
+        # Auto-cleanup: stop the Docker container and remove portproxy rules.
+        # Portproxy removal requires elevation; if we are not admin, re-launch elevated.
+        Write-Step "Stopping py-captions container (inside WSL)..."
+        $stopScript = 'cd ~/py-captions-for-channels 2>/dev/null && docker compose down 2>/dev/null; docker stop py-captions-for-channels 2>/dev/null; exit 0'
+        wsl -d $Distro -- bash -c $stopScript 2>$null | Out-Null
+        Write-Ok "Container stopped."
+
+        $isAdminNow = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+                          [Security.Principal.WindowsBuiltInRole]"Administrator")
+        if ($isAdminNow) {
+            foreach ($port in @(8000, 9000)) {
+                $existing = netsh interface portproxy show v4tov4 2>$null | Select-String "0\.0\.0\.0\s+$port"
+                if ($existing) {
+                    netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 | Out-Null
+                }
+            }
+            Write-Ok "Portproxy rules for ports 8000 and 9000 removed."
+        } else {
+            Write-Step "Requesting administrator rights to remove portproxy rules..."
+            $elevatedCmd = 'foreach ($p in @(8000,9000)) { $e = netsh interface portproxy show v4tov4 2>$null | Select-String "0\.0\.0\.0\s+$p"; if ($e) { netsh interface portproxy delete v4tov4 listenport=$p listenaddress=0.0.0.0 | Out-Null } }; Write-Host "Portproxy rules removed." -ForegroundColor Green; Start-Sleep 2'
+            Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$elevatedCmd`"" -Wait
+        }
+
+        # Re-check
+        $stillUsed = @()
+        foreach ($port in @(8000, 9000)) {
+            $conn2 = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+            if ($conn2) { $stillUsed += $port }
+        }
+        if ($stillUsed) {
+            Write-Warn "Port(s) still in use: $($stillUsed -join ', ') — another process may be using them."
+            $cont = Read-Host "  Continue anyway? [y/N]"
+            if ($cont -notmatch "^[Yy]") { exit 0 }
+        } else {
+            Write-Ok "Ports 8000 and 9000 are now free."
+        }
+    }
 } else {
     Write-Ok "Ports 8000 and 9000 are free"
 }
