@@ -468,7 +468,10 @@ def detect_gpu_backend(log) -> GPUBackend:
         _detected_backend = cpu_backend
         return cpu_backend
 
-    # Auto-detection: try each backend in priority order
+    # Auto-detection: try each backend in priority order.
+    # Keep the NVIDIA probe so we can fall back to CUVID decode + CPU encode
+    # when NVENC is unavailable (e.g. libnvidia-encode not exposed on WSL2).
+    nvidia_probe: Optional[GPUBackend] = None
     for detect_fn, label in [
         (_detect_nvidia_backend, "NVIDIA NVENC"),
         (_detect_qsv_backend, "Intel QSV"),
@@ -477,6 +480,7 @@ def detect_gpu_backend(log) -> GPUBackend:
     ]:
         backend = detect_fn()
         if backend.name == "nvidia":
+            nvidia_probe = backend
             nvenc_status = "found" if backend.available else "NOT FOUND"
             log.info(
                 f"NVENC detection: h264_nvenc={nvenc_status}, "
@@ -487,7 +491,29 @@ def detect_gpu_backend(log) -> GPUBackend:
             _detected_backend = backend
             return backend
 
-    # No GPU backend found — fall back to CPU
+    # No GPU encoder found — but if NVIDIA CUVID decoders are present, use them
+    # with libx264.  This gives hardware-accelerated decode on WSL2 / systems
+    # where libnvidia-encode.so.1 is not exposed but CUVID is still available.
+    if nvidia_probe and nvidia_probe.decoders:
+        hybrid_backend = GPUBackend(
+            name="cpu",
+            hwaccel_type=nvidia_probe.hwaccel_type,
+            encoder="libx264",
+            decoders=nvidia_probe.decoders,
+            deinterlace_filter=nvidia_probe.deinterlace_filter or "yadif",
+            hwaccel_output_format=nvidia_probe.hwaccel_output_format,
+            extra_input_flags=nvidia_probe.extra_input_flags,
+            available=True,
+        )
+        log.info(
+            "No GPU encoder (h264_nvenc unavailable), "
+            f"using CUVID decode + libx264 encode "
+            f"(cuvid_decoders={list(nvidia_probe.decoders.keys())})"
+        )
+        _detected_backend = hybrid_backend
+        return hybrid_backend
+
+    # Pure CPU fallback
     cpu_backend = GPUBackend(
         name="cpu",
         hwaccel_type="",

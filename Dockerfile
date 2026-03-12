@@ -36,8 +36,11 @@ RUN apt-get update && apt-get install -y \
 # Install nv-codec-headers and build FFmpeg in single layer to ensure pkg-config works
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 ARG FFMPEG_VERSION=6.1.1
+# Bump FFMPEG_CACHE_BUST to force a full ffmpeg recompile (invalidates GHA layer cache)
+ARG FFMPEG_CACHE_BUST=2026-03-11
 
-RUN git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-headers && \
+RUN echo "FFmpeg build: version=${FFMPEG_VERSION}, bust=${FFMPEG_CACHE_BUST}" && \
+    git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-headers && \
     cd /tmp/nv-codec-headers && \
     git checkout n11.1.5.3 && \
     make install && \
