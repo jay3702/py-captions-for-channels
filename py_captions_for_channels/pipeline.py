@@ -3,6 +3,7 @@ import json
 import os
 import re
 import subprocess
+import signal
 from typing import Callable, Optional
 import time
 from pathlib import Path
@@ -380,12 +381,18 @@ class Pipeline:
             # Check for cancellation
             if cancel_check and cancel_check():
                 log.warning("Job cancellation requested, terminating process")
-                proc.terminate()
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass  # Already gone
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     log.error("Process did not terminate gracefully, killing")
-                    proc.kill()
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
                     proc.wait()
                 break
 
@@ -395,12 +402,18 @@ class Pipeline:
                 log.error(
                     "Process timeout after %d seconds, terminating", PIPELINE_TIMEOUT
                 )
-                proc.terminate()
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     log.error("Process did not terminate gracefully, killing")
-                    proc.kill()
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
                     proc.wait()
                 break
 
@@ -670,6 +683,11 @@ class Pipeline:
                         text=True,
                         bufsize=1,  # Line buffered
                         env=_env,
+                        # Makes shell a process group leader so os.killpg() can
+                        # signal the whole tree (shell + embed_captions).
+                        # Without this, proc.terminate() only kills the shell and
+                        # embed_captions becomes an unkillable orphan.
+                        start_new_session=True,
                     )
 
                     # Stream output and parse progress
