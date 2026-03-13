@@ -167,8 +167,8 @@ class ExecutionTracker:
                 # Check if execution already exists
                 existing = service.get_execution(job_id)
                 if existing:
-                    # If completed/failed, create new unique ID for reprocessing
-                    if existing.status in ("completed", "failed"):
+                    # If terminal, create new unique ID for reprocessing
+                    if existing.status in ("completed", "failed", "cancelled"):
                         # Use microsecond-precision timestamp for uniqueness
                         now_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
                         exec_id = f"{job_id}::{now_ts}"

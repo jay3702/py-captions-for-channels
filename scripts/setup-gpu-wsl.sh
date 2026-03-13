@@ -579,6 +579,11 @@ if [[ "$GPU_OK" == true ]]; then
 else
     set_env "DOCKER_RUNTIME"         "runc"
     set_env "NVIDIA_VISIBLE_DEVICES" ""
+    # No GPU — tell the app not to attempt CUDA/NVENC so there are no
+    # "failed to load model with GPU" log errors on every job.
+    set_env "WHISPER_DEVICE"  "none"
+    set_env "HWACCEL_DECODE"  "off"
+    set_env "GPU_ENCODER"     "cpu"
 fi
 
 # WSL2 NVENC: libnvidia-encode.so.1 lives at /usr/lib/wsl/lib on the WSL host

@@ -330,9 +330,9 @@ async def process_manual_process_queue(state, pipeline, api, parser):
             # 1. No execution exists for the base job_id, OR
             # 2. Previous execution is terminal AND no active retries exist
             #
-            # NOTE: "cancelled" is intentionally excluded — user-cancelled jobs
-            # must not be automatically re-queued.  The processing loop below
-            # will clean up the queue entry when it encounters a cancelled execution.
+            # "cancelled" is included so that if a user explicitly re-queues a
+            # previously-cancelled job, a new pending execution is created and the
+            # job actually runs (rather than being silently discarded).
             should_create = False
             if not existing:
                 # Double-check: even if no execution with base job_id exists,
@@ -344,6 +344,7 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                 "completed",
                 "failed",
                 "dry_run",
+                "cancelled",  # Allow re-queue after user cancellation
             ):
                 if not path_has_active_exec:
                     should_create = True
@@ -391,14 +392,15 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                 # Skip items that are failed or cancelled — don't retry automatically.
                 # Also clear them from the queue so they don't re-appear after restart.
                 existing = tracker.get_execution(job_id)
-                if existing and existing.get("status") in ("failed", "cancelled"):
+                if existing and existing.get("status") == "failed":
                     LOG.info(
-                        "Skipping %s item, removing from queue: %s",
-                        existing.get("status"),
+                        "Skipping failed item, removing from queue: %s",
                         path,
                     )
                     state.clear_manual_process_request(path)
                     continue
+                # Note: "cancelled" is no longer skipped here — if the user
+                # explicitly re-queued a cancelled job, we should run it.
 
                 LOG.info("Manual processing: %s", path)
                 orig_path = path + ".cc4chan.orig"
@@ -465,10 +467,15 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                         "No existing execution found for base job_id: %s", job_id[:80]
                     )
 
-                # If not found or completed/failed, also check for ANY
+                # If not found or in a terminal state, also check for ANY
                 # pending execution with this path (handles orphaned
-                # executions that have timestamped IDs)
-                if not existing or existing.get("status") in ("completed", "failed"):
+                # executions that have timestamped IDs, and re-queued-after-
+                # cancel jobs whose new pending has a timestamped ID)
+                if not existing or existing.get("status") in (
+                    "completed",
+                    "failed",
+                    "cancelled",
+                ):
                     all_execs = tracker.get_executions(limit=1000)
                     active_for_path = [
                         e
