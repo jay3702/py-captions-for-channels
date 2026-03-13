@@ -188,6 +188,8 @@ docker compose down # stop the stack from the project directory
 
 ## Troubleshooting
 
+> **Comprehensive field guide:** [docs/WSL_DOCKER_TROUBLESHOOTING.md](docs/WSL_DOCKER_TROUBLESHOOTING.md) covers every known failure pattern for this WSL + Docker + NVIDIA setup — including volume mount failures, NVENC library missing, the bogus `.env` directory, and CIFS mount race conditions.
+
 ### `docker compose` not found / errors after Docker Desktop removal
 
 See [If Docker Desktop was previously installed](#if-docker-desktop-was-previously-installed) above.

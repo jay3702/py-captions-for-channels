@@ -183,6 +183,8 @@ docker restart py-captions
 
 ## Troubleshooting
 
+> **WSL2 + NVIDIA GPU users:** see [docs/WSL_DOCKER_TROUBLESHOOTING.md](docs/WSL_DOCKER_TROUBLESHOOTING.md) for a detailed field guide covering volume mount failures, NVENC not loading, the bogus `.env` directory trap, and more.
+
 ### Container Won't Start
 
 ```bash
