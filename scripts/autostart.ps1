@@ -73,49 +73,75 @@ if ($isAdmin) {
         Write-Host "  Your password will be stored encrypted by Windows (LSA secrets)." -ForegroundColor DarkGray
         Write-Host ""
 
-        # Prompt and validate Windows password
-        Add-Type -AssemblyName System.DirectoryServices.AccountManagement
-        $ctx = [System.DirectoryServices.AccountManagement.PrincipalContext]::new(
-                   [System.DirectoryServices.AccountManagement.ContextType]::Machine)
+        # Prompt for Windows password.
+        # Note: we do NOT pre-validate with DirectoryServices.AccountManagement —
+        # that API fails silently for Microsoft Account (MSA) and Azure AD-joined
+        # machines.  Instead we let Register-ScheduledTask itself report bad passwords.
+        Write-Host ""
+        Write-Host "  NOTE: Use your Windows sign-in password (not your PIN)." -ForegroundColor Yellow
+        Write-Host "        On Microsoft Account machines, this is your MSA password." -ForegroundColor DarkGray
+        Write-Host ""
 
         $plain     = $null
-        $validated = $false
-        while (-not $validated) {
+        $registered = $false
+        $attempts   = 0
+        while (-not $registered) {
+            $attempts++
+            if ($attempts -gt 3) {
+                Write-Warn "Too many failed attempts. Falling back to logon-only mode."
+                break
+            }
             $secPwd = Read-Host "  Windows password for $env:USERNAME" -AsSecureString
             $bstr   = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secPwd)
             $plain  = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
             [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
 
-            $validated = $ctx.ValidateCredentials($env:USERNAME, $plain)
-            if (-not $validated) { Write-Warn "Incorrect password — try again." }
+            Write-Step "Registering startup task '$TaskName' (at-boot + at-logon fallback)..."
+            $bootTrigger = New-ScheduledTaskTrigger -AtStartup
+            # Delay the boot trigger 30 s — WSL needs the user session infrastructure
+            # (Lxss service, user profile) to be ready before wsl.exe will work.
+            $bootTrigger.Delay = "PT30S"
+            $triggers = @(
+                $bootTrigger
+                New-ScheduledTaskTrigger -AtLogOn
+            )
+
+            try {
+                Register-ScheduledTask `
+                    -TaskName    $TaskName `
+                    -Action      $action `
+                    -Trigger     $triggers `
+                    -Settings    $settings `
+                    -RunLevel    Highest `
+                    -User        "$env:USERDOMAIN\$env:USERNAME" `
+                    -Password    $plain `
+                    -Description "Starts WSL2 ($Distro) at boot (+ logon fallback) for py-captions-for-channels" `
+                    -Force -ErrorAction Stop | Out-Null
+                $registered = $true
+            } catch {
+                Write-Warn "Registration failed: $_"
+                Write-Warn "This usually means the password was wrong — try again."
+            }
         }
-
-        Write-Step "Registering startup task '$TaskName' (at-boot + at-logon fallback)..."
-        $bootTrigger = New-ScheduledTaskTrigger -AtStartup
-        # Delay the boot trigger 30 s — WSL needs the user session infrastructure
-        # (Lxss service, user profile) to be ready before wsl.exe will work.
-        $bootTrigger.Delay = "PT30S"
-        $triggers = @(
-            $bootTrigger
-            New-ScheduledTaskTrigger -AtLogOn
-        )
-
-        Register-ScheduledTask `
-            -TaskName    $TaskName `
-            -Action      $action `
-            -Trigger     $triggers `
-            -Settings    $settings `
-            -RunLevel    Highest `
-            -User        "$env:USERDOMAIN\$env:USERNAME" `
-            -Password    $plain `
-            -Description "Starts WSL2 ($Distro) at boot (+ logon fallback) for py-captions-for-channels" `
-            -Force | Out-Null
 
         # Wipe plaintext password from memory immediately
         $plain = $null
         [GC]::Collect()
 
-        Write-Ok "Startup task registered — fires at system boot, with logon as fallback."
+        if ($registered) {
+            Write-Ok "Startup task registered — fires at system boot, with logon as fallback."
+        } else {
+            # Fall back: register logon-only (no password needed)
+            Write-Step "Registering logon-only fallback task..."
+            Register-ScheduledTask `
+                -TaskName    $TaskName `
+                -Action      $action `
+                -Trigger     (New-ScheduledTaskTrigger -AtLogOn) `
+                -Settings    $settings `
+                -Description "Starts WSL2 ($Distro) at logon for py-captions-for-channels (boot-mode password failed)" `
+                -Force | Out-Null
+            Write-Ok "Logon-only task registered (boot mode unavailable — check Windows password type)."
+        }
 
     } else {
         # ── Logon-only mode: fires when the user signs in — no password needed ──
