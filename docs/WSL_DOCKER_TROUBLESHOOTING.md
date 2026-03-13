@@ -19,7 +19,8 @@ Read the full entry before acting, because the "obvious" fix often has hidden co
 6. [Whisper uses GPU but ffmpeg encode is CPU — after NVENC fix](#6-whisper-uses-gpu-but-ffmpeg-encode-is-cpu--after-nvenc-fix)
 7. [Container starts but recording path is wrong inside container](#7-container-starts-but-recording-path-is-wrong-inside-container)
 8. [Job shows as active in System Monitor after cancellation](#8-job-shows-as-active-in-system-monitor-after-cancellation)
-9. [General WSL Docker diagnostics cheat sheet](#9-general-wsl-docker-diagnostics-cheat-sheet)
+9. [Container sees empty `/mnt/channels` — bind-mount race at autostart](#9-container-sees-empty-mntchannels--bind-mount-race-at-autostart)
+10. [General WSL Docker diagnostics cheat sheet](#10-general-wsl-docker-diagnostics-cheat-sheet)
 
 ---
 
@@ -426,7 +427,66 @@ if (isCancelled) {
 
 ---
 
-## 9. General WSL Docker Diagnostics Cheat Sheet
+## 9. Container sees empty `/mnt/channels` — bind-mount race at autostart
+
+### Symptom
+Container starts cleanly, GPU is up, logs report:
+```
+Recordings mount OK: /mnt/channels (0 entries visible)
+```
+Every job immediately fails with:
+```
+File not found or inaccessible: [Errno 2] No such file or directory: '/mnt/channels/TV/...
+```
+But `ls /mnt/channels` on the WSL host shows all folders (Database, TV, Movies, etc.).
+
+### Root Cause
+Docker bind mounts snapshot the host directory **at container start time**.
+The `.bashrc` autostart sequence is:
+1. Mount CIFS share at `/mnt/channels`
+2. If container is not running → `docker compose up -d`
+
+If step 2 races ahead of step 1 (e.g. Docker was already running from a previous session,
+or a new WSL shell triggered the autostart block before the `mountpoint -q` check
+returned), the container launches while `/mnt/channels` is still an empty directory.
+Docker captures that empty state into the bind mount and the running container never
+sees the files even after the CIFS share mounts successfully.
+
+This is distinct from Issue #1 (volume driver errors) — here the container starts fine
+and reports the mount path as OK, because the directory exists. It's just empty.
+
+### Fix
+Once you confirm the CIFS share is mounted on the host (`mount | grep cifs`), a
+restart propagates the current state into the container's bind mount:
+```bash
+# Confirm share is up on the host
+mount | grep cifs
+ls /mnt/channels   # should show TV, Movies, etc.
+
+# Restart (does NOT recreate the container — just remounts)
+cd ~/py-captions-for-channels
+docker compose restart
+
+# Verify container now sees files
+docker exec -it py-captions-for-channels ls /mnt/channels
+```
+No `down`/`up` cycle needed — `restart` is sufficient and preserves container state.
+
+### Missteps to Avoid
+- **`docker compose down && up`** instead of `restart` — works but is heavier than
+  necessary and will re-run the startup NVML/GPU checks.
+- **Checking container logs for a mount error** — there is none. The container
+  reports the path as accessible (it is — it's just empty). The only clue is
+  `(0 entries visible)` in the startup log and the repeated file-not-found warnings.
+- **Re-running the setup script** — unnecessary. The CIFS credentials and `.bashrc`
+  injection are fine. The only issue is the timing of container start vs. mount.
+- **Assuming the issue is path translation** (`DVR_PATH_PREFIX`/`LOCAL_PATH_PREFIX`) —
+  those would cause wrong-path errors, not file-not-found on the correct path.
+  If the path in the error matches what you expect, it's the empty-mount race.
+
+---
+
+## 10. General WSL Docker Diagnostics Cheat Sheet
 
 ### Is Docker running in WSL?
 ```bash
@@ -448,13 +508,13 @@ docker volume inspect py-captions-for-channels_channels_media
 
 ### Is the library visible inside the container?
 ```bash
-docker exec -it py-captions ls /usr/lib/wsl/lib/ | grep nvidia
+docker exec -it py-captions-for-channels ls /usr/lib/wsl/lib/ | grep nvidia
 # Should show: libcuda.so, libnvidia-encode.so.1, etc.
 ```
 
 ### Does NVENC actually work at runtime?
 ```bash
-docker exec -it py-captions ffmpeg \
+docker exec -it py-captions-for-channels ffmpeg \
   -f lavfi -i color=c=black:s=16x16:r=1 -t 1 \
   -c:v h264_nvenc -f null - 2>&1 | grep -E "nvenc|error|h264"
 # Correct output includes: "Stream #0:0: Video: h264_nvenc"
@@ -470,7 +530,7 @@ ls -la ~/py-captions-for-channels/.env
 ### Which WSL_LIB_PATH is being used?
 ```bash
 grep WSL_LIB_PATH ~/py-captions-for-channels/.env
-docker exec -it py-captions printenv LD_LIBRARY_PATH
+docker exec -it py-captions-for-channels printenv LD_LIBRARY_PATH
 ```
 
 ### Full re-deploy from scratch (safe order of operations)
