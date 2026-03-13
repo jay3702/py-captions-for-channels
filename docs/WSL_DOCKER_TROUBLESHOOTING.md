@@ -478,11 +478,18 @@ No `down`/`up` cycle needed — `restart` is sufficient and preserves container 
 - **Checking container logs for a mount error** — there is none. The container
   reports the path as accessible (it is — it's just empty). The only clue is
   `(0 entries visible)` in the startup log and the repeated file-not-found warnings.
-- **Re-running the setup script** — unnecessary. The CIFS credentials and `.bashrc`
-  injection are fine. The only issue is the timing of container start vs. mount.
+- **Re-running the setup script** — unnecessary for this specific problem. The CIFS
+  credentials and `.bashrc` injection are fine. The only issue is timing.
 - **Assuming the issue is path translation** (`DVR_PATH_PREFIX`/`LOCAL_PATH_PREFIX`) —
   those would cause wrong-path errors, not file-not-found on the correct path.
   If the path in the error matches what you expect, it's the empty-mount race.
+- **"The setup script already handles this"** — The setup script's check-and-restart
+  runs once, during initial setup. It does not protect against subsequent starts.
+  The `.bashrc` autostart block originally used `if ! container running → up -d`,
+  which skips a restart if the container is already up with a stale mount. This was
+  fixed (see `scripts/setup-gpu-wsl.sh`): the autostart now also checks whether the
+  mount is visible *inside* the running container, and does `docker compose restart`
+  if the directory is empty.
 
 ---
 

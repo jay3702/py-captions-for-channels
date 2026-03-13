@@ -712,6 +712,18 @@ BASHRC
     cat >> ~/.bashrc << 'BASHRC'
 if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q py-captions-for-channels; then
     (cd "$AUTOSTART_DEPLOY_DIR" && docker compose up -d 2>/dev/null)
+else
+    # Container is already running — check if the recordings mount is actually
+    # visible inside it. If empty, the container started before the CIFS share
+    # was mounted; restart it now that the share is up.
+    _pcc_mount=$(grep 'DVR_MEDIA_MOUNT' "$AUTOSTART_DEPLOY_DIR/.env" 2>/dev/null | grep -v '^#' | tail -1 | cut -d= -f2)
+    _pcc_mount=${_pcc_mount:-/mnt/channels}
+    if docker exec py-captions-for-channels ls "${_pcc_mount}" 2>/dev/null | grep -q .; then
+        : # mount is healthy — no action needed
+    else
+        (cd "$AUTOSTART_DEPLOY_DIR" && docker compose restart 2>/dev/null)
+    fi
+    unset _pcc_mount
 fi
 # ──────────────────────────────────────────────────────────────────────────
 BASHRC
