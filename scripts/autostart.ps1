@@ -47,6 +47,16 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 # We must not touch WSL from this elevated process — WSL launched from an Admin
 # context runs in an isolated session and dies when the UAC window closes.
 if ($isAdmin) {
+    # Wrap everything so errors are visible before the window closes.
+    trap {
+        Write-Host ""
+        Write-Host "ERROR: $_" -ForegroundColor Red
+        Write-Host "  at $($_.InvocationInfo.PositionMessage)" -ForegroundColor DarkGray
+        Write-Host ""
+        Read-Host "Press Enter to close"
+        exit 1
+    }
+
     $action   = New-ScheduledTaskAction -Execute "wsl.exe" `
                     -Argument "--distribution $Distro --exec dbus-launch true"
     $settings = New-ScheduledTaskSettingsSet `
