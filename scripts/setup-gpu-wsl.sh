@@ -715,15 +715,17 @@ if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q py-captions-for-chann
 else
     # Container is already running — check if the recordings mount is actually
     # visible inside it. If empty, the container started before the CIFS share
-    # was mounted; restart it now that the share is up.
+    # was mounted; do a full down/up (not just restart) to re-snapshot the bind mount.
+    # Only act if docker exec itself succeeds (avoids false positives on permission errors).
     _pcc_mount=$(grep 'DVR_MEDIA_MOUNT' "$AUTOSTART_DEPLOY_DIR/.env" 2>/dev/null | grep -v '^#' | tail -1 | cut -d= -f2)
     _pcc_mount=${_pcc_mount:-/mnt/channels}
-    if docker exec py-captions-for-channels ls "${_pcc_mount}" 2>/dev/null | grep -q .; then
-        : # mount is healthy — no action needed
-    else
-        (cd "$AUTOSTART_DEPLOY_DIR" && docker compose restart 2>/dev/null)
+    _pcc_check=$(docker exec py-captions-for-channels ls "${_pcc_mount}" 2>&1)
+    _pcc_exit=$?
+    if [ $_pcc_exit -eq 0 ] && ! echo "$_pcc_check" | grep -q .; then
+        # exec succeeded but directory was empty — re-create with fresh bind mount
+        (cd "$AUTOSTART_DEPLOY_DIR" && docker compose down 2>/dev/null && docker compose up -d 2>/dev/null)
     fi
-    unset _pcc_mount
+    unset _pcc_mount _pcc_check _pcc_exit
 fi
 # ──────────────────────────────────────────────────────────────────────────
 BASHRC

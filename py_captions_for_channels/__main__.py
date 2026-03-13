@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 
 import uvicorn
 
@@ -108,6 +109,10 @@ def check_media_mount() -> None:
     (os.path.exists on a dead SMB mount can block indefinitely).
     Logs clear, actionable guidance referencing the specific host path when
     DVR_MEDIA_HOST_PATH is available.
+
+    If the directory exists but is empty (0 entries), retries up to 3 times
+    with a short delay — the bind mount may need a moment to propagate when
+    the CIFS share was mounted just before the container started.
     """
     from .config import LOCAL_PATH_PREFIX
 
@@ -142,6 +147,37 @@ def check_media_mount() -> None:
         return
 
     if result["ok"]:
+        # If 0 entries, the bind mount may have been snapshotted before the
+        # CIFS share finished mounting on the host.  Retry a few times.
+        if result["entries"] == 0:
+            for _retry in range(3):
+                time.sleep(3)
+                result["entries"] = 0
+                r2: dict = {"ok": False, "entries": 0, "error": None}
+
+                def _probe2():
+                    try:
+                        r2["entries"] = len(os.listdir(mount_path))
+                        r2["ok"] = True
+                    except Exception as exc:
+                        r2["error"] = str(exc)
+
+                t2 = threading.Thread(target=_probe2, daemon=True, name="MountCheck")
+                t2.start()
+                t2.join(timeout=5)
+                if r2["ok"] and r2["entries"] > 0:
+                    result["entries"] = r2["entries"]
+                    break
+            if result["entries"] == 0:
+                logger.warning(
+                    "Recordings mount is empty after retries: %s\n"
+                    "  The CIFS share may not have finished mounting.\n"
+                    "  Jobs will fail until the mount is available.\n"
+                    "  Fix: ensure the share is mounted, then run:\n"
+                    "    docker compose restart",
+                    mount_path,
+                )
+                return
         logger.info(
             "Recordings mount OK: %s (%d entries visible)",
             mount_path,
