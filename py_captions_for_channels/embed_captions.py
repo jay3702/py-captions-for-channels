@@ -6,6 +6,7 @@ generated SRT captions.
 Preserves Channels’ database identity and Android compatibility.
 """
 
+import gc
 import os
 import sys
 import time
@@ -2287,6 +2288,13 @@ def main():
                         log.info(f"Cleaned up temporary WAV file: {wav_path}")
                     except Exception as e:
                         log.warning(f"Failed to clean up WAV file: {e}")
+
+                # Explicitly free the model to reclaim ~1.5GB RAM before ffmpeg steps.
+                # Without this, ctranslate2 deallocation during Python interpreter
+                # shutdown causes a SIGKILL (exit 137) after all work is complete.
+                del model
+                gc.collect()
+                log.debug("Whisper model freed from memory")
 
                 # End pipeline stage after successful transcription
                 pipeline.stage_end("whisper", job_id)
