@@ -29,8 +29,18 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
     echo "This script must be run inside WSL2." >&2; exit 1
 fi
 
+# Parse optional flags passed by the PowerShell launcher
+_SKIP_NVIDIA=false
+for _arg in "$@"; do
+    case "$_arg" in
+        --no-gpu) _SKIP_NVIDIA=true ;;
+    esac
+done
+
 # ── prime sudo early so all later silent sudo calls don't hang ───────────────
-echo "This installer needs sudo access for apt-get, Docker, and config files."
+echo "This installer needs administrator (sudo) access for apt, Docker, and system config."
+echo "When prompted for a password, enter the Linux password you just created for your"
+echo "username — this is NOT your Windows password."
 sudo -v
 
 # ── ensure whiptail is available ─────────────────────────────────────────────
@@ -406,50 +416,56 @@ if ! docker compose version &>/dev/null 2>&1; then
 fi
 
 # ════════════════════════════════════════════════════════════════════════════
-# STEP 2 — NVIDIA Container Toolkit
+# STEP 2 — NVIDIA Container Toolkit  (skipped when --no-gpu is passed)
 # ════════════════════════════════════════════════════════════════════════════
-CURRENT_STEP="NVIDIA Container Toolkit"
-if docker info 2>/dev/null | grep -q 'nvidia'; then
-    wt_info "NVIDIA Toolkit" "nvidia runtime already registered — skipping."
-    sleep 1
-else
-    _nvidia_install() {
-        echo 10
-        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-            | sudo gpg --dearmor \
-                -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null
-        echo 25
-        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
-            | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-            | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
-        echo 35
-        sudo apt-get update -qq                             >> "$LOG" 2>&1
-        echo 55
-        sudo apt-get install -y -qq nvidia-container-toolkit >> "$LOG" 2>&1
-        echo 80
-        (sudo nvidia-ctk runtime configure --runtime=docker --set-as-default \
-            || sudo nvidia-ctk runtime configure --runtime=docker) >> "$LOG" 2>&1
-        echo 92
-        sudo service docker restart                         >> "$LOG" 2>&1
-        sleep 2
-        echo 100
-    }
-    gauge "NVIDIA Container Toolkit" "Installing nvidia-container-toolkit — please wait..." _nvidia_install
-fi
-
-# GPU sanity test
-wt_info "GPU Test" "Testing GPU passthrough inside Docker..."
 GPU_OK=false
-if docker run --rm --gpus all --runtime=nvidia nvidia/cuda:12.1.0-base-ubuntu22.04 \
-        nvidia-smi -L >> "$LOG" 2>&1; then
-    GPU_OK=true
-    GPU_NAME=$(docker run --rm --gpus all --runtime=nvidia \
-        nvidia/cuda:12.1.0-base-ubuntu22.04 \
-        nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "GPU detected")
-    wt_msg "GPU Test" "✔ GPU visible in container:\n  $GPU_NAME\n\nGPU acceleration will be enabled." 12
+if [[ "$_SKIP_NVIDIA" == false ]]; then
+    CURRENT_STEP="NVIDIA Container Toolkit"
+    if docker info 2>/dev/null | grep -q 'nvidia'; then
+        wt_info "NVIDIA Toolkit" "nvidia runtime already registered — skipping."
+        sleep 1
+    else
+        _nvidia_install() {
+            echo 10
+            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+                | sudo gpg --dearmor \
+                    -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null
+            echo 25
+            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+                | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+                | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
+            echo 35
+            sudo apt-get update -qq                             >> "$LOG" 2>&1
+            echo 55
+            sudo apt-get install -y -qq nvidia-container-toolkit >> "$LOG" 2>&1
+            echo 80
+            (sudo nvidia-ctk runtime configure --runtime=docker --set-as-default \
+                || sudo nvidia-ctk runtime configure --runtime=docker) >> "$LOG" 2>&1
+            echo 92
+            sudo service docker restart                         >> "$LOG" 2>&1
+            sleep 2
+            echo 100
+        }
+        gauge "NVIDIA Container Toolkit" "Installing nvidia-container-toolkit — please wait..." _nvidia_install
+    fi
+
+    # GPU sanity test
+    CURRENT_STEP="GPU Test"
+    wt_info "GPU Test" "Testing GPU passthrough inside Docker..."
+    if docker run --rm --gpus all --runtime=nvidia nvidia/cuda:12.1.0-base-ubuntu22.04 \
+            nvidia-smi -L >> "$LOG" 2>&1; then
+        GPU_OK=true
+        GPU_NAME=$(docker run --rm --gpus all --runtime=nvidia \
+            nvidia/cuda:12.1.0-base-ubuntu22.04 \
+            nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "GPU detected")
+        wt_msg "GPU Test" "✔ GPU visible in container:\n  $GPU_NAME\n\nGPU acceleration will be enabled." 12
+    else
+        wt_msg "GPU Test" \
+            "GPU test failed.\n\nThe container will run in CPU mode (slower transcription).\n\nTo fix later:\n  1. Ensure 'nvidia-smi' works in Windows PowerShell\n  2. Ensure CUDA 12.2+ driver is installed\n  3. Re-run this installer — it is safe to run again." 16
+    fi
 else
-    wt_msg "GPU Test" \
-        "GPU test failed.\n\nThe container will run in CPU mode (slower transcription).\n\nTo fix later:\n  1. Ensure 'nvidia-smi' works in Windows PowerShell\n  2. Ensure CUDA 12.2+ driver is installed\n  3. Re-run this installer — it is safe to run again." 16
+    wt_info "GPU Mode" "No NVIDIA GPU — Whisper will run in CPU mode." 6
+    sleep 1
 fi
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -833,15 +849,18 @@ fi
 # LAUNCH
 # ════════════════════════════════════════════════════════════════════════════
 CURRENT_STEP="Docker Launch"
-DOCKER_CMD="docker"
-if ! groups | grep -q docker; then DOCKER_CMD="sg docker -c docker"; fi
-
 _launch_step() {
     echo 5
     cd "$DEPLOY_DIR"
-    $DOCKER_CMD compose pull  >> "$LOG" 2>&1
-    echo 85
-    $DOCKER_CMD compose up -d >> "$LOG" 2>&1
+    if groups | grep -q docker; then
+        docker compose pull  >> "$LOG" 2>&1
+        echo 85
+        docker compose up -d >> "$LOG" 2>&1
+    else
+        sg docker -c "docker compose pull"  >> "$LOG" 2>&1
+        echo 85
+        sg docker -c "docker compose up -d" >> "$LOG" 2>&1
+    fi
     echo 100
 }
 gauge "Starting" "Pulling image and starting container (~5 GB first run)..." _launch_step

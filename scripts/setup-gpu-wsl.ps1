@@ -41,7 +41,13 @@ $drive = $env:SystemDrive
 $disk  = Get-PSDrive ($drive.TrimEnd(':')) -ErrorAction SilentlyContinue
 if ($disk -and $disk.Free -lt 15GB) {
     $freeGB = [math]::Round($disk.Free / 1GB, 1)
-    Write-Warn "Only ${freeGB} GB free on $drive — recommend at least 15 GB for WSL2 + Docker images."
+    Write-Warn "Only ${freeGB} GB free on $drive — estimated space requirements:"
+    Write-Host "    ~1 GB  Ubuntu WSL2 distro" -ForegroundColor Yellow
+    Write-Host "    ~4 GB  Docker Engine + py-captions image" -ForegroundColor Yellow
+    Write-Host "    ~3 GB  Whisper speech model (downloaded on first use)" -ForegroundColor Yellow
+    Write-Host "    ─────────────────────────────────────────" -ForegroundColor Yellow
+    Write-Host "    ~8 GB  minimum   (15 GB recommended)" -ForegroundColor Yellow
+    Write-Host ""
     $cont = Read-Host "  Continue anyway? [y/N]"
     if ($cont -notmatch "^[Yy]") { exit 0 }
 } else {
@@ -226,7 +232,8 @@ if (-not $installed) {
     # least once.  wsl --install will open an Ubuntu terminal window for first-time setup.
     Write-Host ""
     Write-Host "  A new terminal window will open for Ubuntu first-time setup." -ForegroundColor Yellow
-    Write-Host "  Create your Linux username and password there, then close that window." -ForegroundColor Yellow
+    Write-Host "  Create your Linux username and password there." -ForegroundColor Yellow
+    Write-Host "  When finished, type 'exit' at the Linux prompt and press Enter to close it." -ForegroundColor Yellow
     Write-Host "  Come back here and press Enter when done." -ForegroundColor Yellow
     Write-Host ""
     Read-Host "  Press Enter to start the Ubuntu installation"
@@ -257,26 +264,27 @@ if ($versionLine -match "1\s*$") {
     wsl --set-version $Distro 2
 }
 
-# ── STEP 3 — Check NVIDIA driver on Windows ───────────────────────────────
-Write-Step "Checking NVIDIA driver..."
+# ── STEP 3 — Detect GPU ───────────────────────────────────────────────────
+Write-Step "Detecting GPU..."
+$HasGpu = $false
 try {
     $smi = & nvidia-smi 2>&1 | Out-String
     if ($smi -match "Driver Version") {
+        $HasGpu = $true
         $driverMatch = [regex]::Match($smi, "Driver Version:\s+([\d.]+)")
         $cudaMatch   = [regex]::Match($smi, "CUDA Version:\s+([\d.]+)")
-        Write-Ok ("NVIDIA driver {0} — CUDA {1}" -f $driverMatch.Groups[1].Value, $cudaMatch.Groups[1].Value)
+        Write-Ok ("NVIDIA GPU detected — driver {0}, CUDA {1}" -f $driverMatch.Groups[1].Value, $cudaMatch.Groups[1].Value)
 
         $cudaVer = [version]($cudaMatch.Groups[1].Value)
         if ($cudaVer -lt [version]"12.2") {
-            Write-Warn ("CUDA {0} detected — 12.2+ recommended. GPU may fall back to CPU." -f $cudaMatch.Groups[1].Value)
+            Write-Warn ("CUDA {0} detected — 12.2+ recommended for best GPU performance." -f $cudaMatch.Groups[1].Value)
             Write-Warn "Download latest driver: https://www.nvidia.com/Download/index.aspx"
         }
     }
-} catch {
-    Write-Warn "nvidia-smi not found in PATH — make sure NVIDIA drivers are installed on Windows."
-    Write-Warn "Download: https://www.nvidia.com/Download/index.aspx"
-    $cont = Read-Host "Continue anyway? [y/N]"
-    if ($cont -notmatch "^[Yy]") { exit 0 }
+} catch { <# nvidia-smi not on PATH — no GPU #> }
+
+if (-not $HasGpu) {
+    Write-Ok "No NVIDIA GPU detected — Whisper will run on CPU (slower, but fully functional)"
 }
 
 # ── STEP 4 — Run installer inside WSL2 ───────────────────────────────────
@@ -303,7 +311,11 @@ Write-Host ""
 
 # Run bash directly (not via `--`) so WSL allocates a proper PTY.
 # Without a PTY, ncurses/whiptail cannot draw its TUI.
-wsl -d $Distro bash "$WslBashPath"
+if ($HasGpu) {
+    wsl -d $Distro bash "$WslBashPath"
+} else {
+    wsl -d $Distro bash "$WslBashPath" --no-gpu
+}
 
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Installer exited with code $LASTEXITCODE"

@@ -53,7 +53,10 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
                [Security.Principal.WindowsBuiltInRole]"Administrator")
 
 # ── Elevated branch: remove firewall rules + portproxy ───────────────────
-if ($isAdmin) {
+# Only enter this branch when explicitly re-launched with -ElevatedOnly.
+# Checking $ElevatedOnly (not $isAdmin) ensures that a user who happens to
+# run the script as admin still gets the full WSL-cleanup + clone-removal flow.
+if ($ElevatedOnly) {
     # Scheduled task
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
@@ -174,10 +177,16 @@ if ($distroInstalled) {
 }
 
 # ── Step 3: Elevated removals (task + firewall + portproxy) ──────────────
-Write-Step "Requesting administrator rights to remove task, firewall rules, and portproxy..."
-Start-Process powershell -Verb RunAs `
-    -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Distro `"$Distro`" -ElevatedOnly" `
-    -Wait
+if ($isAdmin) {
+    # Already elevated — run inline rather than spawning a redundant UAC prompt.
+    Write-Step "Removing task, firewall rules, and portproxy..."
+    & $PSCommandPath -Distro $Distro -ElevatedOnly
+} else {
+    Write-Step "Requesting administrator rights to remove task, firewall rules, and portproxy..."
+    Start-Process powershell -Verb RunAs `
+        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Distro `"$Distro`" -ElevatedOnly" `
+        -Wait
+}
 
 # Offer to remove the Windows clone directory.
 # Use $_repoRoot (where this script actually lives) rather than a hardcoded path.
