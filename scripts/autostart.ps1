@@ -47,12 +47,18 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 # We must not touch WSL from this elevated process — WSL launched from an Admin
 # context runs in an isolated session and dies when the UAC window closes.
 if ($isAdmin) {
+    # Capture all output to a log file — the elevated window may close too fast to read.
+    $elevatedLog = "$env:TEMP\py-captions-autostart-elevated.log"
+    Start-Transcript -Path $elevatedLog -Force | Out-Null
+
     # Wrap everything so errors are visible before the window closes.
     trap {
         Write-Host ""
         Write-Host "ERROR: $_" -ForegroundColor Red
         Write-Host "  at $($_.InvocationInfo.PositionMessage)" -ForegroundColor DarkGray
         Write-Host ""
+        Write-Host "Full log: $elevatedLog" -ForegroundColor Yellow
+        Stop-Transcript | Out-Null
         Read-Host "Press Enter to close"
         exit 1
     }
