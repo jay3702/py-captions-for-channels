@@ -21,9 +21,8 @@
 #     WSL2 VM IP (172.x.x.x), refreshed each startup via a -ProxyOnly
 #     elevated re-launch after WSL2 is running.
 #
-# Must be run as Administrator (the script will self-elevate via UAC if not).
-#
-# Usage (PowerShell, any directory):
+# Must be run in an elevated (Administrator) PowerShell session.
+# Right-click PowerShell and choose "Run as Administrator", then re-run:
 #   .\scripts\autostart.ps1
 #   .\scripts\autostart.ps1 -Distro Ubuntu-24.04
 # ---------------------------------------------------------------------------
@@ -41,15 +40,18 @@ function Write-Ok($msg)   { Write-Host "OK  $msg" -ForegroundColor Green }
 function Write-Step($msg) { Write-Host ">>> $msg" -ForegroundColor Cyan }
 function Write-Warn($msg) { Write-Host "!   $msg" -ForegroundColor Yellow }
 
-# ── Self-elevate via UAC if not already running as Administrator ──────────
+# ── Require an elevated session — exit clearly if not Administrator ─────────
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
                [Security.Principal.WindowsBuiltInRole]"Administrator")
 if (-not $isAdmin) {
-    Write-Step "Requesting administrator rights (UAC prompt will appear)..."
-    $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Distro `"$Distro`""
-    if ($TriggerType) { $argList += " -TriggerType `"$TriggerType`"" }
-    Start-Process powershell -Verb RunAs -ArgumentList $argList -Wait
-    exit 0
+    Write-Host ""
+    Write-Host "  This script must be run as Administrator." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Right-click PowerShell and choose 'Run as Administrator'," -ForegroundColor Yellow
+    Write-Host "  then run the script again:" -ForegroundColor Yellow
+    Write-Host "    .\scripts\autostart.ps1" -ForegroundColor White
+    Write-Host ""
+    exit 1
 }
 
 # ── ProxyOnly: refresh portproxy rules with the current WSL2 VM IP ────────
