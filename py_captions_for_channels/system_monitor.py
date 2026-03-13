@@ -582,11 +582,37 @@ class PipelineTimeline:
 
             self._save_state()
 
+    def job_cancel(self, job_id: str):
+        """Mark a job as cancelled, ending any in-progress stage."""
+        with self.lock:
+            self._load_state()
+            if self.current_job_id == job_id:
+                if self.current_stage and not self.current_stage.ended_at:
+                    self.current_stage.ended_at = time.time()
+                    if self.system_monitor:
+                        self.current_stage.gpu_engaged = (
+                            self.system_monitor.is_gpu_engaged()
+                        )
+                    self.completed_stages.append(self.current_stage)
+                self.current_stage = None
+                self._save_state()
+
     def get_status(self) -> Dict[str, Any]:
         """Get current pipeline status from file (cross-process visibility)."""
         with self.lock:
             # Load latest state from file (updated by subprocess)
             self._load_state()
+
+            # Auto-clear stale active stages (subprocess killed without stage_end)
+            if self.current_stage and not self.current_stage.ended_at:
+                from .config import STALE_EXECUTION_SECONDS
+
+                stage_age = time.time() - self.current_stage.started_at
+                if stage_age > STALE_EXECUTION_SECONDS:
+                    self.current_stage.ended_at = time.time()
+                    self.completed_stages.append(self.current_stage)
+                    self.current_stage = None
+                    self._save_state()
 
             # Auto-clear completed jobs older than 30 seconds
             if self.current_job_id and not self.current_stage and self.completed_stages:

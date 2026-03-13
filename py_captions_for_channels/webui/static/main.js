@@ -2422,6 +2422,22 @@ function updatePipelineStatus(pipeline) {
     }
   }
   
+  // Detect cancelled/failed jobs: not active, has partial stages, but no terminal stage
+  const isCancelled = !pipeline.active && completedStages.length > 0 && !allCompleted;
+  if (isCancelled) {
+    const lastStage = completedStages[completedStages.length - 1];
+    if (lastStage && lastStage.ended_at) {
+      const cancelAge = Date.now() / 1000 - lastStage.ended_at;
+      if (cancelAge > COMPLETION_DISPLAY_DURATION) {
+        pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
+        return;
+      }
+    } else {
+      pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
+      return;
+    }
+  }
+
   // Show "No active pipeline" only if nothing is active AND no completed stages
   if (!pipeline.active && completedStages.length === 0) {
     pipelineInfo.innerHTML = '<div class="pipeline-info-text">No active transcription pipeline</div>';
@@ -2614,6 +2630,19 @@ function updatePipelineStatus(pipeline) {
     html += `
       <div class="pipeline-current-step" style="border-left-color: #43e97b;">
         <strong style="color: #43e97b;">✓ Complete!</strong> All stages finished successfully.
+        <span style="color: var(--muted); margin-left: 8px; font-size: 12px;">(clearing in ${secondsRemaining}s)</span>
+      </div>
+    `;
+  } else if (isCancelled) {
+    let secondsRemaining = COMPLETION_DISPLAY_DURATION;
+    const lastStage = completedStages[completedStages.length - 1];
+    if (lastStage && lastStage.ended_at) {
+      const cancelAge = Date.now() / 1000 - lastStage.ended_at;
+      secondsRemaining = Math.max(0, Math.ceil(COMPLETION_DISPLAY_DURATION - cancelAge));
+    }
+    html += `
+      <div class="pipeline-current-step" style="border-left-color: #f9a825;">
+        <strong style="color: #f9a825;">✗ Cancelled</strong> Job was cancelled.
         <span style="color: var(--muted); margin-left: 8px; font-size: 12px;">(clearing in ${secondsRemaining}s)</span>
       </div>
     `;

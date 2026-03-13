@@ -2587,6 +2587,8 @@ async def cancel_execution(job_id: str) -> dict:
         ok = tracker.request_cancel(job_id)
         if not ok:
             return {"error": "Execution not found", "job_id": job_id}
+        # Clear pipeline timeline immediately so UI reflects cancelled state
+        get_pipeline_timeline().job_cancel(job_id)
         if (
             execution
             and execution.get("kind") == "manual_process"
