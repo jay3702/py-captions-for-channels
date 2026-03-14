@@ -27,6 +27,7 @@ from py_captions_for_channels.config import (
     SUBTITLE_LANGUAGE,
     LANGUAGE_FALLBACK,
     PRESERVE_ALL_AUDIO_TRACKS,
+    TRANSCODE_FOR_FIRETV,
     NVENC_CQ,
     X264_CRF,
     HWACCEL_DECODE,
@@ -2321,7 +2322,17 @@ def main():
             step_tracker.finish("whisper", status="failed")
             raise
 
-    # Now preserve the original AFTER caption generation
+    # SRT-only mode: skip all ffmpeg steps when TRANSCODE_FOR_FIRETV=false
+    if not TRANSCODE_FOR_FIRETV:
+        log.info(
+            "SRT-only mode (TRANSCODE_FOR_FIRETV=false) — " "captions written to: %s",
+            srt_path,
+        )
+        pipeline.job_complete(job_id)
+        log.info("Caption generation complete.")
+        return
+
+    # Now preserve the original AFTER caption generation (transcode mode only)
     run_step(
         "file_copy",
         lambda: preserve_original(mpg_path, log),

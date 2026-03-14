@@ -301,6 +301,13 @@ PRESERVE_ALL_AUDIO_TRACKS = os.getenv("PRESERVE_ALL_AUDIO_TRACKS", "1").lower() 
     "yes",
 )
 
+# Transcode for Fire TV / Android clients
+# false (default) - SRT-only mode: generate a .srt file alongside the recording.
+#                   No ffmpeg encode/mux. Fastest; works on Apple TV, web player.
+# true             - Embed captions by re-encoding the recording into MP4 with a
+#                   muxed subtitle track.  Required for Fire TV and Android clients.
+TRANSCODE_FOR_FIRETV = get_env_bool("TRANSCODE_FOR_FIRETV", False)
+
 # Audio codec for the encode step
 # "auto"  - Copy audio if source codec is MP4-compatible (ac3, eac3, aac, mp3, flac,
 #            opus), otherwise re-encode to AAC.  Fastest option for broadcast sources.
