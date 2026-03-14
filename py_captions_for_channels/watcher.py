@@ -871,7 +871,8 @@ async def main():
                     )
 
                 # Check whitelist before re-queuing
-                if not whitelist.is_allowed(title, start_time):
+                # (channel not stored in execution tracker, so pass None)
+                if not whitelist.is_allowed(title, start_time, None):
                     skipped_whitelist_count += 1
                     LOG.info(
                         "Skipped orphaned execution (not whitelisted): %s @ %s",
@@ -1413,7 +1414,9 @@ async def main():
 
         # Check whitelist (hot-reloaded from DB every 30s)
         if not _load_whitelist().is_allowed(
-            event_partial.title, event_partial.start_time
+            event_partial.title,
+            event_partial.start_time,
+            getattr(event_partial, "channel", None),
         ):
             continue
 

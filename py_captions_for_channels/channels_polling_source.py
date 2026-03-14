@@ -34,6 +34,7 @@ class PartialProcessingEvent:
     source: str = "channels_polling"
     path: Optional[str] = None  # File path if known (polling source provides this)
     exec_id: Optional[str] = None  # Existing execution ID, if resuming
+    channel: Optional[str] = None  # Channel number/call-sign (e.g. "7.1")
 
 
 class ChannelsPollingSource:
@@ -452,6 +453,7 @@ class ChannelsPollingSource:
 
                     # Extract details
                     title = rec.get("title", "Unknown")
+                    channel = rec.get("channel")  # e.g. "7.1"
                     created_at = rec.get("created_at", 0)
                     start_time = (
                         datetime.fromtimestamp(created_at / 1000, tz=timezone.utc)
@@ -549,7 +551,7 @@ class ChannelsPollingSource:
                     self._reload_whitelist()
 
                     # Check whitelist before creating discovered execution
-                    if not self._whitelist.is_allowed(title, start_time):
+                    if not self._whitelist.is_allowed(title, start_time, channel):
                         LOG.debug(
                             "Skipping non-whitelisted recording: '%s' @ %s",
                             title,
@@ -607,6 +609,7 @@ class ChannelsPollingSource:
                         title=title,
                         start_time=start_time,
                         path=path,
+                        channel=channel,
                     )
 
                 # Log polling summary

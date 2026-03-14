@@ -5,12 +5,36 @@ Show name matching supports both substring and regex patterns.
 """
 
 import logging
+import os
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Pattern
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python < 3.9
+    from backports.zoneinfo import ZoneInfo  # type: ignore
+
 LOG = logging.getLogger(__name__)
+
+
+def _whitelist_tz():
+    """Return the ZoneInfo to use for day/time whitelist comparisons.
+
+    Prefers SERVER_TZ then TZ env vars (same convention as the rest of the
+    application).  Falls back to None so that astimezone(None) uses the
+    OS/container system timezone.
+    """
+    tz_name = os.getenv("SERVER_TZ") or os.getenv("TZ")
+    if tz_name:
+        try:
+            return ZoneInfo(tz_name)
+        except Exception:
+            LOG.warning(
+                "Invalid timezone '%s' in SERVER_TZ/TZ; using system tz", tz_name
+            )
+    return None
 
 
 class WhitelistRule:
@@ -60,12 +84,18 @@ class WhitelistRule:
                 self.is_regex = False
                 self.pattern = None
 
-    def matches(self, title: str, recording_time: Optional[datetime] = None) -> bool:
+    def matches(
+        self,
+        title: str,
+        recording_time: Optional[datetime] = None,
+        channel: Optional[str] = None,
+    ) -> bool:
         """Check if a recording matches this whitelist rule.
 
         Args:
             title: Recording title
-            recording_time: When the recording was made (optional)
+            recording_time: When the recording was made (optional, UTC OK)
+            channel: Channel number/call-sign from Channels DVR (e.g. "7.1")
 
         Returns:
             True if the recording matches this rule
@@ -90,9 +120,15 @@ class WhitelistRule:
             LOG.warning("Complex whitelist rule requires timestamp: %s", self.show_name)
             return True  # Allow it anyway
 
+        # Convert UTC (or any tz-aware) time to the server's local timezone so
+        # that day-of-week and hour comparisons match the user's wall-clock
+        # time (the time shown in Channels DVR / the TV schedule).
+        # Uses SERVER_TZ / TZ env vars; falls back to OS system timezone.
+        local_time = recording_time.astimezone(_whitelist_tz())
+
         # Check day of week
         if self.day_of_week:
-            day_name = recording_time.strftime("%A")
+            day_name = local_time.strftime("%A")
             if day_name != self.day_of_week:
                 return False
 
@@ -100,7 +136,12 @@ class WhitelistRule:
         if self.time:
             # Format: "21:00" (HH:MM)
             rule_hour, rule_min = map(int, self.time.split(":"))
-            if recording_time.hour != rule_hour or recording_time.minute != rule_min:
+            if local_time.hour != rule_hour or local_time.minute != rule_min:
+                return False
+
+        # Check channel (if the rule specifies one and we know the channel)
+        if self.channels is not None and channel is not None:
+            if channel not in self.channels:
                 return False
 
         return True
@@ -175,12 +216,18 @@ class Whitelist:
         self.enabled = len(self.rules) > 0
         LOG.debug("Loaded %d whitelist rules from content", len(self.rules))
 
-    def is_allowed(self, title: str, recording_time: Optional[datetime] = None) -> bool:
+    def is_allowed(
+        self,
+        title: str,
+        recording_time: Optional[datetime] = None,
+        channel: Optional[str] = None,
+    ) -> bool:
         """Check if a recording is allowed by the whitelist.
 
         Args:
             title: Recording title
             recording_time: When the recording was made
+            channel: Channel number/call-sign (e.g. "7.1")
 
         Returns:
             True if recording should be processed
@@ -194,7 +241,7 @@ class Whitelist:
 
         # Check if any rule matches
         for rule in self.rules:
-            if rule.matches(title, recording_time):
+            if rule.matches(title, recording_time, channel):
                 LOG.debug(
                     "Recording '%s' matches whitelist rule: %s", title, rule.show_name
                 )
