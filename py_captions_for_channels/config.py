@@ -24,40 +24,20 @@ def _strip_inline_comment(value: str) -> str:
     return re.sub(r"\s+#.*$", "", value).strip()
 
 
-# Keys whose values are written by the Setup Wizard after the container is
-# first started.  These must be read directly from the .env file on every
-# process restart because docker-compose injects the *original* value at
-# container-creation time and cannot update it without a full
-# ``docker compose down && up``.
-_WIZARD_MANAGED_KEYS = frozenset(
-    {
-        "DVR_PATH_PREFIX",
-        "LOCAL_PATH_PREFIX",
-        "DVR_MEDIA_MOUNT",
-        "DVR_MEDIA_HOST_PATH",
-        "DVR_MEDIA_DEVICE",
-        "DVR_MEDIA_TYPE",
-        "DVR_MEDIA_OPTS",
-        "CHANNELS_DVR_URL",
-    }
-)
-
-
 def _load_dotenv_file() -> None:
     """Seed os.environ from the .env file.
 
     docker-compose injects env vars at *container creation* time from the
-    .env file.  When the wizard writes new values to .env and triggers a
-    process restart (without ``docker compose up -d``), the container's env
-    vars are still the old ones.  This function re-reads the file so that
-    freshly-restarted processes see the updated values.
+    .env file.  When the UI writes new values to .env (settings dialog,
+    wizard), those changes would otherwise be ignored until a full
+    ``docker compose down && up``.  By always overriding from .env here,
+    the .env file is the source of truth:
 
-    Policy:
-    - Wizard-managed keys (path prefixes, DVR URL, etc.) **always** take
-      their value from the current .env file, overriding whatever
-      docker-compose injected at startup.
-    - All other keys use setdefault — docker-compose-injected vars win.
-    - Inline comments (`` # ...``) are stripped from values before storing.
+    - Subprocesses (embed_captions.py) re-import config.py fresh for every
+      job, so they always pick up the latest .env values without a restart.
+    - After a graceful restart the main process also gets the updated values.
+
+    Inline comments (`` # ...``) are stripped from values before storing.
     """
     env_path = Path(__file__).parent.parent / ".env"
     if not env_path.exists():
@@ -74,11 +54,8 @@ def _load_dotenv_file() -> None:
                 # Only valid uppercase/underscore keys
                 if not (key and key.replace("_", "").isupper()):
                     continue
-                if key in _WIZARD_MANAGED_KEYS:
-                    # Always override — wizard may have updated after container start
-                    os.environ[key] = value
-                else:
-                    os.environ.setdefault(key, value)
+                # Always override — .env is source of truth at runtime.
+                os.environ[key] = value
     except Exception:
         pass  # Non-fatal — fall back to whatever docker-compose injected
 
