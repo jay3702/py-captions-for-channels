@@ -2045,8 +2045,10 @@ def main():
                     wav_path = f"{mpg_path}.cc4chan.temp.wav"
                     try:
                         # Map specific audio stream for language-aware processing
+                        # Use absolute stream index (0:N), not audio-relative (0:a:N),
+                        # because selected_audio_index is the global ffprobe index.
                         audio_map = (
-                            ["-map", f"0:a:{selected_audio_index}"]
+                            ["-map", f"0:{selected_audio_index}"]
                             if selected_audio_index is not None
                             else []
                         )
@@ -2152,9 +2154,10 @@ def main():
                                     wav_path = f"{mpg_path}.cc4chan.temp.wav"
                                     try:
                                         # Map specific audio stream
-                                        # for language-aware processing
+                                        # for language-aware processing.
+                                        # Use absolute index (0:N).
                                         audio_map = (
-                                            ["-map", f"0:a:{selected_audio_index}"]
+                                            ["-map", f"0:{selected_audio_index}"]
                                             if selected_audio_index is not None
                                             else []
                                         )
