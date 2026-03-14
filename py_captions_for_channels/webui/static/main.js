@@ -1291,7 +1291,7 @@ async function saveEnvSettings(event) {
 
     const banner = document.createElement('div');
     banner.id = 'settings-saved-banner';
-    banner.style.cssText = 'background:#1a3a1a;border:1px solid #4caf50;border-radius:6px;padding:12px 16px;margin:12px 0;color:#e0e0e0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;';
+    banner.style.cssText = 'background:#1a3a1a;border:1px solid #4caf50;border-radius:6px;padding:10px 16px;margin-top:10px;color:#e0e0e0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;';
     banner.innerHTML = `
       <span style="flex:1;min-width:0;">
         <strong style="color:#4caf50;">✓ Settings saved.</strong>
@@ -1302,11 +1302,12 @@ async function saveEnvSettings(event) {
         <button id="settings-close-btn" style="background:#333;border:1px solid #555;color:#e0e0e0;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:0.9em;">Close</button>
       </span>`;
 
-    // Insert at the top of the modal body / form
-    if (form) {
+    // Insert into the dedicated banner area in the fixed top panel
+    const bannerArea = document.getElementById('settings-saved-banner-area');
+    if (bannerArea) {
+      bannerArea.appendChild(banner);
+    } else if (form) {
       form.insertBefore(banner, form.firstChild);
-    } else if (modal) {
-      modal.insertBefore(banner, modal.firstChild);
     }
 
     document.getElementById('settings-close-btn').addEventListener('click', () => {
