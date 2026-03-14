@@ -462,8 +462,13 @@ class PipelineTimeline:
             import json
 
             os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, "w") as f:
+            # Write atomically via temp file so a SIGKILL mid-write never
+            # leaves a corrupted state file that makes _load_state silently
+            # keep stale in-memory data (stuck active-stage for up to 1 hour).
+            tmp_file = self.state_file + ".tmp"
+            with open(tmp_file, "w") as f:
                 json.dump(state, f)
+            os.replace(tmp_file, self.state_file)
         except Exception:
             pass  # Don't let persistence errors break pipeline execution
 
@@ -603,12 +608,14 @@ class PipelineTimeline:
             # Load latest state from file (updated by subprocess)
             self._load_state()
 
-            # Auto-clear stale active stages (subprocess killed without stage_end)
+            # Auto-clear stale active stages (subprocess killed without stage_end).
+            # Use a 5-minute cap rather than the full STALE_EXECUTION_SECONDS (1hr)
+            # so a crashed job doesn't leave the pipeline chart stuck for an hour.
             if self.current_stage and not self.current_stage.ended_at:
-                from .config import STALE_EXECUTION_SECONDS
+                _CHART_STALE_SECONDS = 300  # 5 minutes
 
                 stage_age = time.time() - self.current_stage.started_at
-                if stage_age > STALE_EXECUTION_SECONDS:
+                if stage_age > _CHART_STALE_SECONDS:
                     self.current_stage.ended_at = time.time()
                     self.completed_stages.append(self.current_stage)
                     self.current_stage = None
@@ -620,8 +627,10 @@ class PipelineTimeline:
                 job_stages = [
                     s for s in self.completed_stages if s.job_id == self.current_job_id
                 ]
-                if job_stages:
-                    last_stage = max(job_stages, key=lambda s: s.ended_at)
+                if job_stages and any(s.ended_at is not None for s in job_stages):
+                    # Re-evaluate using only valid stages
+                    valid_stages = [s for s in job_stages if s.ended_at is not None]
+                    last_stage = max(valid_stages, key=lambda s: s.ended_at)
                     completion_age = time.time() - last_stage.ended_at
                     if completion_age > 30:  # 30 seconds
                         # Clear the completed job
