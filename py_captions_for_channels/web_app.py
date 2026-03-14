@@ -2658,7 +2658,9 @@ async def get_recordings() -> dict:
             )
 
             # Check whitelist (requires both title and start time)
-            passes_whitelist = whitelist.is_allowed(title, start_time)
+            passes_whitelist = whitelist.is_allowed(
+                title, start_time, rec.get("channel")
+            )
 
             # Check if processed (look for execution with this path)
             processed_exec = next(
