@@ -1,11 +1,12 @@
-# setup-gpu-wsl.ps1 — Windows launcher for the py-captions GPU installer
+# setup-wsl.ps1 — Windows setup launcher for py-captions-for-channels
 #
-# Run this in PowerShell (7+ recommended) on Windows.
+# Run this in an elevated (Administrator) PowerShell 7+ session on Windows.
 # It ensures WSL2 + Ubuntu are set up, then runs the interactive bash installer inside WSL2.
+# Works with or without a GPU — GPU support is detected and configured automatically.
 #
-# Usage:
-#   .\scripts\setup-gpu-wsl.ps1
-#   .\scripts\setup-gpu-wsl.ps1 -Distro Ubuntu-24.04
+# Usage (run as Administrator):
+#   .\scripts\setup-wsl.ps1
+#   .\scripts\setup-wsl.ps1 -Distro Ubuntu-24.04
 # ---------------------------------------------------------------------------
 param(
     [string]$Distro = "Ubuntu-22.04"
@@ -17,6 +18,20 @@ function Write-Step($msg)    { Write-Host "▶ $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)      { Write-Host "✔ $msg" -ForegroundColor Green }
 function Write-Warn($msg)    { Write-Host "⚠ $msg" -ForegroundColor Yellow }
 function Write-Fail($msg)    { Write-Host "✘ $msg" -ForegroundColor Red; exit 1 }
+
+# ── Require an elevated session ───────────────────────────────────────────
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+               [Security.Principal.WindowsBuiltInRole]"Administrator")
+if (-not $isAdmin) {
+    Write-Host ""
+    Write-Host "  This script must be run as Administrator." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Right-click PowerShell and choose 'Run as Administrator'," -ForegroundColor Yellow
+    Write-Host "  then run the script again:" -ForegroundColor Yellow
+    Write-Host "    .\scripts\setup-wsl.ps1" -ForegroundColor White
+    Write-Host ""
+    exit 1
+}
 
 # ════════════════════════════════════════════════════════════════════════════
 # PRE-FLIGHT CHECKS
@@ -99,27 +114,18 @@ if ($usedPorts) {
     if ($portChoice -match "^[Qq]") { Write-Host "  Aborted." -ForegroundColor Yellow; exit 0 }
     if ($portChoice -notmatch "^[Ss]") {
         # Auto-cleanup: stop the Docker container and remove portproxy rules.
-        # Portproxy removal requires elevation; if we are not admin, re-launch elevated.
         Write-Step "Stopping py-captions container (inside WSL)..."
         $stopScript = 'cd ~/py-captions-for-channels 2>/dev/null && docker compose down 2>/dev/null; docker stop py-captions-for-channels 2>/dev/null; exit 0'
         wsl -d $Distro -- bash -c $stopScript 2>$null | Out-Null
         Write-Ok "Container stopped."
 
-        $isAdminNow = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
-                          [Security.Principal.WindowsBuiltInRole]"Administrator")
-        if ($isAdminNow) {
-            foreach ($port in @(8000, 9000)) {
-                $existing = netsh interface portproxy show v4tov4 2>$null | Select-String "0\.0\.0\.0\s+$port"
-                if ($existing) {
-                    netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 | Out-Null
-                }
+        foreach ($port in @(8000, 9000)) {
+            $existing = netsh interface portproxy show v4tov4 2>$null | Select-String "0\.0\.0\.0\s+$port"
+            if ($existing) {
+                netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 | Out-Null
             }
-            Write-Ok "Portproxy rules for ports 8000 and 9000 removed."
-        } else {
-            Write-Step "Requesting administrator rights to remove portproxy rules..."
-            $elevatedCmd = 'foreach ($p in @(8000,9000)) { $e = netsh interface portproxy show v4tov4 2>$null | Select-String "0\.0\.0\.0\s+$p"; if ($e) { netsh interface portproxy delete v4tov4 listenport=$p listenaddress=0.0.0.0 | Out-Null } }; Write-Host "Portproxy rules removed." -ForegroundColor Green; Start-Sleep 2'
-            Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$elevatedCmd`"" -Wait
         }
+        Write-Ok "Portproxy rules for ports 8000 and 9000 removed."
 
         # Re-check
         $stillUsed = @()
@@ -292,10 +298,10 @@ Write-Step "Preparing bash installer..."
 
 # The bash script lives next to this PowerShell script (in scripts/)
 $ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
-$BashScript = Join-Path $ScriptDir "setup-gpu-wsl.sh"
+$BashScript = Join-Path $ScriptDir "setup-wsl.sh"
 
 if (-not (Test-Path $BashScript)) {
-    Write-Fail "setup-gpu-wsl.sh not found at: $BashScript`nMake sure both scripts are in the same directory."
+    Write-Fail "setup-wsl.sh not found at: $BashScript`nMake sure both scripts are in the same directory."
 }
 
 # Convert Windows path to WSL2 path without calling wslpath (avoids quoting issues)
@@ -323,7 +329,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # ── STEP 5 — Register Windows startup task (runs natively here, not from WSL) ──
 Write-Host ""
-Read-Host "  Next: registering the Windows auto-start task.`n  A UAC (administrator) prompt will appear — click Yes to allow it.`n  Press Enter when ready"
+Read-Host "  Next: registering the Windows auto-start task. Press Enter when ready"
 Write-Host ""
 Write-Step "Registering Windows startup task..."
 $AutostartScript = Join-Path $ScriptDir "autostart.ps1"

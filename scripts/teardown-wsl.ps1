@@ -208,5 +208,5 @@ Write-Ok "Teardown complete."
 Write-Host "  Your WSL distro '$Distro' is intact." -ForegroundColor DarkGray
 Write-Host "  To reinstall, run:" -ForegroundColor DarkGray
 Write-Host "    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass" -ForegroundColor DarkGray
-Write-Host "    .\scripts\setup-gpu-wsl.ps1" -ForegroundColor DarkGray
+Write-Host "    .\scripts\setup-wsl.ps1" -ForegroundColor DarkGray
 Write-Host ""

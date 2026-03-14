@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# setup-gpu-wsl.sh — one-shot installer for py-captions-for-channels with full NVIDIA GPU support
+# setup-wsl.sh — one-shot installer for py-captions-for-channels
 #
 # Run this inside WSL2 Ubuntu (22.04 or 24.04).
 # Re-running is safe — all steps are idempotent.
+# GPU support is detected and configured automatically; no GPU is fine too.
 #
 # Usage:
-#   bash setup-gpu-wsl.sh
+#   bash setup-wsl.sh
 # ---------------------------------------------------------------------------
 
 set -euo pipefail

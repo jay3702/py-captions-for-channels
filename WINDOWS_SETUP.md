@@ -4,7 +4,7 @@ This guide uses **WSL2 + Docker Engine** — the only Windows Docker configurati
 
 > **Why not Docker Desktop?** Docker Desktop cannot expose the NVIDIA encoding runtime (`libnvidia-encode`) to containers, so ffmpeg NVENC never works. It also requires a paid commercial license for organisations ≥ 250 employees. Docker Engine inside WSL2 has none of these limitations and works identically for CPU-only setups too.
 
-> **No GPU?** The same script works for CPU-only captioning. Just skip the NVIDIA driver check — the `setup-gpu-wsl.ps1` handles it gracefully.
+> **No GPU?** The same script works for CPU-only captioning. Just skip the NVIDIA driver check — the `setup-wsl.ps1` handles it gracefully.
 
 > **All commands in this guide are for [PowerShell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows).** PowerShell 7+ is recommended.
 >
@@ -57,8 +57,7 @@ git clone https://github.com/jay3702/py-captions-for-channels.git
 cd py-captions-for-channels
 
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\scripts\setup-gpu-wsl.ps1
-```
+.\scripts\setup-wsl.ps1```
 
 **The script will prompt for:**
 1. Deploy directory inside WSL2 (default: `~/py-captions-for-channels`)
@@ -78,7 +77,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 > **Ubuntu-24.04:** To use Ubuntu 24.04 instead of 22.04:
 > ```powershell
-> .\scripts\setup-gpu-wsl.ps1 -Distro Ubuntu-24.04
+> .\scripts\setup-wsl.ps1 -Distro Ubuntu-24.04
 > ```
 
 ---
@@ -172,7 +171,7 @@ sudo umount /mnt/channels    # if NAS was mounted
 WSL2 may need a reboot after first install:
 ```powershell
 wsl --install --no-distribution
-# Reboot, then re-run setup-gpu-wsl.ps1
+# Reboot, then re-run setup-wsl.ps1
 ```
 
 ### GPU test fails: unknown or invalid runtime `nvidia`

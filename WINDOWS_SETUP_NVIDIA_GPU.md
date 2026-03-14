@@ -1,6 +1,6 @@
 # Windows Setup — Manual Reference
 
-> **For the recommended automated setup, see [WINDOWS_SETUP.md](WINDOWS_SETUP.md).** That guide runs `setup-gpu-wsl.ps1` which handles everything on this page automatically.
+> **For the recommended automated setup, see [WINDOWS_SETUP.md](WINDOWS_SETUP.md).** That guide runs `setup-wsl.ps1` which handles everything on this page automatically.
 
 This document is a step-by-step reference for each installation task — useful for troubleshooting, reinstalling individual components, or understanding what the setup script does.
 
@@ -8,7 +8,7 @@ This document is a step-by-step reference for each installation task — useful 
 
 ## Manual Setup Steps
 
-> The automated installer (`setup-gpu-wsl.ps1`) handles all of this. These steps are for troubleshooting, partial reinstalls, or understanding what the script does.
+> The automated installer (`setup-wsl.ps1`) handles all of this. These steps are for troubleshooting, partial reinstalls, or understanding what the script does.
 
 ### WSL2 + Ubuntu
 

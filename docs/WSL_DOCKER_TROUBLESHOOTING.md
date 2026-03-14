@@ -73,7 +73,7 @@ sudo mount -t cifs //NAS_IP/share /mnt/channels \
 - **Don't just restart the container.** `docker compose restart` does not recreate volumes.
   The name `up -d` also does not recreate an existing volume — you must `rm` it first.
 - **Don't assume the CIFS mount survived a WSL restart.** WSL does not run `systemd` by
-  default; mounts from a previous session are gone. The `setup-gpu-wsl.sh` script injects
+  default; mounts from a previous session are gone. The `setup-wsl.sh` script injects
   the mount command into `.bashrc` so it re-runs on shell start, but only if you open a
   WSL shell. A bare `docker compose up` from PowerShell won't trigger `.bashrc`.
 - **Don't edit `docker-compose.yml` to change the device path.** The volume driver options
@@ -177,15 +177,15 @@ After a WSL restart, the NAS share is not mounted even though the `.bashrc` moun
 is present. `docker compose up -d` fails immediately with a mount error.
 
 ### Root Cause
-The `.bashrc` snippet injected by `setup-gpu-wsl.sh` ran `mount.cifs` without first
+The `.bashrc` snippet injected by `setup-wsl.sh` ran `mount.cifs` without first
 ensuring the target directory existed. On a clean WSL install (or after `wsl --terminate`),
 `/mnt/channels` does not exist, so `mount.cifs` fails immediately and logs nothing visible.
 
 ### Fix
-`setup-gpu-wsl.sh` was updated to add a `mkdir -p` guard before the mount retry loop:
+`setup-wsl.sh` was updated to add a `mkdir -p` guard before the mount retry loop:
 
 ```bash
-# In ~/.bashrc — injected by setup-gpu-wsl.sh
+# In ~/.bashrc — injected by setup-wsl.sh
 sudo mkdir -p /mnt/channels    # ← added guard
 for attempt in 1 2 3; do
     sudo mount -t cifs //NAS_IP/share /mnt/channels \
@@ -255,7 +255,7 @@ The `:-/tmp` default means this is a no-op on non-WSL hosts (mounts an empty rea
 ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/wsl/lib:$LD_LIBRARY_PATH
 ```
 
-**3. `.env` — set the host-side path (done by `setup-gpu-wsl.sh` automatically):**
+**3. `.env` — set the host-side path (done by `setup-wsl.sh` automatically):**
 ```bash
 WSL_LIB_PATH=/usr/lib/wsl/lib
 ```
@@ -289,7 +289,7 @@ docker exec -it py-captions ls /usr/lib/wsl/lib/libnvidia-encode.so.1
   ```
 - **Not updating `.env` with `WSL_LIB_PATH`**: the compose mount uses `${WSL_LIB_PATH:-/tmp}`.
   If `WSL_LIB_PATH` is absent from `.env`, the compose file mounts `/tmp` which contains no
-  NVIDIA libs. Add it manually if `setup-gpu-wsl.sh` wasn't re-run:
+  NVIDIA libs. Add it manually if `setup-wsl.sh` wasn't re-run:
   ```bash
   echo 'WSL_LIB_PATH=/usr/lib/wsl/lib' >> ~/py-captions-for-channels/.env
   ```
@@ -487,7 +487,7 @@ No `down`/`up` cycle needed — `restart` is sufficient and preserves container 
   runs once, during initial setup. It does not protect against subsequent starts.
   The `.bashrc` autostart block originally used `if ! container running → up -d`,
   which skips a restart if the container is already up with a stale mount. This was
-  fixed (see `scripts/setup-gpu-wsl.sh`): the autostart now also checks whether the
+  fixed (see `scripts/setup-wsl.sh`): the autostart now also checks whether the
   mount is visible *inside* the running container, and does `docker compose restart`
   if the directory is empty.
 

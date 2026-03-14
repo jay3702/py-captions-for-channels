@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # teardown-wsl.sh — removes all py-captions-for-channels artifacts from WSL2
 #
-# Reverses everything created by setup-gpu-wsl.sh plus any manual setup:
+# Reverses everything created by setup-wsl.sh plus any manual setup:
 #   - Stops and removes the Docker container
 #   - Removes the Docker image
 #   - Unmounts the NAS share
@@ -11,7 +11,7 @@
 #   - Optionally removes the deploy directory (including .env and data/)
 #
 # Does NOT uninstall Docker Engine or nvidia-container-toolkit
-# (those are system-level; re-running setup-gpu-wsl.sh skips them if present).
+# (those are system-level; re-running setup-wsl.sh skips them if present).
 #
 # Usage:
 #   bash teardown-wsl.sh
@@ -187,7 +187,7 @@ echo "════════════════════════�
 success "Teardown complete."
 echo ""
 echo "  Docker Engine and nvidia-container-toolkit are still installed."
-echo "  Run setup-gpu-wsl.sh to reinstall from scratch."
+echo "  Run setup-wsl.sh to reinstall from scratch."
 if [[ $REMOVE_DEPLOY == false && -n "$DEPLOY_DIR" ]]; then
     echo ""
     echo "  Deploy directory preserved: $DEPLOY_DIR"

@@ -87,7 +87,7 @@ The pre-built image includes FFmpeg with NVENC/NVDEC support, Faster Whisper wit
 
 ### GPU Acceleration
 
-NVIDIA GPU acceleration requires the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) (`nvidia-container-toolkit`) installed on the Docker host. **Windows users:** this is handled automatically by `setup-gpu-wsl.ps1`.
+NVIDIA GPU acceleration requires the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) (`nvidia-container-toolkit`) installed on the Docker host. **Windows users:** this is handled automatically by `setup-wsl.ps1`.
 
 With the toolkit installed, add two lines to `.env`:
 

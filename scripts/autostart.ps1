@@ -5,8 +5,9 @@
 #
 #   Boot mode:  fires at Windows startup — best for always-on / server machines.
 #               Requires storing your Windows password (encrypted in LSA secrets).
-#               Note: WSL2 distros are registered per-user, so the task must run
-#               as your Windows account — a dedicated service account won't work.
+#               This is a Windows Task Scheduler requirement: to run a task as your
+#               user account before you log in, Windows must have your credentials.
+#               Running the script as Administrator does not bypass this requirement.
 #
 #   Logon mode: fires when you sign in — simpler, no password needed.
 #

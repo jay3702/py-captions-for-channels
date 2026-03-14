@@ -8,7 +8,7 @@
 #   * GPU acceleration is optional and auto-detected
 #   * No systemd, no NVIDIA Container Toolkit setup
 #
-# For full GPU / WSL2 control use setup-gpu-wsl.ps1 instead.
+# For full GPU / WSL2 control use setup-wsl.ps1 instead.
 #
 # Usage (PowerShell 5.1+):
 #   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
