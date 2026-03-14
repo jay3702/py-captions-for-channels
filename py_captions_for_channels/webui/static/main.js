@@ -1280,14 +1280,45 @@ async function saveEnvSettings(event) {
     
     const whitelistChanged = whitelistEditor
       && whitelistEditor.value !== (window._originalWhitelist || '');
-    let msg;
-    if (whitelistChanged) {
-      msg = '✓ Settings saved!\n\nWhitelist, Dry Run, and Whisper model changes take effect on the next job.\nVolume/path changes require a full restart (docker compose down && up).';
-    } else {
-      msg = '✓ Settings saved!\n\nDry Run and Whisper model changes take effect on the next job.\nVolume/path changes require a full restart (docker compose down && up).';
+    const note = whitelistChanged
+      ? 'Whitelist, Dry Run, and Whisper model changes take effect on the next job.'
+      : 'Dry Run and Whisper model changes take effect on the next job.';
+
+    // Show inline confirmation banner with optional restart button
+    const modal = document.getElementById('settings-modal') || document.querySelector('.settings-modal');
+    const existingBanner = document.getElementById('settings-saved-banner');
+    if (existingBanner) existingBanner.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'settings-saved-banner';
+    banner.style.cssText = 'background:#1a3a1a;border:1px solid #4caf50;border-radius:6px;padding:12px 16px;margin:12px 0;color:#e0e0e0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;';
+    banner.innerHTML = `
+      <span style="flex:1;min-width:0;">
+        <strong style="color:#4caf50;">✓ Settings saved.</strong>
+        <span style="margin-left:8px;font-size:0.9em;opacity:0.85;">${note}</span>
+      </span>
+      <span style="display:flex;gap:8px;flex-shrink:0;">
+        <button id="settings-restart-btn" style="background:#2a6a2a;border:1px solid #4caf50;color:#e0e0e0;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:0.9em;">Restart now</button>
+        <button id="settings-close-btn" style="background:#333;border:1px solid #555;color:#e0e0e0;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:0.9em;">Close</button>
+      </span>`;
+
+    // Insert at the top of the modal body / form
+    const form = document.getElementById('settings-form') || (modal && modal.querySelector('form'));
+    if (form) {
+      form.insertBefore(banner, form.firstChild);
+    } else if (modal) {
+      modal.insertBefore(banner, modal.firstChild);
     }
-    alert(msg);
-    closeSettingsModal();
+
+    document.getElementById('settings-close-btn').addEventListener('click', () => {
+      banner.remove();
+      closeSettingsModal();
+    });
+    document.getElementById('settings-restart-btn').addEventListener('click', () => {
+      banner.remove();
+      closeSettingsModal();
+      _triggerRestart();
+    });
   } catch (err) {
     alert('✗ Failed to save settings: ' + err.message);
   }
