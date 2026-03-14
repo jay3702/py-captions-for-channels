@@ -1303,7 +1303,6 @@ async function saveEnvSettings(event) {
       </span>`;
 
     // Insert at the top of the modal body / form
-    const form = document.getElementById('settings-form') || (modal && modal.querySelector('form'));
     if (form) {
       form.insertBefore(banner, form.firstChild);
     } else if (modal) {
