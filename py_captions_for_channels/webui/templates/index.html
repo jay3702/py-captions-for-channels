@@ -422,7 +422,7 @@
     <div id="setup-wizard-modal" class="modal">
       <div class="modal-content" style="max-width:680px;max-height:90vh;overflow-y:auto;">
         <div class="modal-header">
-          <h2>Path Setup Wizard</h2>
+          <h2>Setup Wizard</h2>
           <button class="modal-close" onclick="closeSetupWizard()">&times;</button>
         </div>
         <div class="modal-body">
@@ -435,7 +435,11 @@
             <div id="wdot-3" style="width:28px;height:28px;border-radius:50%;background:var(--panel-border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">3</div>
             <div id="wline-3" style="flex:1;height:2px;background:var(--panel-border);"></div>
             <div id="wdot-4" style="width:28px;height:28px;border-radius:50%;background:var(--panel-border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">4</div>
-            <div id="wizard-step-label" style="margin-left:12px;font-size:13px;color:var(--muted);white-space:nowrap;">Step 1 of 4</div>
+            <div id="wline-4" style="flex:1;height:2px;background:var(--panel-border);"></div>
+            <div id="wdot-5" style="width:28px;height:28px;border-radius:50%;background:var(--panel-border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">5</div>
+            <div id="wline-5" style="flex:1;height:2px;background:var(--panel-border);"></div>
+            <div id="wdot-6" style="width:28px;height:28px;border-radius:50%;background:var(--panel-border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;">6</div>
+            <div id="wizard-step-label" style="margin-left:12px;font-size:13px;color:var(--muted);white-space:nowrap;">Step 1 of 6</div>
           </div>
 
           <!-- Step 1: DVR Connection -->
@@ -525,17 +529,101 @@
             </div>
           </div>
 
-          <!-- Step 4: Review & Apply -->
+          <!-- Step 4: Event Source -->
           <div id="wizard-step-4" style="display:none;">
+            <h3 style="margin:0 0 6px 0;">New Recording Events</h3>
+            <p style="color:var(--muted);font-size:13px;margin:0 0 20px 0;">How should the service discover that a new recording is ready to caption?</p>
+            <label id="wizard-disc-polling-label" style="display:flex;gap:12px;padding:14px;border:2px solid var(--accent);border-radius:8px;cursor:pointer;margin-bottom:12px;">
+              <input type="radio" name="wizard-discovery" value="polling" style="margin-top:3px;" onchange="wizardDiscoveryChanged(this)" checked>
+              <div>
+                <strong>Polling (recommended)</strong>
+                <p style="margin:4px 0 0 0;font-size:12px;color:var(--muted);">Periodically checks the Channels DVR API for newly completed recordings. No extra software required.</p>
+              </div>
+            </label>
+            <label id="wizard-disc-webhook-label" style="display:flex;gap:12px;padding:14px;border:2px solid var(--panel-border);border-radius:8px;cursor:pointer;margin-bottom:16px;">
+              <input type="radio" name="wizard-discovery" value="webhook" style="margin-top:3px;" onchange="wizardDiscoveryChanged(this)">
+              <div>
+                <strong>ChannelWatch Webhook</strong>
+                <p style="margin:4px 0 0 0;font-size:12px;color:var(--muted);">Receives real-time events from a ChannelWatch server. Faster response, but requires a running ChannelWatch instance.</p>
+              </div>
+            </label>
+            <div id="wizard-polling-opts">
+              <div class="settings-group">
+                <label for="wizard-poll-interval" style="font-weight:600;display:block;margin-bottom:4px;">Poll Interval (seconds)</label>
+                <input type="number" id="wizard-poll-interval" value="120" min="30" max="3600" style="width:160px;">
+                <p style="font-size:11px;color:var(--muted);margin:4px 0 0 0;">How often to check for new recordings. 120 seconds is a good default.</p>
+              </div>
+            </div>
+            <div id="wizard-webhook-opts" style="display:none;">
+              <div class="settings-group">
+                <label for="wizard-channelwatch-url" style="font-weight:600;display:block;margin-bottom:4px;">ChannelWatch WebSocket URL</label>
+                <input type="text" id="wizard-channelwatch-url" placeholder="ws://192.168.1.x:8501/events" style="width:100%;">
+              </div>
+            </div>
+            <div class="settings-group" style="margin-top:16px;">
+              <label for="wizard-server-tz" style="font-weight:600;display:block;margin-bottom:4px;">Server Timezone</label>
+              <select id="wizard-server-tz" style="width:100%;"></select>
+              <p style="font-size:11px;color:var(--muted);margin:4px 0 0 0;">Timezone of your Channels DVR server. Used to align recording schedules with whitelist time-of-day rules.</p>
+            </div>
+          </div>
+
+          <!-- Step 5: Caption Engine -->
+          <div id="wizard-step-5" style="display:none;">
+            <h3 style="margin:0 0 6px 0;">Caption Engine</h3>
+            <p style="color:var(--muted);font-size:13px;margin:0 0 20px 0;">Configure the Whisper AI transcription model and how output files are processed.</p>
+            <div class="settings-group">
+              <label for="wizard-whisper-model" style="font-weight:600;display:block;margin-bottom:4px;">Whisper Model</label>
+              <select id="wizard-whisper-model" style="width:100%;">
+                <option value="tiny">tiny — fastest, lowest accuracy (~100 MB)</option>
+                <option value="base">base — fast, decent accuracy (~140 MB)</option>
+                <option value="small">small — balanced speed and accuracy (~470 MB)</option>
+                <option value="medium" selected>medium — good accuracy, moderate speed (~1.5 GB) ← default</option>
+                <option value="large-v2">large-v2 — high accuracy, slow (~3 GB)</option>
+                <option value="large-v3">large-v3 — best accuracy, slowest (~3 GB)</option>
+              </select>
+              <p style="font-size:11px;color:var(--muted);margin:4px 0 0 0;">The model is downloaded on first use. Larger models require more RAM/VRAM.</p>
+            </div>
+            <div class="settings-group">
+              <label for="wizard-whisper-device" style="font-weight:600;display:block;margin-bottom:4px;">Transcription Device</label>
+              <select id="wizard-whisper-device" style="width:100%;">
+                <option value="auto" selected>auto — use GPU if available, otherwise CPU</option>
+                <option value="nvidia">nvidia — CUDA GPU (requires NVIDIA Container Toolkit)</option>
+                <option value="amd">amd — ROCm GPU</option>
+                <option value="intel">intel — Intel OpenVINO</option>
+                <option value="none">none — CPU only</option>
+              </select>
+            </div>
+            <div class="settings-group" style="margin-top:16px;">
+              <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
+                <input type="checkbox" id="wizard-transcode-firetv" style="margin-top:3px;">
+                <div>
+                  <strong>Transcode for Fire TV / Emby / Kodi compatibility</strong>
+                  <p style="margin:4px 0 0 0;font-size:12px;color:var(--muted);">Re-encodes recordings to H.264 + AAC for maximum device compatibility. Leave unchecked to add SRT caption files only (much faster).</p>
+                </div>
+              </label>
+            </div>
+            <div class="settings-group">
+              <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
+                <input type="checkbox" id="wizard-dry-run" style="margin-top:3px;">
+                <div>
+                  <strong>Dry Run mode</strong>
+                  <p style="margin:4px 0 0 0;font-size:12px;color:var(--muted);">Process jobs without writing any output files. Useful for verifying configuration before committing to changes.</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Step 6: Review & Apply -->
+          <div id="wizard-step-6" style="display:none;">
             <h3 style="margin:0 0 6px 0;">Review &amp; Apply</h3>
-            <p style="color:var(--muted);font-size:13px;margin:0 0 12px 0;">Review what each setting does, then click <strong>Apply Settings</strong> to write them to your <code>.env</code> file.</p>
+            <p style="color:var(--muted);font-size:13px;margin:0 0 12px 0;">Review the settings below, then click <strong>Apply &amp; Restart</strong> to write them to your <code>.env</code> file.</p>
             <div id="wizard-review-explanations" style="background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:6px;padding:12px;margin-bottom:12px;display:none;"></div>
             <details style="margin-bottom:16px;">
               <summary style="font-size:12px;color:var(--muted);cursor:pointer;user-select:none;">Show raw .env values</summary>
               <div id="wizard-review-content" style="font-family:monospace;font-size:12px;line-height:1.6;background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:6px;padding:16px;margin-top:8px;white-space:pre;overflow-x:auto;"></div>
             </details>
             <div style="background:#fff3cd;border:1px solid #856404;padding:12px;border-radius:6px;font-size:13px;color:#856404;">
-              <strong>Note:</strong> A restart is required for these changes to take effect. Run <code>docker compose down &amp;&amp; docker compose up -d</code> to apply.
+              <strong>Note:</strong> A restart is required for these changes to take effect. Run <code>docker compose down &amp;&amp; docker compose up -d</code> to apply, or click <strong>Apply &amp; Restart</strong> below.
             </div>
           </div>
 
@@ -571,7 +659,7 @@
           </div>
           <div style="display: flex; gap: 10px; align-items: center;">
             <button type="button" class="btn-small btn-danger" onclick="restartSystem()" title="Graceful restart: finishes current job, then restarts">Restart System</button>
-            <button type="button" class="btn-small btn-secondary" onclick="openSetupWizard()" title="Step-by-step path and mount configuration wizard">&#9881; Path Setup Wizard</button>
+            <button type="button" class="btn-small btn-secondary" onclick="openSetupWizard()" title="Step-by-step first-time setup wizard">&#9881; Setup Wizard</button>
             <div style="margin-left: auto; display: flex; gap: 10px;">
               <button type="button" class="btn-secondary" onclick="closeSettingsModal()">Cancel</button>
               <button type="button" class="btn-primary" onclick="document.getElementById('settings-form').requestSubmit()">Save to .env</button>

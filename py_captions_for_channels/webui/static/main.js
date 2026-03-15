@@ -959,6 +959,51 @@ function stopLogPolling() {
   }
 }
 
+// Common IANA timezones — used by loadSettings() and the Setup Wizard
+const WIZARD_TIMEZONES = [
+  '(System Default)',
+  '--- Americas ---',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Phoenix',
+  'America/Los_Angeles',
+  'America/Anchorage',
+  'America/Honolulu',
+  'America/Toronto',
+  'America/Vancouver',
+  'America/Mexico_City',
+  'America/Sao_Paulo',
+  'America/Buenos_Aires',
+  '--- Europe ---',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Madrid',
+  'Europe/Rome',
+  'Europe/Amsterdam',
+  'Europe/Brussels',
+  'Europe/Vienna',
+  'Europe/Stockholm',
+  'Europe/Moscow',
+  '--- Asia ---',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Bangkok',
+  'Asia/Singapore',
+  'Asia/Hong_Kong',
+  'Asia/Shanghai',
+  'Asia/Tokyo',
+  'Asia/Seoul',
+  '--- Pacific ---',
+  'Australia/Sydney',
+  'Australia/Melbourne',
+  'Australia/Brisbane',
+  'Australia/Perth',
+  'Pacific/Auckland',
+  '--- Other ---',
+  'UTC',
+];
 
 // --- Pipeline Settings UI ---
 async function loadSettings() {
@@ -1027,51 +1072,8 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
     'DVR_MEDIA_MOUNT': 'Container Mount Path',
   };
   
-  // Common IANA timezones grouped by region
-  const timezones = [
-    '(System Default)',
-    '--- Americas ---',
-    'America/New_York',
-    'America/Chicago', 
-    'America/Denver',
-    'America/Phoenix',
-    'America/Los_Angeles',
-    'America/Anchorage',
-    'America/Honolulu',
-    'America/Toronto',
-    'America/Vancouver',
-    'America/Mexico_City',
-    'America/Sao_Paulo',
-    'America/Buenos_Aires',
-    '--- Europe ---',
-    'Europe/London',
-    'Europe/Paris',
-    'Europe/Berlin',
-    'Europe/Madrid',
-    'Europe/Rome',
-    'Europe/Amsterdam',
-    'Europe/Brussels',
-    'Europe/Vienna',
-    'Europe/Stockholm',
-    'Europe/Moscow',
-    '--- Asia ---',
-    'Asia/Dubai',
-    'Asia/Kolkata',
-    'Asia/Bangkok',
-    'Asia/Singapore',
-    'Asia/Hong_Kong',
-    'Asia/Shanghai',
-    'Asia/Tokyo',
-    'Asia/Seoul',
-    '--- Pacific ---',
-    'Australia/Sydney',
-    'Australia/Melbourne',
-    'Australia/Brisbane',
-    'Australia/Perth',
-    'Pacific/Auckland',
-    '--- Other ---',
-    'UTC'
-  ];
+  // Common IANA timezones grouped by region (also used by setup wizard)
+  const timezones = WIZARD_TIMEZONES;
   
   // Get client's local timezone
   const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1463,10 +1465,13 @@ let wizardState = {
 function openSetupWizard() {
   closeSettingsModal();
   wizardState = { step: 1, dvrUrl: '', probedPrefix: null, samplePath: null, deploymentType: null };
+
+  // Pre-populate step 1 from existing settings form if loaded
   const dvrInput = document.getElementById('wizard-dvr-url');
   const envUrlInput = document.querySelector('input[name="CHANNELS_API_URL"]') ||
     document.querySelector('input[name="CHANNELS_DVR_URL"]');
   if (dvrInput && envUrlInput && envUrlInput.value) dvrInput.value = envUrlInput.value;
+
   const probeResult = document.getElementById('wizard-probe-result');
   if (probeResult) probeResult.style.display = 'none';
   document.querySelectorAll('input[name="wizard-deploy"]').forEach(r => r.checked = false);
@@ -1486,7 +1491,7 @@ function closeSetupWizard() {
 
 function wizardGoToStep(step) {
   wizardState.step = step;
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= 6; i++) {
     const el = document.getElementById(`wizard-step-${i}`);
     if (el) el.style.display = i === step ? 'block' : 'none';
   }
@@ -1512,8 +1517,57 @@ function wizardGoToStep(step) {
       }
     }
   }
-  if (step === 4) wizardBuildReview();
-  for (let i = 1; i <= 4; i++) {
+  if (step === 4) {
+    // Populate timezone dropdown on first visit
+    const tzSelect = document.getElementById('wizard-server-tz');
+    if (tzSelect && tzSelect.options.length === 0) {
+      const clientTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const existingTz = document.querySelector('select[name="SERVER_TZ"]')?.value || '';
+      const selectedTz = existingTz || clientTz;
+      for (const tz of WIZARD_TIMEZONES) {
+        if (tz.startsWith('---')) {
+          const opt = document.createElement('option');
+          opt.disabled = true;
+          opt.textContent = tz;
+          tzSelect.appendChild(opt);
+        } else {
+          const opt = document.createElement('option');
+          opt.value = tz === '(System Default)' ? '' : tz;
+          opt.textContent = tz === '(System Default)' ? `(System Default — browser: ${clientTz})` : tz;
+          opt.selected = (tz === '(System Default)' && !selectedTz) || tz === selectedTz;
+          tzSelect.appendChild(opt);
+        }
+      }
+    }
+    // Pre-select discovery mode from existing settings form
+    const existingDisc = document.querySelector('select[name="DISCOVERY_MODE"]')?.value || 'polling';
+    const discRadio = document.querySelector(`input[name="wizard-discovery"][value="${existingDisc}"]`);
+    if (discRadio) { discRadio.checked = true; wizardDiscoveryChanged(discRadio); }
+    // Pre-fill ChannelWatch URL and poll interval
+    const cwInput = document.getElementById('wizard-channelwatch-url');
+    const existingCw = document.querySelector('input[name="CHANNELWATCH_URL"]')?.value || '';
+    if (cwInput && !cwInput.value && existingCw) cwInput.value = existingCw;
+    const pollInput = document.getElementById('wizard-poll-interval');
+    const existingPoll = document.querySelector('input[name="POLL_INTERVAL_SECONDS"]')?.value || '';
+    if (pollInput && existingPoll) pollInput.value = existingPoll;
+  }
+  if (step === 5) {
+    // Pre-fill caption engine fields from existing settings form
+    const modelSel = document.getElementById('wizard-whisper-model');
+    const existingModel = document.querySelector('select[name="WHISPER_MODEL"]')?.value || '';
+    if (modelSel && existingModel) modelSel.value = existingModel;
+    const devSel = document.getElementById('wizard-whisper-device');
+    const existingDev = document.querySelector('select[name="WHISPER_DEVICE"]')?.value || '';
+    if (devSel && existingDev) devSel.value = existingDev;
+    const transcodeChk = document.getElementById('wizard-transcode-firetv');
+    const existingTranscode = document.querySelector('input[name="TRANSCODE_FOR_FIRETV"]');
+    if (transcodeChk && existingTranscode) transcodeChk.checked = existingTranscode.checked;
+    const dryRunChk = document.getElementById('wizard-dry-run');
+    const existingDryRun = document.querySelector('input[name="DRY_RUN"]');
+    if (dryRunChk && existingDryRun) dryRunChk.checked = existingDryRun.checked;
+  }
+  if (step === 6) wizardBuildReview();
+  for (let i = 1; i <= 6; i++) {
     const dot = document.getElementById(`wdot-${i}`);
     if (dot) {
       const active = i === step;
@@ -1522,21 +1576,39 @@ function wizardGoToStep(step) {
       dot.style.color = (done || active) ? 'white' : 'var(--muted)';
       dot.style.outline = active ? '3px solid color-mix(in srgb, var(--accent) 40%, transparent)' : 'none';
     }
-    if (i < 4) {
+    if (i < 6) {
       const line = document.getElementById(`wline-${i}`);
       if (line) line.style.background = i < step ? 'var(--accent)' : 'var(--panel-border)';
     }
   }
-  const stepLabels = ['Connect to DVR', 'Deployment Type', 'Mount Configuration', 'Review & Apply'];
+  const stepLabels = [
+    'Connect to DVR',
+    'Deployment Type',
+    'Mount Configuration',
+    'Event Source',
+    'Caption Engine',
+    'Review & Apply',
+  ];
   const labelEl = document.getElementById('wizard-step-label');
-  if (labelEl) labelEl.textContent = `Step ${step} of 4: ${stepLabels[step - 1]}`;
+  if (labelEl) labelEl.textContent = `Step ${step} of 6: ${stepLabels[step - 1]}`;
   const backBtn = document.getElementById('wizard-btn-back');
   const nextBtn = document.getElementById('wizard-btn-next');
   const applyBtn = document.getElementById('wizard-btn-apply');
   if (backBtn) backBtn.style.display = step > 1 ? 'inline-block' : 'none';
-  if (applyBtn) applyBtn.style.display = step === 4 ? 'inline-block' : 'none';
-  if (nextBtn) nextBtn.textContent = step === 4 ? 'Apply & Restart' : 'Next →';
-  if (nextBtn) nextBtn.onclick = step === 4 ? () => wizardApply(true) : wizardNext;
+  if (applyBtn) applyBtn.style.display = step === 6 ? 'inline-block' : 'none';
+  if (nextBtn) nextBtn.textContent = step === 6 ? 'Apply & Restart' : 'Next →';
+  if (nextBtn) nextBtn.onclick = step === 6 ? () => wizardApply(true) : wizardNext;
+}
+
+function wizardDiscoveryChanged(radio) {
+  const pollingLabel = document.getElementById('wizard-disc-polling-label');
+  const webhookLabel = document.getElementById('wizard-disc-webhook-label');
+  if (pollingLabel) pollingLabel.style.borderColor = radio.value === 'polling' ? 'var(--accent)' : 'var(--panel-border)';
+  if (webhookLabel) webhookLabel.style.borderColor = radio.value === 'webhook' ? 'var(--accent)' : 'var(--panel-border)';
+  const pollingOpts = document.getElementById('wizard-polling-opts');
+  const webhookOpts = document.getElementById('wizard-webhook-opts');
+  if (pollingOpts) pollingOpts.style.display = radio.value === 'polling' ? 'block' : 'none';
+  if (webhookOpts) webhookOpts.style.display = radio.value === 'webhook' ? 'block' : 'none';
 }
 
 async function wizardProbe() {
@@ -1627,6 +1699,18 @@ function wizardCollectSettings() {
       s.DVR_MEDIA_OPTS = 'nfsvers=4,soft';
     }
   }
+  // Event source settings (step 4)
+  const discRadio = document.querySelector('input[name="wizard-discovery"]:checked');
+  s.DISCOVERY_MODE = discRadio?.value || 'polling';
+  s.CHANNELWATCH_URL = document.getElementById('wizard-channelwatch-url')?.value?.trim() || '';
+  s.POLL_INTERVAL_SECONDS = document.getElementById('wizard-poll-interval')?.value?.trim() || '120';
+  const tzSelect = document.getElementById('wizard-server-tz');
+  s.SERVER_TZ = (tzSelect && tzSelect.value) ? tzSelect.value : '';
+  // Caption engine settings (step 5)
+  s.WHISPER_MODEL = document.getElementById('wizard-whisper-model')?.value || 'medium';
+  s.WHISPER_DEVICE = document.getElementById('wizard-whisper-device')?.value || 'auto';
+  s.TRANSCODE_FOR_FIRETV = document.getElementById('wizard-transcode-firetv')?.checked ? 'true' : 'false';
+  s.DRY_RUN = document.getElementById('wizard-dry-run')?.checked ? 'true' : 'false';
   return s;
 }
 
@@ -1636,7 +1720,6 @@ function wizardBuildReview() {
   const expEl = document.getElementById('wizard-review-explanations');
   if (!el) return;
 
-  // Plain-English explanation of the key path settings
   const isSame = wizardState.deploymentType === 'same-host';
   if (expEl) {
     let exp = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
@@ -1644,18 +1727,32 @@ function wizardBuildReview() {
       `<tr><td style="padding:6px 8px;font-family:monospace;font-weight:600;white-space:nowrap;vertical-align:top;color:var(--text);">${name}</td>`+
       `<td style="padding:6px 8px;font-family:monospace;color:var(--accent);vertical-align:top;">${val || '<em style="color:var(--muted);">empty</em>'}</td>`+
       `<td style="padding:6px 8px;font-size:11px;color:var(--muted);vertical-align:top;">${desc}</td></tr>`;
+    exp += `<tr><td colspan="3" style="padding:8px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Channels DVR &amp; Paths</td></tr>`;
     exp += row('CHANNELS_API_URL', s.CHANNELS_API_URL, 'URL of your Channels DVR server.');
     if (!isSame) {
       exp += row('DVR_PATH_PREFIX', s.DVR_PATH_PREFIX,
         s.DVR_PATH_PREFIX
-          ? 'Root path that Channels DVR uses for its recordings (auto-detected from the sample path above). Every file path the DVR API returns will start with this.'
-          : 'Could not be auto-detected. The wizard will leave this empty — you can set it manually in Settings after verifying with a real recording path.');
+          ? 'Root path that Channels DVR uses for its recordings (auto-detected). Every file path the DVR API returns will start with this.'
+          : 'Could not be auto-detected. Leave empty — set manually in Settings after verifying with a real recording path.');
       exp += row('DVR_MEDIA_DEVICE', s.DVR_MEDIA_DEVICE, 'The network share Docker will mount (CIFS UNC path or NFS export).');
-      exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Path inside the container where recordings appear. The app looks for files here after translating the DVR API path.');
+      exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Path inside the container where recordings appear.');
     } else {
       exp += row('DVR_MEDIA_DEVICE', s.DVR_MEDIA_DEVICE, 'Local path Docker bind-mounts into the container.');
-      exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Container path where recordings appear (same as local path for a bind mount).');
+      exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Container path where recordings appear (same as local path).');
     }
+    exp += `<tr><td colspan="3" style="padding:8px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Event Source</td></tr>`;
+    exp += row('DISCOVERY_MODE', s.DISCOVERY_MODE, 'How the service discovers new recordings.');
+    if (s.DISCOVERY_MODE === 'polling') {
+      exp += row('POLL_INTERVAL_SECONDS', s.POLL_INTERVAL_SECONDS, 'How often (seconds) to check the DVR API for new recordings.');
+    } else {
+      exp += row('CHANNELWATCH_URL', s.CHANNELWATCH_URL, 'WebSocket URL of your ChannelWatch server.');
+    }
+    exp += row('SERVER_TZ', s.SERVER_TZ || '(System Default)', 'Timezone of the Channels DVR server.');
+    exp += `<tr><td colspan="3" style="padding:8px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Caption Engine</td></tr>`;
+    exp += row('WHISPER_MODEL', s.WHISPER_MODEL, 'Whisper AI model for transcription.');
+    exp += row('WHISPER_DEVICE', s.WHISPER_DEVICE, 'Hardware device to run Whisper on.');
+    exp += row('TRANSCODE_FOR_FIRETV', s.TRANSCODE_FOR_FIRETV, 'Re-encode to H.264+AAC for Fire TV / Emby / Kodi compatibility.');
+    exp += row('DRY_RUN', s.DRY_RUN, 'When true, jobs run but no files are written.');
     exp += '</table>';
     expEl.innerHTML = exp;
     expEl.style.display = 'block';
@@ -1677,6 +1774,18 @@ function wizardBuildReview() {
     '',
     '# Recordings path (host path for Docker volume)',
     `DVR_RECORDINGS_PATH=${s.DVR_RECORDINGS_PATH}`,
+    '',
+    '# Event source',
+    `DISCOVERY_MODE=${s.DISCOVERY_MODE}`,
+    `CHANNELWATCH_URL=${s.CHANNELWATCH_URL}`,
+    `POLL_INTERVAL_SECONDS=${s.POLL_INTERVAL_SECONDS}`,
+    `SERVER_TZ=${s.SERVER_TZ}`,
+    '',
+    '# Caption engine',
+    `WHISPER_MODEL=${s.WHISPER_MODEL}`,
+    `WHISPER_DEVICE=${s.WHISPER_DEVICE}`,
+    `TRANSCODE_FOR_FIRETV=${s.TRANSCODE_FOR_FIRETV}`,
+    `DRY_RUN=${s.DRY_RUN}`,
   ];
   el.textContent = lines.join('\n');
 }
@@ -1761,6 +1870,17 @@ async function wizardNext() {
       wizardGoToStep(4);
     }
   } else if (step === 4) {
+    if (wizardState.step === 4) {
+      const discRadio = document.querySelector('input[name="wizard-discovery"]:checked');
+      if (!discRadio) { alert('Please select a discovery mode.'); return; }
+      if (discRadio.value === 'webhook' && !document.getElementById('wizard-channelwatch-url')?.value?.trim()) {
+        alert('Please enter the ChannelWatch WebSocket URL.'); return;
+      }
+    }
+    wizardGoToStep(5);
+  } else if (step === 5) {
+    wizardGoToStep(6);
+  } else if (step === 6) {
     wizardApply(false);
   }
 }
