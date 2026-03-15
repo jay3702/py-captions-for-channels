@@ -78,13 +78,17 @@ echo "This installer needs administrator (sudo) access for Docker, firewall, and
 echo "Enter your sudo password when prompted."
 sudo -v
 
-# ── ensure whiptail is available ─────────────────────────────────────────────
-if ! command -v whiptail &>/dev/null; then
-    echo "Installing whiptail / newt..."
+# ── ensure whiptail and curl are available ───────────────────────────────────
+# curl is used for reachability tests; not always installed on minimal images.
+_prereq_missing=()
+command -v whiptail &>/dev/null || _prereq_missing+=(whiptail)
+command -v curl     &>/dev/null || _prereq_missing+=(curl)
+if [[ ${#_prereq_missing[@]} -gt 0 ]]; then
+    echo "Installing prerequisites: ${_prereq_missing[*]} ..."
     case "$PKG_MGR" in
-        apt)    sudo apt-get install -y -qq whiptail 2>/dev/null ;;
-        dnf)    sudo dnf install -y -q newt 2>/dev/null ;;
-        zypper) sudo zypper install -y newt 2>/dev/null ;;
+        apt)    sudo apt-get install -y -qq whiptail curl 2>/dev/null ;;
+        dnf)    sudo dnf install -y -q newt curl 2>/dev/null ;;
+        zypper) sudo zypper install -y newt curl 2>/dev/null ;;
     esac
 fi
 
@@ -106,7 +110,8 @@ wt_yesno() { whiptail --backtitle "$BT" --title "$1" --yesno   "$2" "${3:-10}" "
 wt_input() { _wt --title "$1" --inputbox   "$2" "${4:-9}"  "$W" "$3"; }
 wt_pass()  { _wt --title "$1" --passwordbox "$2" 9         "$W" ""; }
 wt_info()  { whiptail --backtitle "$BT" --title "$1" --infobox "$2" 7 "$W" || true; }
-wt_menu()  { _wt --title "$1" --menu "$2" "${4:-16}" "$W" "${5:-4}" "${@:6}"; }
+# wt_menu "Title" "Text" [height] [list-height] tag item tag item ...
+wt_menu()  { _wt --title "$1" --menu "$2" "${3:-16}" "$W" "${4:-4}" "${@:5}"; }
 
 cancelled() {
     wt_msg "Cancelled" "Setup cancelled.\n\nYou can re-run at any time — all completed steps will be skipped." 10 || true
@@ -357,7 +362,7 @@ done
 
 # ── Recordings storage type ───────────────────────────────────────────────────
 STORAGE_TYPE=$(wt_menu "Recordings Storage" \
-"Where are the Channels DVR recordings stored?" 18 "$W" 4 \
+"Where are the Channels DVR recordings stored?" 18 4 \
     "local" "This machine  (DVR and captions on the same host)" \
     "cifs"  "CIFS / SMB share  (NAS or Windows server)" \
     "nfs"   "NFS share  (NAS or Linux server)" \
