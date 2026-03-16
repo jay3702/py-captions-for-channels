@@ -73,29 +73,14 @@ sg docker -c 'docker compose logs --tail 200 py-captions'
 
 ---
 
-# Results  *(fill in during/after bare-metal run)*
+# Results  *(next pass — bare-metal clean install)*
 
-<!-- What happened — success/failure, timing, and mismatches -->
-
-
-
-## Diagnosis
-
-<!-- Root cause analysis for any failures -->
-
-
-
-## Suggested Fix
-
-<!-- Proposed implementation for next pass -->
-
-
+Fill in after running from a clean OS state with no prior Docker/clone.
 
 ---
 
 # Session Log
 
-<!-- Newest entry at top. Format: YYYY-MM-DD | direction | summary -->
-
+2026-03-16 | lin→win | installer + runtime UX validated in-place; code pushed as 9245a66
 2026-03-16 | lin | validated installer + runtime flow on koa; next is clean bare-metal rebuild validation
 2026-03-15 | win→lin | push wt_menu freeze fix + curl prereq fix; validate on koa Ubuntu

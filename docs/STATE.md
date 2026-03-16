@@ -17,13 +17,17 @@
 - **Setup wizard** — 6-step in-browser wizard (DVR URL, deployment type, mount, event source, caption engine, review/apply)
 - **`scripts/setup-wsl.ps1` + `setup-wsl.sh`** — Windows WSL2 full installer with GPU, CIFS, systemd
 - **`scripts/setup-dockerdesktop.ps1`** — Windows Docker Desktop installer
-- **`scripts/setup-linux.sh`** — Native Linux installer (apt/dnf/zypper, GPU, CIFS/NFS/local, systemd)
+- **`scripts/setup-linux.sh`** — Native Linux installer; validated end-to-end on koa Ubuntu
+  - Storage flow simplified to local/remote binary with auto-discovery (NFS exports → SMB shares → manual fallback)
+  - Host bind-mount strategy for Docker volumes (avoids `nfsvers` Docker named-volume bugs)
+  - NFS/SMB autodiscovery helpers (`showmount`, `smbclient`), scored best-match selection
+  - LAN IP detection improved (`_detect_lan_ip` → `LAN_HINT` for prompt defaults)
 
 ## In Progress
 
-- **Cold-start validation pass 2** — prepare bare-metal teardown/rebuild test on koa
-  - Goal: validate a fully fresh install using the updated Linux installer flow
-  - Scope: start from clean OS state, run `scripts/setup-linux.sh`, verify first-run success
+- **Cold-start bare-metal validation (pass 2)** — next Linux boot, start from clean OS state
+  - All in-place validation complete; installer and runtime UX confirmed working
+  - Outstanding: verify first-run from zero (no prior Docker, no prior clone)
 
 ## Known Issues / Pending
 
