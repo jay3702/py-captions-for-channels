@@ -21,15 +21,13 @@
 
 ## In Progress
 
-- **`setup-linux.sh` field testing** — iterating on koa dual-boot Ubuntu
-  - Fixed: `wt_menu` height bug (passed width constant `$W` as height → froze terminal)
-  - Fixed: `curl` missing on fresh Ubuntu Server minimal (false DVR connection failure)
-  - Status: fixes pushed (`4568458`), awaiting next Linux boot to validate
+- **Cold-start validation pass 2** — prepare bare-metal teardown/rebuild test on koa
+  - Goal: validate a fully fresh install using the updated Linux installer flow
+  - Scope: start from clean OS state, run `scripts/setup-linux.sh`, verify first-run success
 
 ## Known Issues / Pending
 
 - **`env-settings` placeholder corruption** — the settings UI can write `.env.example` placeholder text (e.g. `←`) into the real `.env` if saved without filling all fields. Caused `DVR_MEDIA_HOST_PATH` corruption on niu. Not yet fixed.
-- **`setup-linux.sh` untested end-to-end** — Docker install, CIFS mount, systemd service, `docker compose up` path not yet verified on real hardware
 
 ## Recent Decisions
 
@@ -37,6 +35,23 @@
 - `DVR_PATH_PREFIX` auto-detection queries the DVR API using an embedded Python script (same logic in both `setup-wsl.sh` and `setup-linux.sh`)
 - Setup wizard strips `DVR_MEDIA_HOST_PATH` from `.env.example` default; wizard manages path config
 - `docs/copilot/` and `doc/copilot/` are gitignored (local session notes only); `docs/STATE.md`, `docs/TASK.md`, `docs/DECISIONS.md` are committed
+- Linux installer now defaults storage setup to host bind-mount behavior for reliability (`DVR_MEDIA_HOST_PATH` + `DVR_MEDIA_TYPE=none`) even when source storage is NFS/CIFS
+- Linux installer storage selection is simplified to binary local/remote, with remote auto-discovery first (NFS exports, then SMB shares) and manual protocol/path fallback
+- Linux installer now ensures invoking user is in `docker` group even when Docker is preinstalled
+
+## Latest Validation Results (koa Ubuntu)
+
+- `scripts/setup-linux.sh` validated end-to-end on koa with real DVR/NAS paths
+- NFS Docker named-volume mount failure (`invalid argument` with `nfsvers=4.1,soft`) mitigated by host mount + bind mount strategy
+- Manual processing UX improved:
+  - manual queue loop checks immediately (no first-interval delay)
+  - early "Preparing manual job" progress emitted
+  - top process indicators use recent progress first and fallback state second
+  - frontend now does a short burst refresh after adding manual jobs
+- Performance observed on koa:
+  - OTA ~60 min recording processed in under 9 min
+  - TVE recording processed in ~4:10
+  - roughly ~50% faster TVE processing vs same laptop on Windows
 
 ## Deployment Inventory
 

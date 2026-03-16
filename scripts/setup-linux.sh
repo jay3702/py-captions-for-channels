@@ -92,16 +92,95 @@ if [[ ${#_prereq_missing[@]} -gt 0 ]]; then
     esac
 fi
 
-# ── detect LAN IP prefix ──────────────────────────────────────────────────────
-_detect_lan_prefix() {
-    local ip
-    ip=$(hostname -I 2>/dev/null | tr ' ' '\n' \
+# ── detect LAN IP defaults for prompts ───────────────────────────────────────
+_detect_lan_ip() {
+    hostname -I 2>/dev/null | tr ' ' '\n' \
         | grep -Ev '^(127\.|169\.|::1$)' \
         | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
-        | head -1)
-    echo "$ip" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.' 2>/dev/null || echo "192.168."
+        | head -1
 }
-LAN_PREFIX=$(_detect_lan_prefix)
+
+LAN_IP=$(_detect_lan_ip || true)
+if [[ -n "${LAN_IP:-}" ]]; then
+    LAN_PREFIX="${LAN_IP%.*}."
+else
+    LAN_PREFIX="192.168.3."
+fi
+LAN_HINT="${LAN_PREFIX}xxx"
+
+# ── storage autodiscovery helpers (best-effort) ──────────────────────────────
+_ensure_probe_cmd() {
+    local cmd="$1"
+    if command -v "$cmd" &>/dev/null; then
+        return 0
+    fi
+
+    case "$cmd" in
+        showmount)
+            wt_info "NFS Discovery" "Installing NFS tools for export discovery..."
+            case "$PKG_MGR" in
+                apt)    sudo apt-get install -y -qq nfs-common >> "$LOG" 2>&1 || true ;;
+                dnf)    sudo dnf install -y -q nfs-utils >> "$LOG" 2>&1 || true ;;
+                zypper) sudo zypper install -y nfs-client >> "$LOG" 2>&1 || true ;;
+            esac
+            ;;
+        smbclient)
+            wt_info "SMB Discovery" "Installing smbclient for share discovery..."
+            case "$PKG_MGR" in
+                apt)    sudo apt-get install -y -qq smbclient >> "$LOG" 2>&1 || true ;;
+                dnf)    sudo dnf install -y -q samba-client >> "$LOG" 2>&1 || true ;;
+                zypper) sudo zypper install -y samba-client >> "$LOG" 2>&1 || true ;;
+            esac
+            ;;
+    esac
+
+    command -v "$cmd" &>/dev/null
+}
+
+_discover_nfs_exports() {
+    local server="$1"
+    _ensure_probe_cmd showmount || return 1
+    showmount -e "$server" 2>/dev/null \
+        | awk 'NR>1 && $1 ~ /^\// { print $1 }' \
+        | sort -u
+}
+
+_best_nfs_export_from_list() {
+    awk '
+    BEGIN { IGNORECASE=1 }
+    {
+        score=0
+        if ($0 ~ /\/allmedia\/channels$/) score=130
+        else if ($0 ~ /\/channels$/)      score=120
+        else if ($0 ~ /channels/)          score=100
+        else if ($0 ~ /recordings|media|dvr/) score=80
+        printf "%04d|%s\n", score, $0
+    }
+    ' | sort -t'|' -k1,1nr -k2,2 | head -1 | cut -d'|' -f2-
+}
+
+_discover_smb_shares() {
+    local server="$1"
+    _ensure_probe_cmd smbclient || return 1
+    smbclient -g -N -L "//${server}" 2>/dev/null \
+        | awk -F'|' '$1 == "Disk" { print $2 }' \
+        | grep -Ev '^(IPC\$|print\$)$' \
+        | sort -u
+}
+
+_best_smb_share_from_list() {
+    awk '
+    BEGIN { IGNORECASE=1 }
+    {
+        score=0
+        if ($0 ~ /^channels\$$/)       score=130
+        else if ($0 ~ /^channels$/)     score=125
+        else if ($0 ~ /channels/)       score=100
+        else if ($0 ~ /recordings|media|dvr/) score=80
+        printf "%04d|%s\n", score, $0
+    }
+    ' | sort -t'|' -k1,1nr -k2,2 | head -1 | cut -d'|' -f2-
+}
 
 # ── whiptail dialog helpers ───────────────────────────────────────────────────
 _wt()      { whiptail --backtitle "$BT" "$@" 3>&1 1>&2 2>&3; }
@@ -311,9 +390,10 @@ while [[ -z "$CHANNELS_DVR_URL" ]]; do
 "Enter your Channels DVR server URL (port required):
 
 Example:  http://192.168.1.5:8089
+Detected LAN hint: http://${LAN_HINT}:8089
 
 Tip: open http://localhost:57000 on the DVR machine to find its address." \
-        "http://${LAN_PREFIX}8089") || cancelled
+        "http://${LAN_HINT}:8089") || cancelled
 
     if [[ -z "$CHANNELS_DVR_URL" ]]; then
         wt_msg "Required" "Channels DVR URL is required." 8
@@ -360,72 +440,112 @@ Continue with this URL anyway?" 16; then
     fi
 done
 
-# ── Recordings storage type ───────────────────────────────────────────────────
-STORAGE_TYPE=$(wt_menu "Recordings Storage" \
-"Where are the Channels DVR recordings stored?" 18 4 \
-    "local" "This machine  (DVR and captions on the same host)" \
-    "cifs"  "CIFS / SMB share  (NAS or Windows server)" \
-    "nfs"   "NFS share  (NAS or Linux server)" \
-    "other" "Other / unknown  (configure manually in web UI later)") || cancelled
+# ── Recordings storage location ─────────────────────────────────────────────
+STORAGE_LOC=$(wt_menu "Recordings Storage" \
+"Where are the recordings files physically stored?" 12 2 \
+    "local"  "On this machine  (recordings are on a local disk or mount)" \
+    "remote" "On a remote machine  (NAS or network share)") || cancelled
 
 NAS_SERVER="" NAS_SHARE="" NAS_EXPORT="" MOUNT_POINT="/mnt/channels"
 CRED_FILE="/etc/cifs-credentials-py-captions"
 USE_CIFS=false; USE_NFS=false; USE_LOCAL=false
+STORAGE_TYPE="other"
 
-case "$STORAGE_TYPE" in
-    cifs)
-        USE_CIFS=true
-        NAS_SERVER=$(wt_input "CIFS — Server" \
-            "NAS / server address (hostname or IP):" \
-            "${LAN_PREFIX}") || cancelled
-        NAS_SHARE=$(wt_input "CIFS — Share Name" \
-            "Share name on ${NAS_SERVER}:" \
-            "Channels") || cancelled
-        MOUNT_POINT=$(wt_input "CIFS — Mount Point" \
-            "Local mount point for the share:" \
-            "/mnt/channels") || cancelled
-        ;;
-    nfs)
-        USE_NFS=true
-        NAS_SERVER=$(wt_input "NFS — Server" \
-            "NFS server address (hostname or IP):" \
-            "${LAN_PREFIX}") || cancelled
-        NAS_EXPORT=$(wt_input "NFS — Export Path" \
-"Exported path on ${NAS_SERVER}:
-
-Example:  /tank/AllMedia/Channels" \
-            "/tank/Channels") || cancelled
-        MOUNT_POINT=$(wt_input "NFS — Mount Point" \
-            "Local mount point for the NFS export:" \
-            "/mnt/channels") || cancelled
-        ;;
+case "$STORAGE_LOC" in
     local)
         USE_LOCAL=true
+        STORAGE_TYPE="local"
         MOUNT_POINT=$(wt_input "Local Recordings Path" \
-"Full path to the Channels DVR recordings folder on this machine.
+"Full path to the recordings folder on this machine.
 
-You can find it in Channels DVR → Settings → General → Storage Location.
+(Find it in Channels DVR → Settings → General → Storage Location)
 
 Example:  /tank/AllMedia/Channels
           /opt/channels/recordings" \
             "/mnt/channels") || cancelled
         ;;
-    other)
-        wt_msg "Manual Configuration" \
-"No mount will be configured now.
+    remote)
+        NAS_SERVER=$(wt_input "Remote Storage Server" \
+"Address of the machine where the recordings are stored.
 
-After installation, open the web UI and use the Setup Wizard
-to configure the recordings path." 12 || true
-        MOUNT_POINT=""
+Detected LAN hint: ${LAN_HINT}" \
+            "${LAN_HINT}") || cancelled
+
+        # ── Try NFS first, then SMB, then fall back to manual ────────────────
+        wt_info "Auto-detecting" "Probing ${NAS_SERVER} for NFS exports and SMB shares..."
+        _AUTO_NFS=$(_discover_nfs_exports "$NAS_SERVER" || true)
+        _AUTO_SMB=$(_discover_smb_shares  "$NAS_SERVER" || true)
+
+        if [[ -n "${_AUTO_NFS:-}" ]]; then
+            USE_NFS=true
+            STORAGE_TYPE="nfs"
+            _AUTO_NFS_BEST=$(printf '%s\n' "$_AUTO_NFS" | _best_nfs_export_from_list)
+            NAS_EXPORT=$(wt_input "NFS — Export Path" \
+"Auto-detected NFS exports on ${NAS_SERVER}:
+
+${_AUTO_NFS}
+
+Confirm or edit the path to mount:" \
+                "${_AUTO_NFS_BEST:-/tank/AllMedia/Channels}" 16) || cancelled
+
+        elif [[ -n "${_AUTO_SMB:-}" ]]; then
+            USE_CIFS=true
+            STORAGE_TYPE="cifs"
+            _AUTO_SMB_BEST=$(printf '%s\n' "$_AUTO_SMB" | _best_smb_share_from_list)
+            NAS_SHARE=$(wt_input "SMB — Share Name" \
+"Auto-detected SMB shares on ${NAS_SERVER}:
+
+${_AUTO_SMB}
+
+Confirm or edit the share name:" \
+                "${_AUTO_SMB_BEST:-Channels}" 16) || cancelled
+
+        else
+            # ── Neither NFS nor SMB discovered — ask manually ────────────────
+            wt_msg "Discovery Failed" \
+"Could not auto-detect shares on ${NAS_SERVER}.
+
+No NFS exports or SMB shares were found at that address.
+You can enter the connection details manually.
+(Hidden SMB shares may require authentication — see advanced docs.)" 16 || true
+
+            STORAGE_TYPE=$(wt_menu "Protocol" \
+"What protocol does ${NAS_SERVER} use?" 12 2 \
+    "nfs"  "NFS  (Linux / TrueNAS / Synology)" \
+    "cifs" "SMB / CIFS  (Windows / Samba)") || cancelled
+
+            case "$STORAGE_TYPE" in
+                nfs)
+                    USE_NFS=true
+                    NAS_EXPORT=$(wt_input "NFS — Export Path" \
+"Enter the NFS export path on ${NAS_SERVER}:
+
+Example:  /tank/AllMedia/Channels" \
+                        "/tank/AllMedia/Channels" 14) || cancelled
+                    ;;
+                cifs)
+                    USE_CIFS=true
+                    NAS_SHARE=$(wt_input "SMB — Share Name" \
+"Enter the share name on ${NAS_SERVER}:
+
+Tip: hidden shares end with \$ and won't appear in anonymous scans." \
+                        "Channels" 12) || cancelled
+                    ;;
+            esac
+        fi
+
+        MOUNT_POINT=$(wt_input "Mount Point" \
+            "Local directory to mount the remote share at:" \
+            "/mnt/channels") || cancelled
         ;;
 esac
 
 # ── Confirm settings summary ──────────────────────────────────────────────────
 case "$STORAGE_TYPE" in
-    cifs)  _STORAGE_SUMMARY="CIFS //${NAS_SERVER}/${NAS_SHARE} → ${MOUNT_POINT}" ;;
-    nfs)   _STORAGE_SUMMARY="NFS  ${NAS_SERVER}:${NAS_EXPORT} → ${MOUNT_POINT}" ;;
-    local) _STORAGE_SUMMARY="Local bind mount: ${MOUNT_POINT}" ;;
-    other) _STORAGE_SUMMARY="Manual (configure after install)" ;;
+    cifs)  _STORAGE_SUMMARY="SMB   //${NAS_SERVER}/${NAS_SHARE} → ${MOUNT_POINT}" ;;
+    nfs)   _STORAGE_SUMMARY="NFS   ${NAS_SERVER}:${NAS_EXPORT} → ${MOUNT_POINT}" ;;
+    local) _STORAGE_SUMMARY="Local ${MOUNT_POINT}" ;;
+    *)     _STORAGE_SUMMARY="Manual (configure after install)" ;;
 esac
 
 wt_yesno "Confirm Settings" \
@@ -518,6 +638,21 @@ if ! docker info &>/dev/null 2>&1; then
     wt_info "Docker Engine" "Starting Docker daemon..."
     sudo systemctl start docker && sleep 3
 fi
+
+# Ensure the invoking user can run Docker without sudo (idempotent).
+# This must run even when Docker was already present before this installer.
+DOCKER_GROUP_ADDED=false
+_ensure_docker_group_membership() {
+    sudo groupadd -f docker >> "$LOG" 2>&1 || true
+
+    if id -nG "$USER" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+        return 0
+    fi
+
+    sudo usermod -aG docker "$USER" >> "$LOG" 2>&1
+    DOCKER_GROUP_ADDED=true
+}
+_ensure_docker_group_membership
 
 # Fix missing compose plugin symlink (can happen on some apt setups)
 if ! docker compose version &>/dev/null 2>&1; then
@@ -637,6 +772,14 @@ if [[ "$USE_CIFS" == true ]]; then
             apt)    sudo apt-get install -y -qq cifs-utils >> "$LOG" 2>&1 ;;
             dnf)    sudo dnf install -y -q cifs-utils >> "$LOG" 2>&1 ;;
             zypper) sudo zypper install -y cifs-utils >> "$LOG" 2>&1 ;;
+        esac
+    fi
+    if ! command -v smbclient &>/dev/null; then
+        wt_info "CIFS" "Installing smbclient..."
+        case "$PKG_MGR" in
+            apt)    sudo apt-get install -y -qq smbclient >> "$LOG" 2>&1 ;;
+            dnf)    sudo dnf install -y -q samba-client >> "$LOG" 2>&1 ;;
+            zypper) sudo zypper install -y samba-client >> "$LOG" 2>&1 ;;
         esac
     fi
     sudo mkdir -p "$MOUNT_POINT"
@@ -810,27 +953,13 @@ set_env "WSL_LIB_PATH" ""
 # Recordings path / mount config
 if [[ -n "$MOUNT_POINT" ]]; then
     case "$STORAGE_TYPE" in
-        cifs)
-            set_env "DVR_MEDIA_TYPE"   "cifs"
-            set_env "DVR_MEDIA_DEVICE" "//${NAS_SERVER}/${NAS_SHARE}"
-            set_env "DVR_MEDIA_OPTS"   "credentials=${CRED_FILE},uid=0,gid=0,iocharset=utf8"
-            set_env "DVR_MEDIA_MOUNT"  "$MOUNT_POINT"
-            set_env "DVR_RECORDINGS_PATH" "$MOUNT_POINT"
-            set_env "LOCAL_PATH_PREFIX"   "$MOUNT_POINT"
-            ;;
-        nfs)
-            set_env "DVR_MEDIA_TYPE"   "nfs"
-            set_env "DVR_MEDIA_DEVICE" "${NAS_SERVER}:${NAS_EXPORT}"
-            set_env "DVR_MEDIA_OPTS"   "rw,nfsvers=4.1,soft"
-            set_env "DVR_MEDIA_MOUNT"  "$MOUNT_POINT"
-            set_env "DVR_RECORDINGS_PATH" "$MOUNT_POINT"
-            set_env "LOCAL_PATH_PREFIX"   "$MOUNT_POINT"
-            ;;
-        local)
-            set_env "DVR_MEDIA_TYPE"   "none"
-            set_env "DVR_MEDIA_DEVICE" "$MOUNT_POINT"
-            set_env "DVR_MEDIA_OPTS"   "bind"
-            set_env "DVR_MEDIA_MOUNT"  "$MOUNT_POINT"
+        cifs|nfs|local)
+            # All storage types use a host bind-mount into the container.
+            set_env "DVR_MEDIA_TYPE"      "none"
+            set_env "DVR_MEDIA_DEVICE"    "$MOUNT_POINT"
+            set_env "DVR_MEDIA_OPTS"      "bind"
+            set_env "DVR_MEDIA_HOST_PATH" "$MOUNT_POINT"
+            set_env "DVR_MEDIA_MOUNT"     "$MOUNT_POINT"
             set_env "DVR_RECORDINGS_PATH" "$MOUNT_POINT"
             set_env "LOCAL_PATH_PREFIX"   "$MOUNT_POINT"
             ;;
@@ -917,6 +1046,9 @@ Leave blank to configure later in the web UI Setup Wizard." \
             "") || true
     fi
     [[ -n "${_DVR_PREFIX:-}" ]] && set_env "DVR_PATH_PREFIX" "$_DVR_PREFIX"
+else
+    # Avoid stale host-path bind mounts from previous installs.
+    set_env "DVR_MEDIA_HOST_PATH" ""
 fi
 
 # Safety: start in dry-run until user validates
@@ -1079,7 +1211,7 @@ fi
 rm -f "$_STARTUP_RESULT"
 
 NEWGRP_NOTE=""
-if ! groups | grep -q docker; then
+if [[ "$DOCKER_GROUP_ADDED" == true ]] || ! groups | grep -q docker; then
     NEWGRP_NOTE="\n\nLog out and back in (or run 'newgrp docker')\n  to use Docker without sudo."
 fi
 

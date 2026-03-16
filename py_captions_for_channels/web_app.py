@@ -978,30 +978,22 @@ async def status() -> dict:
         channels_healthy, channels_msg = check_service_health(CHANNELS_API_URL)
         channelwatch_healthy, channelwatch_msg = check_service_health(CHANNELWATCH_URL)
 
-        # Check if whisper and ffmpeg processes are running
-        # Infer from execution tracker - if any executions are running
-        # Note: Without pub/sub, we assume whisper is the primary
-        # process (longest running) and show ffmpeg only if processing
-        # but whisper isn't detected
+        # Infer process activity from recent progress first, then fall back to
+        # coarse execution state when the subprocess has not emitted progress yet.
         whisper_running = False
         ffmpeg_running = False
+        misc_active = False
         try:
             tracker = get_tracker()
             all_execs = tracker.get_executions()
             running_execs = [e for e in all_execs if e.get("status") == "running"]
-            # If any execution is running, assume whisper is active (primary process)
-            # This is a simplification until pub/sub is implemented
-            if len(running_execs) > 0:
-                whisper_running = True
-                # ffmpeg runs briefly before/after whisper, so we don't show it
-                # to avoid both being green simultaneously
             logging.debug(
                 f"Process status check: {len(running_execs)} running, "
                 f"whisper={whisper_running}, ffmpeg={ffmpeg_running}"
             )
         except Exception as e:
             logging.error(f"Error checking process status: {e}")
-            pass  # If check fails, just show as not running
+            running_execs = []
 
         settings = load_settings()
 
@@ -1059,9 +1051,16 @@ async def status() -> dict:
         except Exception as e:
             LOG.debug("Error reading progress: %s", e)
 
-        misc_active = any(
-            prog.get("process_type") == "misc" for prog in progress_data.values()
-        )
+        active_process_types = {
+            prog.get("process_type") for prog in progress_data.values()
+        }
+        whisper_running = "whisper" in active_process_types
+        ffmpeg_running = "ffmpeg" in active_process_types
+        misc_active = "misc" in active_process_types
+
+        if running_execs and not (whisper_running or ffmpeg_running or misc_active):
+            # Execution is active but the subprocess hasn't emitted progress yet.
+            whisper_running = True
 
         # Build services dict, only include ChannelWatch if configured
         services = {

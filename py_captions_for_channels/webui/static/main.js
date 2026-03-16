@@ -1,4 +1,21 @@
 let lastUiUpdate = 0;
+let refreshBurstTimer = null;
+
+function scheduleRefreshBurst(durationMs = 12000, intervalMs = 1000) {
+  const endAt = Date.now() + durationMs;
+  if (refreshBurstTimer) {
+    clearInterval(refreshBurstTimer);
+  }
+
+  refreshNow();
+  refreshBurstTimer = setInterval(() => {
+    refreshNow();
+    if (Date.now() >= endAt) {
+      clearInterval(refreshBurstTimer);
+      refreshBurstTimer = null;
+    }
+  }, intervalMs);
+}
 
 async function fetchStatus() {
   try {
@@ -97,6 +114,18 @@ async function fetchStatus() {
               activeProgress = matches[0][1];
               activeKey = key;
               break; // Only one can be active
+            }
+          }
+        }
+
+        // Fall back to coarse service state when detailed progress has not
+        // arrived yet (for example, right after a manual job starts).
+        if (!activeKey) {
+          for (const key of processKeys) {
+            const svc = data.services[key];
+            if (svc && svc.healthy) {
+              activeKey = key;
+              break;
             }
           }
         }
@@ -817,7 +846,7 @@ async function submitManualProcessing() {
       alert('Error: ' + data.error);
     } else {
       closeManualProcessModal();
-      fetchStatus(); // Refresh to update queue count
+      scheduleRefreshBurst();
     }
   } catch (err) {
     alert('Error adding to reprocess queue: ' + err.message);

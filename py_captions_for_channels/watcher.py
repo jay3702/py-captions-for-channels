@@ -21,6 +21,8 @@ from .database import get_db, init_db
 from .services.heartbeat_service import HeartbeatService
 from .services.settings_service import SettingsService
 from .shutdown_control import get_shutdown_controller
+from .progress_tracker import get_progress_tracker
+from .system_monitor import get_pipeline_timeline
 from .config import (
     CHANNELWATCH_URL,
     CHANNELS_API_URL,
@@ -532,6 +534,17 @@ async def process_manual_process_queue(state, pipeline, api, parser):
                 # Update job_id to the actual execution ID
                 # (may have timestamp for reprocessing)
                 set_job_id(exec_id)
+
+                # Surface manual-job startup immediately in the UI, before the
+                # subprocess emits detailed Whisper/ffmpeg progress.
+                get_progress_tracker().update_progress(
+                    exec_id,
+                    "misc",
+                    0.0,
+                    "Preparing manual job...",
+                    {"phase": "prepare"},
+                )
+                get_pipeline_timeline().stage_start("file_copy", exec_id, filename)
 
                 # Refresh dry_run from DB so a settings change takes effect
                 # immediately without requiring a full container restart.
@@ -1131,7 +1144,6 @@ async def main():
                     LOG.info("Shutdown requested, stopping manual process loop")
                     break
 
-                await asyncio.sleep(MANUAL_PROCESS_POLL_SECONDS)
                 LOG.debug("Manual process loop checking queue...")
                 # Update heartbeat in database
                 try:
@@ -1143,6 +1155,8 @@ async def main():
                     await process_manual_process_queue(state, pipeline, api, parser)
                 except Exception as e:
                     LOG.error("Error processing manual queue: %s", e, exc_info=True)
+
+                await asyncio.sleep(MANUAL_PROCESS_POLL_SECONDS)
         except asyncio.CancelledError:
             LOG.info("Manual process loop cancelled")
         except Exception as e:

@@ -8,82 +8,86 @@ Read `.github/copilot-instructions.md` for architecture and conventions.
 Read `docs/STATE.md` for current development status and known issues.
 Then focus on the task described below.
 
-**Incoming environment:** koa — Ubuntu 24.04 native boot (dual-boot with Windows).
-**No GPU** in this boot. niu (Channels DVR) is at `192.168.3.150:8089`.
-
 ---
 
 # Current Task
 
-End-to-end validation of `scripts/setup-linux.sh` — two bugs were fixed and
-pushed from Windows. Need to confirm both fixes work and that the full install
-completes successfully on a real Ubuntu machine.
+Run a **cold-start bare-metal validation** of `scripts/setup-linux.sh` on koa
+after tearing down the current Linux environment.
 
-## Commit to Test
+The current installer and UI/backend queue fixes have already been validated in
+an in-place environment; now we need proof that first-run setup works from a
+clean machine with no prior Docker/NFS/CIFS state.
 
-`main @ 4568458` — "fix: setup-linux.sh — wt_menu freeze + curl prereq on fresh Ubuntu"
+## Scope
+
+1. Start from a clean Ubuntu boot (or freshly reinstalled Linux environment).
+2. Clone repo and run installer.
+3. Verify web UI starts and manual process pipeline state updates correctly.
+4. Record any drift between expected and actual prompts/behavior.
 
 ## Test Commands
 
 ```bash
-# If this is a fresh clone:
 git clone https://github.com/jay3702/py-captions-for-channels.git
 cd py-captions-for-channels
-
-# If already cloned:
-git pull
-
-# Run the installer
 bash scripts/setup-linux.sh
 ```
 
-## Wizard Inputs
+## Expected Installer Behavior
 
-When the TUI prompts you:
+- IP prompts prefilled with detected LAN hint (`192.168.x.xxx` style)
+- Storage prompt is binary: local vs remote
+- Remote storage flow:
+	- ask server address
+	- auto-detect NFS exports first, then SMB shares
+	- if discovery fails, prompt for protocol and manual path/share
+- Writes bind-mount style env config (`DVR_MEDIA_HOST_PATH`, `DVR_MEDIA_TYPE=none`)
+- Adds user to `docker` group idempotently
 
-| Prompt | Value |
-|--------|-------|
-| Deploy directory | `~/py-captions-for-channels` (default) |
-| DVR URL | `http://192.168.3.150:8089` |
-| Storage type | CIFS |
-| CIFS server | `192.168.3.150` |
-| CIFS share | `Channels` |
-| Mount point | `/mnt/channels` |
-| CIFS username | *(use whatever credentials work for niu's share, or guest)* |
-| Deploy dir confirm | accept |
+## Post-Install Checks
 
-## What to Watch For
+```bash
+sg docker -c 'docker compose ps'
+sg docker -c 'docker compose logs --tail 120 py-captions'
+curl -s http://localhost:8000/api/status | python3 -m json.tool
+```
 
-- **Prerequisites block** — should silently install whiptail + curl before TUI starts (no "cannot connect" false negative from missing curl)
-- **Storage menu** — should show a proper 4-item menu box without freezing (height bug was 72 rows)
-- **Docker install** — if Docker already installed from previous attempt, should skip
-- **DVR path prefix** — auto-detect step queries niu; should find or prompt for prefix
-- **systemd service** — `py-captions-mount.service` created and enabled
-- **Final screen** — should show `http://<koa-LAN-IP>:8000`; open in browser to verify
+## Manual Processing UX Checks
+
+1. Queue one recording from manual process dialog.
+2. Confirm queue shows running state promptly.
+3. Confirm pipeline progress appears without long initial delay.
+4. Confirm top indicators (`File Ops`, `Whisper`, `ffmpeg`) reflect active work.
 
 ## If It Fails
 
-1. Note the **exact step name** shown in the whiptail title bar
-2. Copy the **exact error text** from the screen or from `/tmp/py_captions_install.log`
-3. Fill in the Results section below, commit, push, reboot to Windows
+1. Note exact installer step or UI action where mismatch occurs.
+2. Capture exact error text.
+3. Save relevant logs:
+
+```bash
+tail -n 200 /tmp/py_captions_install.log
+sg docker -c 'docker compose logs --tail 200 py-captions'
+```
 
 ---
 
-# Results  *(fill in on Linux)*
+# Results  *(fill in during/after bare-metal run)*
 
-<!-- What happened — step it failed at, verbatim error, or "completed successfully" -->
+<!-- What happened — success/failure, timing, and mismatches -->
 
 
 
 ## Diagnosis
 
-<!-- If you can identify the cause, note it here -->
+<!-- Root cause analysis for any failures -->
 
 
 
 ## Suggested Fix
 
-<!-- Pseudocode or description — Windows session implements it -->
+<!-- Proposed implementation for next pass -->
 
 
 
@@ -93,4 +97,5 @@ When the TUI prompts you:
 
 <!-- Newest entry at top. Format: YYYY-MM-DD | direction | summary -->
 
+2026-03-16 | lin | validated installer + runtime flow on koa; next is clean bare-metal rebuild validation
 2026-03-15 | win→lin | push wt_menu freeze fix + curl prereq fix; validate on koa Ubuntu
