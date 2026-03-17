@@ -139,7 +139,7 @@ _ensure_probe_cmd() {
 
 _discover_nfs_exports() {
     local server="$1"
-    _ensure_probe_cmd showmount || return 1
+    command -v showmount &>/dev/null || return 1
     showmount -e "$server" 2>/dev/null \
         | awk 'NR>1 && $1 ~ /^\// { print $1 }' \
         | sort -u
@@ -161,7 +161,7 @@ _best_nfs_export_from_list() {
 
 _discover_smb_shares() {
     local server="$1"
-    _ensure_probe_cmd smbclient || return 1
+    command -v smbclient &>/dev/null || return 1
     smbclient -g -N -L "//${server}" 2>/dev/null \
         | awk -F'|' '$1 == "Disk" { print $2 }' \
         | grep -Ev '^(IPC\$|print\$)$' \
@@ -473,6 +473,8 @@ Detected LAN hint: ${LAN_HINT}" \
 
         # ── Try NFS first, then SMB, then fall back to manual ────────────────
         wt_info "Auto-detecting" "Probing ${NAS_SERVER} for NFS exports and SMB shares..."
+        _ensure_probe_cmd showmount || true
+        _ensure_probe_cmd smbclient || true
         _AUTO_NFS=$(_discover_nfs_exports "$NAS_SERVER" || true)
         _AUTO_SMB=$(_discover_smb_shares  "$NAS_SERVER" || true)
 
@@ -563,7 +565,7 @@ Proceed with installation?" 16 || cancelled
 # ════════════════════════════════════════════════════════════════════════════
 CURRENT_STEP="Docker Engine"
 
-if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+if command -v docker &>/dev/null && sudo docker info &>/dev/null 2>&1; then
     wt_info "Docker Engine" "Docker already installed — skipping."
     sleep 1
 else
@@ -576,7 +578,7 @@ else
         echo 18
         sudo install -m 0755 -d /etc/apt/keyrings
         curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-            | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null
+            | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg 2>/dev/null
         sudo chmod a+r /etc/apt/keyrings/docker.gpg
         echo 28
         # Use the OS codename; for distros derived from Ubuntu fall back to ubuntu
@@ -686,7 +688,7 @@ if [[ "$SKIP_NVIDIA" == false ]]; then
         _nvidia_install_apt() {
             echo 10
             curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-                | sudo gpg --dearmor \
+                | sudo gpg --dearmor --yes \
                     -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null
             echo 25
             curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \

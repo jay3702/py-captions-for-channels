@@ -22,12 +22,11 @@
   - Host bind-mount strategy for Docker volumes (avoids `nfsvers` Docker named-volume bugs)
   - NFS/SMB autodiscovery helpers (`showmount`, `smbclient`), scored best-match selection
   - LAN IP detection improved (`_detect_lan_ip` → `LAN_HINT` for prompt defaults)
+  - **Bare-metal clean-install validated on koa (2026-03-17)** — three installer bugs found and fixed (see below)
 
 ## In Progress
 
-- **Cold-start bare-metal validation (pass 2)** — next Linux boot, start from clean OS state
-  - All in-place validation complete; installer and runtime UX confirmed working
-  - Outstanding: verify first-run from zero (no prior Docker, no prior clone)
+- **Re-validation after installer bug fixes** — re-run `setup-linux.sh` on koa clean install to confirm all three fixes resolve the observed issues
 
 ## Known Issues / Pending
 
@@ -56,6 +55,21 @@
   - OTA ~60 min recording processed in under 9 min
   - TVE recording processed in ~4:10
   - roughly ~50% faster TVE processing vs same laptop on Windows
+
+### Bare-metal clean install (2026-03-17) — bugs found & fixed
+
+Three bugs surfaced on a full Ubuntu reinstall + fresh `git clone` + first run of `setup-linux.sh`:
+
+1. **Garbled NFS dialog (run #1)** — `_ensure_probe_cmd` called `wt_info` inside a `$()` subshell (via `_discover_nfs_exports`/`_discover_smb_shares`), capturing whiptail ANSI escape sequences into `_AUTO_NFS` which were then rendered verbatim in the next dialog.
+   - **Fix:** moved `_ensure_probe_cmd showmount/smbclient` calls to the main flow (before the subshells); discovery functions now use a simple `command -v` guard.
+
+2. **GPU test failed (run #2)** — expected; NVIDIA Container Toolkit was freshly installed but Docker daemon restart sleep was insufficient for full runtime registration on first run. Re-running resolves it. No code change needed for the failure itself, but the `--yes` flag fix (below) prevents a separate prompt on re-run.
+
+3. **Docker keyring overwrite prompt (run #3)** — two sub-issues:
+   - Docker-already-installed skip check used `docker info` without `sudo`; fails when user's session predates `docker` group membership, causing installer to attempt Docker reinstall.
+     - **Fix:** changed to `sudo docker info`.
+   - `gpg --dearmor` prompts interactively when output file already exists.
+     - **Fix:** added `--yes` to both `gpg --dearmor` calls (Docker keyring + NVIDIA toolkit keyring).
 
 ## Deployment Inventory
 
