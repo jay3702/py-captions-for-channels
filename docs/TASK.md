@@ -12,19 +12,25 @@ Then focus on the task described below.
 
 # Current Task
 
-Run a **cold-start bare-metal validation** of `scripts/setup-linux.sh` on koa
-after tearing down the current Linux environment.
+Run a **second bare-metal validation** of `scripts/setup-linux.sh` on a fresh
+Linux install to confirm the three 2026-03-17 bug fixes hold, and to exercise
+the new GPU driver pre-check dialogs (added 2026-03-18, commit 613e684).
 
-The current installer and UI/backend queue fixes have already been validated in
-an in-place environment; now we need proof that first-run setup works from a
-clean machine with no prior Docker/NFS/CIFS state.
+The previous bare-metal run (2026-03-17) found and fixed three installer bugs.
+This run validates those fixes and the new GPU detection UX on a clean machine.
 
 ## Scope
 
-1. Start from a clean Ubuntu boot (or freshly reinstalled Linux environment).
+1. Start from a clean Ubuntu boot with no prior Docker/NFS/CIFS state.
 2. Clone repo and run installer.
-3. Verify web UI starts and manual process pipeline state updates correctly.
-4. Record any drift between expected and actual prompts/behavior.
+3. Observe GPU detection dialog — expected path depends on GPU driver state:
+   - Driver missing → "no driver packages" diagnosis + exit-or-CPU choice
+   - Driver installed, module not loaded → "reboot needed" diagnosis
+   - Secure Boot blocking → "Secure Boot" diagnosis + MOK hint
+   - `nvidia-smi` works → proceed to container GPU test as normal
+4. Verify web UI starts and manual process pipeline state updates correctly.
+5. Run one manual TVE job and record wall-clock time.
+6. Record any drift between expected and actual prompts/behavior.
 
 ## Test Commands
 
@@ -91,6 +97,7 @@ Ran on koa after full Ubuntu reinstall + `git clone` + first `bash scripts/setup
 
 # Session Log
 
+2026-03-18 | lin | GPU pre-check dialogs + startup upgrade hint added; OPTIMIZATION_MODE default → automatic; all pushed as 613e684; preparing 2nd bare-metal validation
 2026-03-17 | lin | bare-metal clean install on koa; 3 installer bugs found + fixed; awaiting re-validation
 2026-03-16 | lin→win | installer + runtime UX validated in-place; code pushed as 9245a66
 2026-03-16 | lin | validated installer + runtime flow on koa; next is clean bare-metal rebuild validation
