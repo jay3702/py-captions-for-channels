@@ -35,6 +35,7 @@ def _host_has_nvidia_gpu() -> bool:
     was started without GPU access.
     """
     import os as _os
+
     return _os.path.isdir("/proc/driver/nvidia")
 
 
