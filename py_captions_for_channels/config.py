@@ -245,10 +245,10 @@ CAPTION_COMMAND = os.getenv("CAPTION_COMMAND", 'echo "Would process: {path}"')
 CAPTION_DELAY_MS = int(os.getenv("CAPTION_DELAY_MS", "0"))
 
 # Pipeline optimization mode (Whisper + ffmpeg)
-# "standard" - Use hardcoded parameters (default, proven)
-# "automatic" - Detect encoding and optimize parameters per file
+# "standard"  - Use hardcoded parameters (proven conservative baseline)
+# "automatic" - Detect encoding and optimize parameters per file (default)
 OPTIMIZATION_MODE = os.getenv(
-    "OPTIMIZATION_MODE", os.getenv("WHISPER_MODE", "standard")
+    "OPTIMIZATION_MODE", os.getenv("WHISPER_MODE", "automatic")
 )
 
 # Whisper device selection

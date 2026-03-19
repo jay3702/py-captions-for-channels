@@ -27,6 +27,34 @@ configure_logging(verbosity=LOG_VERBOSITY, log_file=LOG_FILE)
 logger = logging.getLogger(__name__)
 
 
+def _host_has_nvidia_gpu() -> bool:
+    """/proc/driver/nvidia exists on the host when the NVIDIA kernel module is
+    loaded.  It is readable from inside a standard Docker container (shared
+    /proc namespace) even when the container runtime is plain runc with no GPU
+    passthrough.  Returns True when the host GPU is present but the container
+    was started without GPU access.
+    """
+    import os as _os
+    return _os.path.isdir("/proc/driver/nvidia")
+
+
+def _log_gpu_upgrade_hint() -> None:
+    """Warn once that a host GPU exists but the container is in CPU mode."""
+    whisper_device = os.getenv("WHISPER_DEVICE", "cpu").lower()
+    nvidia_visible = os.getenv("NVIDIA_VISIBLE_DEVICES", "")
+    if whisper_device != "cpu" or nvidia_visible:
+        return  # Already configured (or mid-transition) — don't spam
+    logger.warning(
+        "Host has an NVIDIA GPU available but this container is running in CPU mode.\n"
+        "  To enable GPU acceleration update .env and restart:\n"
+        "    DOCKER_RUNTIME=nvidia\n"
+        "    NVIDIA_VISIBLE_DEVICES=all\n"
+        "    WHISPER_DEVICE=cuda\n"
+        "  Then: docker compose down && docker compose up -d\n"
+        "  Or re-run the installer: bash scripts/setup-linux.sh"
+    )
+
+
 def check_gpu_compatibility() -> None:
     """Check GPU/CUDA compatibility and log a clear warning if there's a mismatch.
 
@@ -91,10 +119,14 @@ def check_gpu_compatibility() -> None:
                 )
             else:
                 logger.info("No NVIDIA GPU detected — running on CPU.")
+                if _host_has_nvidia_gpu():
+                    _log_gpu_upgrade_hint()
         except FileNotFoundError:
             logger.info(
                 "No NVIDIA GPU detected (nvidia-smi not found) — running on CPU."
             )
+            if _host_has_nvidia_gpu():
+                _log_gpu_upgrade_hint()
         except Exception as e:
             logger.debug("GPU check failed: %s", e)
 

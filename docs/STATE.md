@@ -23,6 +23,8 @@
   - NFS/SMB autodiscovery helpers (`showmount`, `smbclient`), scored best-match selection
   - LAN IP detection improved (`_detect_lan_ip` → `LAN_HINT` for prompt defaults)
   - **Bare-metal clean-install validated on koa (2026-03-17)** — three installer bugs found and fixed (see below)
+  - **GPU driver pre-check (2026-03-18)** — installer now diagnoses why `nvidia-smi` fails (Secure Boot, module not loaded, packages missing) and offers: exit to fix first, or continue CPU-only. Silent skip only when no NVIDIA hardware is present.
+- **`__main__.py` startup GPU upgrade hint (2026-03-18)** — when running in CPU mode, the app checks `/proc/driver/nvidia` (visible inside the container via shared /proc) at every startup and logs an actionable warning with exact `.env` settings to enable GPU when the host has a working NVIDIA driver.
 
 ## In Progress
 
@@ -31,6 +33,7 @@
 ## Known Issues / Pending
 
 - **`env-settings` placeholder corruption** — the settings UI can write `.env.example` placeholder text (e.g. `←`) into the real `.env` if saved without filling all fields. Caused `DVR_MEDIA_HOST_PATH` corruption on niu. Not yet fixed.
+- **GPU driver pre-check not yet re-validated on koa** — Secure Boot is active on koa, blocking the NVIDIA 580 driver. koa currently running CPU mode. Re-validate installer GPU flow after Secure Boot is disabled (or MOK enrolled).
 
 ## Recent Decisions
 
