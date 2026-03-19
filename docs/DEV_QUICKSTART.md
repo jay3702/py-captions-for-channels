@@ -12,12 +12,28 @@ cd py-captions-for-channels
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
+Install the linter (required to pass CI — Black is not in `requirements-dev.txt` on Ubuntu because pip may not be available):
+
+```bash
+# Ubuntu/Debian
+sudo apt install black
+
+# everywhere else (pip)
+pip install black
+```
+
 Set up pre-commit hooks:
 
 ```bash
 ./setup-hooks.sh   # Linux/macOS
 # or
 ./setup-hooks.ps1  # Windows
+```
+
+To check formatting before pushing (mirrors CI):
+
+```bash
+black --check --fast .
 ```
 
 ---
