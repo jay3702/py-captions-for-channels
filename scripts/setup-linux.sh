@@ -840,7 +840,7 @@ if [[ "$SKIP_NVIDIA" == false ]]; then
                 || sudo nvidia-ctk runtime configure --runtime=docker)       >> "$LOG" 2>&1
             echo 92
             sudo systemctl restart docker                                     >> "$LOG" 2>&1
-            sleep 2
+            sleep 8   # allow runtime registration to complete
             echo 100
         }
         _nvidia_install_dnf() {
@@ -853,7 +853,7 @@ if [[ "$SKIP_NVIDIA" == false ]]; then
             sudo nvidia-ctk runtime configure --runtime=docker               >> "$LOG" 2>&1
             echo 90
             sudo systemctl restart docker                                     >> "$LOG" 2>&1
-            sleep 2
+            sleep 8   # allow runtime registration to complete
             echo 100
         }
 
@@ -874,26 +874,61 @@ Continuing without GPU acceleration." 14 || true
     fi
 
     if [[ "$SKIP_NVIDIA" == false ]]; then
-        # GPU sanity test inside a container
+        # GPU sanity test inside a container — retry up to 3 times to handle
+        # cases where the Docker runtime needs more time after a fresh toolkit install.
         CURRENT_STEP="GPU Test"
         wt_info "GPU Test" "Testing GPU passthrough inside Docker..."
-        if docker run --rm --gpus all --runtime=nvidia nvidia/cuda:12.1.0-base-ubuntu22.04 \
-                nvidia-smi -L >> "$LOG" 2>&1; then
+        _GPU_CONTAINER_OK=false
+        for _GPU_TRY in 1 2 3; do
+            if docker run --rm --gpus all --runtime=nvidia \
+                    nvidia/cuda:12.1.0-base-ubuntu22.04 \
+                    nvidia-smi -L >> "$LOG" 2>&1; then
+                _GPU_CONTAINER_OK=true
+                break
+            fi
+            if [[ $_GPU_TRY -lt 3 ]]; then
+                wt_info "GPU Test" "Attempt ${_GPU_TRY} failed — restarting Docker runtime and retrying..."
+                sudo systemctl restart docker >> "$LOG" 2>&1
+                sleep 10
+            fi
+        done
+
+        if [[ "$_GPU_CONTAINER_OK" == true ]]; then
             GPU_OK=true
             GPU_NAME=$(docker run --rm --gpus all --runtime=nvidia \
                 nvidia/cuda:12.1.0-base-ubuntu22.04 \
                 nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "GPU detected")
             wt_msg "GPU Test" "✔ GPU visible in container:\n  $GPU_NAME\n\nGPU acceleration will be enabled." 12
         else
-            wt_msg "GPU Test" \
-"GPU test failed — the container will use CPU mode.
+            _GPU_CHOICE=$(wt_menu "GPU Test Failed" \
+"nvidia-smi works on this host, but the Docker GPU passthrough
+test failed after 3 attempts.
 
-To fix later:
-  1. Ensure 'nvidia-smi' works as your user
-  2. Ensure the NVIDIA Container Toolkit is installed
-  3. Re-run this installer — it is safe to run again.
+This usually means the NVIDIA Container Toolkit runtime registration
+needs more time, or there is a mismatch between the host driver
+version and the test container image.
 
-Full log: ${LOG}" 16 || true
+Things to try manually:
+  sudo systemctl restart docker
+  docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi -L
+
+Re-running this installer is safe — completed steps are skipped.
+Full log: ${LOG}" 26 2 \
+                "quit" "Exit now to investigate" \
+                "cpu"  "Continue in CPU mode  (re-run installer later to enable GPU)") || true
+            case "${_GPU_CHOICE:-cpu}" in
+                quit)
+                    wt_msg "Exiting" \
+"Re-run after resolving the GPU passthrough issue:
+  bash scripts/setup-linux.sh
+
+(All completed steps will be skipped.)" 11
+                    exit 0 ;;
+                *)
+                    GPU_OK=false
+                    wt_info "GPU Test" "Continuing in CPU mode.  Re-run this installer after resolving to enable GPU."
+                    sleep 2 ;;
+            esac
         fi
     fi
 fi
