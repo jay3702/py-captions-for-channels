@@ -12,70 +12,26 @@ Then focus on the task described below.
 
 # Current Task
 
-Run a **second bare-metal validation** of `scripts/setup-linux.sh` on a fresh
-Linux install to confirm the three 2026-03-17 bug fixes hold, and to exercise
-the new GPU driver pre-check dialogs (added 2026-03-18, commit 613e684).
+Fix the **`env-settings` placeholder corruption** bug.
 
-The previous bare-metal run (2026-03-17) found and fixed three installer bugs.
-This run validates those fixes and the new GPU detection UX on a clean machine.
+The settings UI (`web_app.py` + `webui/static/main.js`) can write `.env.example`
+placeholder text (e.g. values containing `←` or the literal example strings) into
+the real `.env` if the user saves without filling in a field.
+
+This caused `DVR_MEDIA_HOST_PATH` corruption on niu in a previous session.
 
 ## Scope
 
-1. Start from a clean Ubuntu boot with no prior Docker/NFS/CIFS state.
-2. Clone repo and run installer.
-3. Observe GPU detection dialog — expected path depends on GPU driver state:
-   - Driver missing → "no driver packages" diagnosis + exit-or-CPU choice
-   - Driver installed, module not loaded → "reboot needed" diagnosis
-   - Secure Boot blocking → "Secure Boot" diagnosis + MOK hint
-   - `nvidia-smi` works → proceed to container GPU test as normal
-4. Verify web UI starts and manual process pipeline state updates correctly.
-5. Run one manual TVE job and record wall-clock time.
-6. Record any drift between expected and actual prompts/behavior.
+1. Identify where `.env` values are written from the settings form (`/api/env` POST handler).
+2. Add sanitization: skip or warn on any field whose value appears to be an unfilled placeholder.
+3. Ensure the fix covers both the settings modal and the setup wizard.
+4. Write a regression test if feasible.
 
-## Test Commands
+## Definition of Done
 
-```bash
-git clone https://github.com/jay3702/py-captions-for-channels.git
-cd py-captions-for-channels
-bash scripts/setup-linux.sh
-```
-
-## Expected Installer Behavior
-
-- IP prompts prefilled with detected LAN hint (`192.168.x.xxx` style)
-- Storage prompt is binary: local vs remote
-- Remote storage flow:
-	- ask server address
-	- auto-detect NFS exports first, then SMB shares
-	- if discovery fails, prompt for protocol and manual path/share
-- Writes bind-mount style env config (`DVR_MEDIA_HOST_PATH`, `DVR_MEDIA_TYPE=none`)
-- Adds user to `docker` group idempotently
-
-## Post-Install Checks
-
-```bash
-sg docker -c 'docker compose ps'
-sg docker -c 'docker compose logs --tail 120 py-captions'
-curl -s http://localhost:8000/api/status | python3 -m json.tool
-```
-
-## Manual Processing UX Checks
-
-1. Queue one recording from manual process dialog.
-2. Confirm queue shows running state promptly.
-3. Confirm pipeline progress appears without long initial delay.
-4. Confirm top indicators (`File Ops`, `Whisper`, `ffmpeg`) reflect active work.
-
-## If It Fails
-
-1. Note exact installer step or UI action where mismatch occurs.
-2. Capture exact error text.
-3. Save relevant logs:
-
-```bash
-tail -n 200 /tmp/py_captions_install.log
-sg docker -c 'docker compose logs --tail 200 py-captions'
-```
+- Saving settings with unfilled placeholder values does **not** overwrite `.env`.
+- User sees a validation warning, or the placeholder field is skipped with an indicator.
+- Existing filled fields continue to save correctly.
 
 ---
 
@@ -93,10 +49,19 @@ Ran on koa after full Ubuntu reinstall + `git clone` + first `bash scripts/setup
 
 **Next:** Re-run `setup-linux.sh` on koa (same install) to confirm all three fixes resolve cleanly with no prompts or corrupted dialogs.
 
+# Results  *(2nd bare-metal + GPU validation — 2026-03-20)*
+
+Confirmed by user on Windows after returning from Linux session.
+
+- All three 2026-03-17 bug fixes (❌ garbled NFS dialog, ❌ GPU test on first run, ❌ keyring overwrite prompt) resolved cleanly.
+- NVIDIA GPU installation flow working end-to-end including GPU pre-check dialogs.
+- Bare-metal clean install validated.
+
 ---
 
 # Session Log
 
+2026-03-20 | lin→win | 2nd bare-metal + GPU install both confirmed working; pivoting to env-settings placeholder fix
 2026-03-20 | lin | Found Secure Boot false-pass bug on koa reboot (container exit 128 after GPU install); fixed installer to warn when nvidia-smi passes but SB active; koa .env switched to CPU mode; container needs `docker compose up -d`
 2026-03-18 | lin | GPU pre-check dialogs + startup upgrade hint added; OPTIMIZATION_MODE default → automatic; all pushed as 613e684; preparing 2nd bare-metal validation
 2026-03-17 | lin | bare-metal clean install on koa; 3 installer bugs found + fixed; awaiting re-validation
