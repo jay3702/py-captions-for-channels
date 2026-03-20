@@ -820,7 +820,7 @@ SKIP_NVIDIA=$GPU_PRECHK_SKIP
 
 if [[ "$SKIP_NVIDIA" == false ]]; then
     CURRENT_STEP="NVIDIA Container Toolkit"
-    if docker info 2>/dev/null | grep -q 'nvidia'; then
+    if sudo docker info 2>/dev/null | grep -q 'nvidia'; then
         wt_info "NVIDIA Toolkit" "nvidia runtime already registered — skipping."
         sleep 1
     else
@@ -882,7 +882,7 @@ Continuing without GPU acceleration." 14 || true
         _GPU_CONTAINER_OK=false
         for _GPU_TRY in 1 2 3; do
             wt_info "GPU Test" "Attempt ${_GPU_TRY} of 3 — running GPU passthrough test in container...\n\n(This may take 30–60 s on first run while the image layers load.)"
-            if docker run --rm --gpus all --runtime=nvidia \
+            if sudo docker run --rm --gpus all --runtime=nvidia \
                     nvidia/cuda:12.1.0-base-ubuntu22.04 \
                     nvidia-smi -L >> "$LOG" 2>&1; then
                 _GPU_CONTAINER_OK=true
@@ -897,7 +897,7 @@ Continuing without GPU acceleration." 14 || true
 
         if [[ "$_GPU_CONTAINER_OK" == true ]]; then
             GPU_OK=true
-            GPU_NAME=$(docker run --rm --gpus all --runtime=nvidia \
+            GPU_NAME=$(sudo docker run --rm --gpus all --runtime=nvidia \
                 nvidia/cuda:12.1.0-base-ubuntu22.04 \
                 nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "GPU detected")
             wt_msg "GPU Test" "✔ GPU visible in container:\n  $GPU_NAME\n\nGPU acceleration will be enabled." 12
