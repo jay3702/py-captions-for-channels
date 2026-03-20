@@ -322,14 +322,16 @@ Allow these ports now?" 12; then
 fi
 
 # ── Stale container ──────────────────────────────────────────────────────────
+# Use sudo so this works even when the user's docker group membership isn't
+# active yet (e.g. Docker was just installed in this same session).
 if command -v docker &>/dev/null && \
-   docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^py-captions'; then
+   sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^py-captions'; then
     if wt_yesno "Pre-flight: Existing Container" \
 "A Docker container named 'py-captions' already exists.
 
 This may be a leftover from a previous install.  Remove it now so
 docker compose can start a fresh container?" 12; then
-        docker rm -f py-captions py-captions-for-channels >> "$LOG" 2>&1 || true
+        sudo docker rm -f py-captions py-captions-for-channels >> "$LOG" 2>&1 || true
     else
         _PREFLIGHT_WARN+=("Existing container kept — docker compose may fail.")
     fi
