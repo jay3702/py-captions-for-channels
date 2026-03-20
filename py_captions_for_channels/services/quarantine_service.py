@@ -437,13 +437,17 @@ class QuarantineService:
             item.file_size_bytes for item in quarantined if item.file_size_bytes
         )
 
-        # Last purge time and total bytes recovered from deleted items
+        # Last purge time and total bytes recovered — 30-day sliding window
+        window_start = datetime.now(timezone.utc) - timedelta(days=30)
         purge_row = (
             self.db.query(
                 func.max(QuarantineItem.deleted_at),
                 func.sum(QuarantineItem.file_size_bytes),
             )
-            .filter(QuarantineItem.status == "deleted")
+            .filter(
+                QuarantineItem.status == "deleted",
+                QuarantineItem.deleted_at >= window_start,
+            )
             .one()
         )
         last_purge_at = purge_row[0]

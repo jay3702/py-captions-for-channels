@@ -3048,7 +3048,7 @@ async function loadQuarantineFiles() {
     let statsHtml = `<strong>${itemCount} file${itemCount !== 1 ? 's' : ''}</strong> (${totalGb} GB) | ${stats.total_expired || 0} expired`;
     if (lastPurge) {
       statsHtml += ` | Last purge: ${lastPurge}`;
-      if (purgedGb) statsHtml += ` &mdash; ${purgedGb} GB recovered`;
+      if (purgedGb) statsHtml += ` &mdash; ${purgedGb} GB recovered (30d)`;
     }
     statsEl.innerHTML = statsHtml;
     
