@@ -2931,6 +2931,82 @@ window.addEventListener('DOMContentLoaded', () => {
 // Quarantine Management
 // =========================================
 
+let _quarantineItems = [];
+let _quarantineSort = { col: 'created', dir: 'desc' };
+
+function sortQuarantineBy(col) {
+  if (_quarantineSort.col === col) {
+    _quarantineSort.dir = _quarantineSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _quarantineSort.col = col;
+    _quarantineSort.dir = col === 'created' || col === 'expires' ? 'desc' : 'asc';
+  }
+  _renderQuarantineTable();
+}
+
+function _renderQuarantineTable() {
+  const tbody = document.getElementById('quarantine-list');
+  if (!_quarantineItems.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #888;">No quarantined files</td></tr>';
+    _updateSortIndicators();
+    return;
+  }
+
+  const { col, dir } = _quarantineSort;
+  const sorted = [..._quarantineItems].sort((a, b) => {
+    let av, bv;
+    if (col === 'file')    { av = a.original_path.split('/').pop().toLowerCase(); bv = b.original_path.split('/').pop().toLowerCase(); }
+    else if (col === 'type')    { av = a.file_type; bv = b.file_type; }
+    else if (col === 'size')    { av = a.file_size_bytes || 0; bv = b.file_size_bytes || 0; }
+    else if (col === 'created') { av = a.created_at; bv = b.created_at; }
+    else if (col === 'expires') { av = a.expires_at; bv = b.expires_at; }
+    else if (col === 'status')  { av = a.is_expired ? 1 : 0; bv = b.is_expired ? 1 : 0; }
+    else { av = ''; bv = ''; }
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  tbody.innerHTML = sorted.map(item => {
+    const filename = item.original_path.split('/').pop();
+    const sizeKB = item.file_size_bytes ? (item.file_size_bytes / 1024).toFixed(1) : '?';
+    const createdDate = new Date(item.created_at).toLocaleString();
+    const expiresDate = new Date(item.expires_at).toLocaleString();
+    const statusClass = item.is_expired ? 'status-expired' : 'status-active';
+    const statusText = item.is_expired ? 'Expired' : 'Active';
+    return `
+      <tr>
+        <td>
+          <input type="checkbox" class="quarantine-checkbox" value="${item.id}">
+        </td>
+        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.original_path}">
+          ${filename}
+        </td>
+        <td>${item.file_type}</td>
+        <td>${sizeKB} KB</td>
+        <td>${createdDate}</td>
+        <td>${expiresDate}</td>
+        <td><span class="${statusClass}">${statusText}</span></td>
+      </tr>
+    `;
+  }).join('');
+
+  _updateSortIndicators();
+}
+
+function _updateSortIndicators() {
+  const cols = ['file', 'type', 'size', 'created', 'expires', 'status'];
+  cols.forEach(c => {
+    const el = document.getElementById(`sort-ind-${c}`);
+    if (!el) return;
+    if (_quarantineSort.col === c) {
+      el.textContent = _quarantineSort.dir === 'asc' ? ' ▲' : ' ▼';
+    } else {
+      el.textContent = '';
+    }
+  });
+}
+
 async function loadQuarantineFiles() {
   try {
     const response = await fetch('/api/quarantine');
@@ -2947,8 +3023,26 @@ async function loadQuarantineFiles() {
     // Update stats
     const stats = data.stats || {};
     const itemCount = data.items ? data.items.length : 0;
-    statsEl.innerHTML = `<strong>${itemCount} file${itemCount !== 1 ? 's' : ''}</strong> (${stats.total_size_mb || 0} MB) | ${stats.total_expired || 0} expired`;
+    const totalGb = stats.total_size_bytes
+      ? (stats.total_size_bytes / (1024 ** 3)).toFixed(2)
+      : '0.00';
+    const purgedGb = stats.total_purged_bytes
+      ? (stats.total_purged_bytes / (1024 ** 3)).toFixed(2)
+      : null;
+    const lastPurge = stats.last_purge_at
+      ? new Date(stats.last_purge_at).toLocaleString()
+      : null;
+
+    let statsHtml = `<strong>${itemCount} file${itemCount !== 1 ? 's' : ''}</strong> (${totalGb} GB) | ${stats.total_expired || 0} expired`;
+    if (lastPurge) {
+      statsHtml += ` | Last purge: ${lastPurge}`;
+      if (purgedGb) statsHtml += ` &mdash; ${purgedGb} GB recovered`;
+    }
+    statsEl.innerHTML = statsHtml;
     
+    // Store items for sorting
+    _quarantineItems = data.items || [];
+
     // Load and update scan status
     updateQuarantineScanStatus();
     
@@ -2957,37 +3051,7 @@ async function loadQuarantineFiles() {
       loadScanPaths();
     }
     
-    // Render table
-    if (!data.items || data.items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #888;">No quarantined files</td></tr>';
-      return;
-    }
-    
-    tbody.innerHTML = data.items.map(item => {
-      const filename = item.original_path.split('/').pop();
-      const sizeKB = item.file_size_bytes ? (item.file_size_bytes / 1024).toFixed(1) : '?';
-      const createdDate = new Date(item.created_at).toLocaleString();
-      const expiresDate = new Date(item.expires_at).toLocaleString();
-      const isExpired = item.is_expired;
-      const statusClass = isExpired ? 'status-expired' : 'status-active';
-      const statusText = isExpired ? 'Expired' : 'Active';
-      
-      return `
-        <tr>
-          <td>
-            <input type="checkbox" class="quarantine-checkbox" value="${item.id}">
-          </td>
-          <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.original_path}">
-            ${filename}
-          </td>
-          <td>${item.file_type}</td>
-          <td>${sizeKB} KB</td>
-          <td>${createdDate}</td>
-          <td>${expiresDate}</td>
-          <td><span class="${statusClass}">${statusText}</span></td>
-        </tr>
-      `;
-    }).join('');
+    _renderQuarantineTable();
     
   } catch (error) {
     console.error('Failed to load quarantine files:', error);

@@ -437,9 +437,23 @@ class QuarantineService:
             item.file_size_bytes for item in quarantined if item.file_size_bytes
         )
 
+        # Last purge time and total bytes recovered from deleted items
+        purge_row = (
+            self.db.query(
+                func.max(QuarantineItem.deleted_at),
+                func.sum(QuarantineItem.file_size_bytes),
+            )
+            .filter(QuarantineItem.status == "deleted")
+            .one()
+        )
+        last_purge_at = purge_row[0]
+        total_purged_bytes = int(purge_row[1]) if purge_row[1] else 0
+
         return {
             "total_quarantined": len(quarantined),
             "total_expired": len(expired),
             "total_size_bytes": total_size,
             "total_size_mb": round(total_size / (1024 * 1024), 2),
+            "last_purge_at": last_purge_at.isoformat() + "Z" if last_purge_at else None,
+            "total_purged_bytes": total_purged_bytes,
         }

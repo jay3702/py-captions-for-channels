@@ -1515,6 +1515,20 @@ body {
   z-index: 1;
 }
 
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable-header:hover {
+  color: #4a9eff;
+}
+
+.sort-indicator {
+  font-size: 0.75em;
+  opacity: 0.8;
+}
+
 .quarantine-table tr:hover {
   background: rgba(255, 255, 255, 0.02);
 }

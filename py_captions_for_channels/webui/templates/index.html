@@ -256,12 +256,12 @@
                 <th style="width: 40px;">
                   <input type="checkbox" id="quarantine-select-all" onchange="toggleSelectAll(this)">
                 </th>
-                <th>File</th>
-                <th>Type</th>
-                <th>Size</th>
-                <th>Quarantined</th>
-                <th>Expires</th>
-                <th>Status</th>
+                <th class="sortable-header" onclick="sortQuarantineBy('file')">File <span class="sort-indicator" id="sort-ind-file"></span></th>
+                <th class="sortable-header" onclick="sortQuarantineBy('type')">Type <span class="sort-indicator" id="sort-ind-type"></span></th>
+                <th class="sortable-header" onclick="sortQuarantineBy('size')">Size <span class="sort-indicator" id="sort-ind-size"></span></th>
+                <th class="sortable-header" onclick="sortQuarantineBy('created')">Quarantined <span class="sort-indicator" id="sort-ind-created"></span></th>
+                <th class="sortable-header" onclick="sortQuarantineBy('expires')">Expires <span class="sort-indicator" id="sort-ind-expires"></span></th>
+                <th class="sortable-header" onclick="sortQuarantineBy('status')">Status <span class="sort-indicator" id="sort-ind-status"></span></th>
               </tr>
             </thead>
             <tbody id="quarantine-list">
