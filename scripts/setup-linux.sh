@@ -547,16 +547,16 @@ After rebooting, confirm nvidia-smi shows your GPU, then re-run:
             if wt_yesno "GPU Not Ready — How to Proceed" \
 "How would you like to continue?
 
-  YES = Exit now to fix the GPU driver first
-   NO = Continue in CPU mode  (GPU can be enabled later)"; then
+  YES = Continue in CPU mode  (GPU can be enabled later)
+   NO = Exit now to fix the GPU driver first"; then
+                GPU_PRECHK_SKIP=true
+                wt_info "GPU Check" "Continuing in CPU mode.  GPU can be enabled later by re-running this installer."
+                sleep 2
+            else
                 wt_msg "Exiting" \
 "Re-run after fixing the GPU driver:
   bash scripts/setup-linux.sh" 9
                 exit 0
-            else
-                GPU_PRECHK_SKIP=true
-                wt_info "GPU Check" "Continuing in CPU mode.  GPU can be enabled later by re-running this installer."
-                sleep 2
             fi
         fi
     fi
