@@ -879,9 +879,9 @@ Continuing without GPU acceleration." 14 || true
         # GPU sanity test inside a container — retry up to 3 times to handle
         # cases where the Docker runtime needs more time after a fresh toolkit install.
         CURRENT_STEP="GPU Test"
-        wt_info "GPU Test" "Testing GPU passthrough inside Docker..."
         _GPU_CONTAINER_OK=false
         for _GPU_TRY in 1 2 3; do
+            wt_info "GPU Test" "Attempt ${_GPU_TRY} of 3 — running GPU passthrough test in container...\n\n(This may take 30–60 s on first run while the image layers load.)"
             if docker run --rm --gpus all --runtime=nvidia \
                     nvidia/cuda:12.1.0-base-ubuntu22.04 \
                     nvidia-smi -L >> "$LOG" 2>&1; then
@@ -889,7 +889,7 @@ Continuing without GPU acceleration." 14 || true
                 break
             fi
             if [[ $_GPU_TRY -lt 3 ]]; then
-                wt_info "GPU Test" "Attempt ${_GPU_TRY} failed — restarting Docker runtime and retrying..."
+                wt_info "GPU Test" "Attempt ${_GPU_TRY} of 3 failed — restarting Docker runtime and waiting 10 s before retry $(( _GPU_TRY + 1 ))..."
                 sudo systemctl restart docker >> "$LOG" 2>&1
                 sleep 10
             fi
