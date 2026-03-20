@@ -186,7 +186,7 @@ _best_smb_share_from_list() {
 # ── whiptail dialog helpers ───────────────────────────────────────────────────
 _wt()      { whiptail --backtitle "$BT" "$@" 3>&1 1>&2 2>&3; }
 wt_msg()   { whiptail --backtitle "$BT" --title "$1" --msgbox  "$2" "${3:-10}" "$W"; }
-wt_yesno() { whiptail --backtitle "$BT" --title "$1" --yesno   "$2" "${3:-10}" "$W"; }
+wt_yesno() { whiptail --backtitle "$BT" --title "$1" --yesno --defaultno "$2" "${3:-10}" "$W"; }
 wt_input() { _wt --title "$1" --inputbox   "$2" "${4:-9}"  "$W" "$3"; }
 wt_pass()  { _wt --title "$1" --passwordbox "$2" 9         "$W" ""; }
 wt_info()  { whiptail --backtitle "$BT" --title "$1" --infobox "$2" 7 "$W" || true; }
@@ -366,37 +366,211 @@ fi
 GPU_PRECHK_SKIP=false
 
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
-    # nvidia-smi works now — but warn if Secure Boot is active, because the
-    # NVIDIA kernel module may be blocked after the next reboot.
-    if mokutil --sb-state 2>/dev/null | grep -qi 'SecureBoot enabled'; then
-        _GPU_CHOICE=$(wt_menu "GPU Warning — Secure Boot Active" \
-"Your NVIDIA GPU is working right now, but Secure Boot is enabled.
-
-After the next reboot the NVIDIA driver module may be blocked,
-which would prevent the container from starting.
-
-To ensure GPU works across reboots, either:
-  • Disable Secure Boot in BIOS/UEFI, or
-  • Enroll a MOK signing key:
-      sudo mokutil --import /var/lib/shim-signed/mok/MOK.der
-      (then reboot to complete enrollment)
-
-Choose how to proceed:" 22 3 \
-            "gpu"  "Continue with GPU mode  (may break after next reboot)" \
-            "cpu"  "Use CPU mode now  (safe; re-run installer to enable GPU later)" \
-            "quit" "Quit — I will fix Secure Boot / MOK first") || true
-        case "${_GPU_CHOICE:-gpu}" in
-            cpu)
-                GPU_PRECHK_SKIP=true
-                wt_info "GPU Check" "Continuing in CPU mode.  Re-run this installer after resolving Secure Boot to enable GPU." ;;
-            quit)
-                wt_msg "Exiting" \
-"Re-run after disabling Secure Boot or enrolling a MOK key:
-  bash scripts/setup-linux.sh" 9
-                exit 0 ;;
-            *)  : ;; # gpu — proceed as normal
-        esac
+    # ── Distro-specific MOK key path (needed regardless of SB state) ──────
+    if [[ "$PKG_MGR" == "dnf" ]]; then
+        _mok_key_path="/etc/pki/akmods/certs/public_key.der"
+    else
+        _mok_key_path="/var/lib/shim-signed/mok/MOK.der"
     fi
+
+    # ── Classify Secure Boot + MOK state ──────────────────────────────────
+    #   sb_off      — Secure Boot disabled (no restrictions)
+    #   enrolled    — SB enabled, key accepted by firmware (driver protected)
+    #   unenrolled  — SB enabled, key file exists but not imported yet
+    #   missing     — SB enabled, key file not found (must rebuild first)
+    if ! mokutil --sb-state 2>/dev/null | grep -qi 'SecureBoot enabled'; then
+        _mok_state="sb_off"
+    elif [[ -f "$_mok_key_path" ]]; then
+        # mokutil --test-key exits 1 even when enrolled (kernel keyring access
+        # fails), so capture output into a variable with || true to avoid
+        # triggering pipefail, then check the text.
+        _mok_test_out=$(mokutil --test-key "$_mok_key_path" 2>&1 || true)
+        if echo "$_mok_test_out" | grep -q 'already enrolled'; then
+            _mok_state="enrolled"
+        else
+            _mok_state="unenrolled"
+        fi
+    else
+        _mok_state="missing"
+    fi
+
+    # ── Always show a GPU / Secure Boot status message ────────────────────
+    case "$_mok_state" in
+        sb_off)
+            wt_msg "GPU Check — Ready" \
+"NVIDIA GPU detected and driver is loaded.
+
+  Secure Boot:  disabled
+  GPU mode:     ready
+
+No restrictions on kernel modules — proceeding." 12 ;;
+        enrolled)
+            wt_msg "GPU Check — Ready" \
+"NVIDIA GPU detected and driver is loaded.
+
+  Secure Boot:  enabled
+  MOK key:      enrolled (driver is protected across reboots)
+  GPU mode:     ready
+
+Proceeding with GPU mode." 12 ;;
+        unenrolled|missing)
+            # fall through to the warning menu below
+            : ;;
+    esac
+
+    if [[ "$_mok_state" == "unenrolled" || "$_mok_state" == "missing" ]]; then
+            _GPU_CHOICE=$(wt_menu "GPU Warning — Secure Boot Active" \
+"NVIDIA GPU detected, but Secure Boot is enabled.
+The driver module may be blocked after the next reboot.
+
+  Secure Boot:  enabled
+  MOK key:      $_mok_state — not yet enrolled
+
+Choose how to proceed — or Quit for fix instructions:" 14 3 \
+                "cpu"  "Use CPU mode now (safe; re-enable GPU later)" \
+                "gpu"  "Continue with GPU (may break after reboot)" \
+                "quit" "Quit — show me how to fix Secure Boot / MOK") || true
+    else
+        _GPU_CHOICE="gpu"  # sb_off or enrolled — proceed normally
+    fi
+
+    # Treat Cancel/ESC (empty choice) as quit
+    if [[ -z "${_GPU_CHOICE:-}" && ( "$_mok_state" == "unenrolled" || "$_mok_state" == "missing" ) ]]; then
+        _GPU_CHOICE="quit"
+    fi
+
+    case "${_GPU_CHOICE:-cpu}" in
+        cpu)
+            GPU_PRECHK_SKIP=true
+            wt_info "GPU Check" "Continuing in CPU mode.  Re-run this installer after resolving Secure Boot to enable GPU." ;;
+        quit)
+                # ── Print plain-text guidance to the terminal ──────────────
+                clear
+                cat <<GUIDANCE
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECURE BOOT IS ACTIVE — GPU DRIVER MAY BE BLOCKED AFTER REBOOT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You have two options.  Pick whichever suits your machine.
+
+──────────────────────────────────────────────────────────────────────
+OPTION A — Disable Secure Boot in BIOS/UEFI (simplest)
+──────────────────────────────────────────────────────────────────────
+  Pros:  No key management; works on all distros; permanent fix.
+  Cons:  Reduces firmware-level protection against boot-time malware.
+         Some enterprise policies require Secure Boot to stay on.
+
+  Steps:
+    1. Reboot into BIOS/UEFI setup
+         (usually Del, F2, or F10 at power-on — check your model)
+    2. Navigate to:  Security → Secure Boot → Disable
+         (exact menu path varies by manufacturer)
+    3. Save and exit (F10 on most boards)
+    4. Re-run this installer:
+         bash scripts/setup-linux.sh
+
+GUIDANCE
+
+                # ── Option B wording depends on MOK state ─────────────────
+                case "$_mok_state" in
+                  enrolled)
+                    cat <<GUIDANCE
+──────────────────────────────────────────────────────────────────────
+OPTION B — Your MOK key appears to already be enrolled
+──────────────────────────────────────────────────────────────────────
+  mokutil --test-key $_mok_key_path  →  key is accepted by firmware.
+
+  This means nvidia-smi should continue working across reboots.
+  You may simply re-run the installer and choose
+  "Continue with GPU mode":
+    bash scripts/setup-linux.sh
+
+  If the GPU stops working after a future kernel update, repeat the
+  MOK enrollment steps below for the new kernel's signing key.
+
+GUIDANCE
+                    ;;
+                  unenrolled)
+                    cat <<GUIDANCE
+──────────────────────────────────────────────────────────────────────
+OPTION B — Enroll the existing MOK key (key file found, not enrolled)
+──────────────────────────────────────────────────────────────────────
+  Pros:  Keeps Secure Boot enabled; permanent fix once enrolled.
+  Cons:  Requires one extra reboot and interaction with a blue screen.
+
+  Steps:
+    1. Import the key — you will be prompted to set a short password:
+         sudo mokutil --import $_mok_key_path
+
+    2. Reboot:
+         sudo reboot
+
+    3. *** WATCH FOR THE BLUE "Perform MOK management" SCREEN ***
+       It appears briefly early in the boot sequence — do not skip it.
+         • Select  "Enroll MOK"
+         • Select  "Continue"
+         • Enter the password you set in step 1
+         • Select  "Yes"  →  machine reboots automatically
+
+    4. Verify the driver loaded:
+         nvidia-smi
+
+    5. Re-run this installer:
+         bash scripts/setup-linux.sh
+
+GUIDANCE
+                    ;;
+                  missing)
+                    cat <<GUIDANCE
+──────────────────────────────────────────────────────────────────────
+OPTION B — MOK key file not found — rebuild it first
+──────────────────────────────────────────────────────────────────────
+  Expected key location:  $_mok_key_path
+  The file is missing, so the signing key must be regenerated before
+  it can be enrolled.
+
+  Steps (Ubuntu/Debian):
+    1. Reinstall the DKMS module to regenerate the key:
+
+       *** This compiles kernel modules and will take several minutes.
+           A long pause with no output is normal — do not interrupt it. ***
+
+         sudo apt-get install --reinstall nvidia-dkms-\$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | cut -d. -f1 || echo "<version>")
+       Or reinstall whichever nvidia-dkms-* package is installed:
+         dpkg -l | grep nvidia-dkms
+
+    2. Confirm the key file now exists:
+         ls $_mok_key_path
+
+    3. Import the key — you will be prompted to set a short password:
+         sudo mokutil --import $_mok_key_path
+
+    4. Reboot:
+         sudo reboot
+
+    5. *** WATCH FOR THE BLUE "Perform MOK management" SCREEN ***
+       It appears briefly early in the boot sequence — do not skip it.
+         • Select  "Enroll MOK"
+         • Select  "Continue"
+         • Enter the password you set in step 3
+         • Select  "Yes"  →  machine reboots automatically
+
+    6. Verify the driver loaded:
+         nvidia-smi
+
+    7. Re-run this installer:
+         bash scripts/setup-linux.sh
+
+GUIDANCE
+                    ;;
+                esac
+
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                exit 0 ;;
+        *)  : ;; # gpu — proceed as normal
+    esac
 else
     _GPU_HAS_HW=false
     _GPU_SECURE_BOOT=false
@@ -523,8 +697,8 @@ The app will remind you on every startup while GPU is inactive." 22
         if [[ "$_gpu_can_reboot" == true ]]; then
             _GPU_CHOICE=$(wt_menu "GPU Not Ready — How to Proceed" \
 "Choose how to continue:" 14 3 \
-                "reboot" "Reboot now  (loads the driver; re-run installer after)" \
                 "cpu"    "Continue in CPU mode  (GPU can be enabled later)" \
+                "reboot" "Reboot now  (loads the driver; re-run installer after)" \
                 "quit"   "Quit — I will fix the driver manually first") || true
             case "${_GPU_CHOICE:-cpu}" in
                 reboot)
