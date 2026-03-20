@@ -450,6 +450,9 @@ def _parse_env_file(file_path: Path) -> dict:
                     key, value = setting_line.split("=", 1)
                     key = key.strip()
                     value = value.strip()
+                    # Strip inline ← annotation comments used in .env.example
+                    if "\u2190" in value:
+                        value = value.split("\u2190")[0].rstrip()
 
                     # Skip if key doesn't look like a valid setting name
                     # (must be uppercase/underscore, not lowercase/sentence)
@@ -657,6 +660,15 @@ def load_env_settings() -> dict:
         return {"error": str(e)}
 
 
+def _is_placeholder_value(value: str) -> bool:
+    """Return True if value looks like an unfilled .env.example placeholder."""
+    return bool(value) and (
+        "\u2190" in value  # ← inline annotation from .env.example example blocks
+        or ("<" in value and ">" in value)  # <PLACEHOLDER> syntax
+        or value.startswith("/path/to/")
+    )
+
+
 def save_env_settings(settings: dict) -> dict:
     """Save settings back to .env file, preserving structure and comments.
 
@@ -700,10 +712,10 @@ def save_env_settings(settings: dict) -> dict:
                 for category in settings.values():
                     if isinstance(category, dict) and key in category:
                         new_value = category[key].get("value", "")
-                        # Uncomment and set value if provided
-                        if new_value:
+                        # Uncomment and set value if provided (not a placeholder)
+                        if new_value and not _is_placeholder_value(new_value):
                             new_lines.append(f"{key}={new_value}\n")
-                        # Keep commented if value is empty and was originally commented
+                        # Keep commented if empty/placeholder and originally commented
                         elif is_commented:
                             new_lines.append(line)
                         # Keep as empty if was originally uncommented
@@ -725,7 +737,7 @@ def save_env_settings(settings: dict) -> dict:
                 for key, config in category.items():
                     if key not in written_keys:
                         new_value = config.get("value", "")
-                        if new_value:
+                        if new_value and not _is_placeholder_value(new_value):
                             new_lines.append(f"{key}={new_value}\n")
                             LOG.info(f"Adding new setting to .env: {key}={new_value}")
 
