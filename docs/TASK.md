@@ -97,6 +97,7 @@ Ran on koa after full Ubuntu reinstall + `git clone` + first `bash scripts/setup
 
 # Session Log
 
+2026-03-20 | lin | Found Secure Boot false-pass bug on koa reboot (container exit 128 after GPU install); fixed installer to warn when nvidia-smi passes but SB active; koa .env switched to CPU mode; container needs `docker compose up -d`
 2026-03-18 | lin | GPU pre-check dialogs + startup upgrade hint added; OPTIMIZATION_MODE default → automatic; all pushed as 613e684; preparing 2nd bare-metal validation
 2026-03-17 | lin | bare-metal clean install on koa; 3 installer bugs found + fixed; awaiting re-validation
 2026-03-16 | lin→win | installer + runtime UX validated in-place; code pushed as 9245a66

@@ -366,7 +366,37 @@ fi
 GPU_PRECHK_SKIP=false
 
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
-    : # nvidia-smi works — GPU is ready on the host; toolkit install will proceed
+    # nvidia-smi works now — but warn if Secure Boot is active, because the
+    # NVIDIA kernel module may be blocked after the next reboot.
+    if mokutil --sb-state 2>/dev/null | grep -qi 'SecureBoot enabled'; then
+        _GPU_CHOICE=$(wt_menu "GPU Warning — Secure Boot Active" \
+"Your NVIDIA GPU is working right now, but Secure Boot is enabled.
+
+After the next reboot the NVIDIA driver module may be blocked,
+which would prevent the container from starting.
+
+To ensure GPU works across reboots, either:
+  • Disable Secure Boot in BIOS/UEFI, or
+  • Enroll a MOK signing key:
+      sudo mokutil --import /var/lib/shim-signed/mok/MOK.der
+      (then reboot to complete enrollment)
+
+Choose how to proceed:" 22 3 \
+            "gpu"  "Continue with GPU mode  (may break after next reboot)" \
+            "cpu"  "Use CPU mode now  (safe; re-run installer to enable GPU later)" \
+            "quit" "Quit — I will fix Secure Boot / MOK first") || true
+        case "${_GPU_CHOICE:-gpu}" in
+            cpu)
+                GPU_PRECHK_SKIP=true
+                wt_info "GPU Check" "Continuing in CPU mode.  Re-run this installer after resolving Secure Boot to enable GPU." ;;
+            quit)
+                wt_msg "Exiting" \
+"Re-run after disabling Secure Boot or enrolling a MOK key:
+  bash scripts/setup-linux.sh" 9
+                exit 0 ;;
+            *)  : ;; # gpu — proceed as normal
+        esac
+    fi
 else
     _GPU_HAS_HW=false
     _GPU_SECURE_BOOT=false
@@ -420,20 +450,51 @@ Once 'nvidia-smi' shows your GPU correctly, re-run:
         GPU_PRECHK_SKIP=true
     else
         # GPU hardware IS present but nvidia-smi is not working.
-        if [[ "$_GPU_SECURE_BOOT" == true ]]; then
-            _gpu_diag="Secure Boot is active and is blocking the NVIDIA driver module."
-            _gpu_fix=\
-"  • Disable Secure Boot in BIOS/UEFI, or
-  • Enroll a MOK signing key:
+        if [[ "$_GPU_PKG_INSTALLED" == true && "$_GPU_MODULE_LOADED" == false ]]; then
+            # Try loading the module to get a precise error — this is the only
+            # reliable way to distinguish "needs a reboot" from "key not enrolled."
+            _modprobe_out=$(sudo modprobe nvidia 2>&1) || true
+            if lsmod 2>/dev/null | grep -q '^nvidia'; then
+                # modprobe succeeded — module loaded during this check; unload cleanly
+                sudo modprobe -r nvidia 2>/dev/null || true
+                _gpu_diag=\
+"NVIDIA driver packages are installed, but the kernel module
+was not loaded.  It loaded successfully during this check —
+a reboot should make nvidia-smi available."
+                _gpu_fix="  sudo reboot"
+                _gpu_can_reboot=true
+            elif echo "$_modprobe_out" | grep -qi 'key.*rejected\|required key'; then
+                # Secure Boot is blocking because the signing key isn't enrolled.
+                # This happens when DKMS regenerated its signing key (e.g. after a
+                # reinstall) but the new key was never confirmed at the MOK boot prompt.
+                _gpu_diag=\
+"NVIDIA driver packages are installed, but the module's signing
+key is not enrolled in the MOK database.  Secure Boot is
+blocking it (\"Key was rejected by service\")."
+                _gpu_fix=\
+"  sudo mokutil --import /var/lib/shim-signed/mok/MOK.der
+  sudo reboot
+  (at the blue MOK screen: Enroll MOK → Continue → confirm → Reboot)"
+                _gpu_can_reboot=false
+            elif [[ "$_GPU_SECURE_BOOT" == true ]]; then
+                # SB is active and modprobe failed for an unknown reason — treat as
+                # a potential signing issue; give MOK guidance as the likely fix.
+                _gpu_diag=\
+"Secure Boot is active and the NVIDIA driver module failed to load.
+This is usually a signing key issue."
+                _gpu_fix=\
+"  • Enroll the DKMS signing key:
       sudo mokutil --import /var/lib/shim-signed/mok/MOK.der
-      (then reboot to complete enrollment)"
-            _gpu_can_reboot=false
-        elif [[ "$_GPU_PKG_INSTALLED" == true && "$_GPU_MODULE_LOADED" == false ]]; then
-            _gpu_diag=\
+      sudo reboot  (confirm at the blue MOK screen)
+  • Or disable Secure Boot in BIOS/UEFI"
+                _gpu_can_reboot=false
+            else
+                _gpu_diag=\
 "NVIDIA driver packages are installed, but the kernel module
 is not loaded yet.  A reboot is usually all that is needed."
-            _gpu_fix="  sudo reboot"
-            _gpu_can_reboot=true
+                _gpu_fix="  sudo reboot"
+                _gpu_can_reboot=true
+            fi
         elif [[ "$_GPU_PKG_INSTALLED" == false ]]; then
             _gpu_diag="NVIDIA hardware found, but no driver packages are installed."
             _gpu_fix=\

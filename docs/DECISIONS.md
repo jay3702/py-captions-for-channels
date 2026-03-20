@@ -17,6 +17,18 @@
 
 ## Installer / Setup
 
+### `modprobe` probe to distinguish reboot-needed vs MOK-not-enrolled (2026-03-20)
+**Decision:** When NVIDIA packages are installed but the module is not loaded, the installer runs `sudo modprobe nvidia` and branches on the result: (1) module loads → reboot suggestion; (2) "Key was rejected by service" → specific MOK enrollment instructions (`mokutil --import MOK.der` + reboot + confirm at blue screen); (3) other failure + Secure Boot active → generic MOK/SB guidance; (4) other failure, no SB → generic reboot suggestion.
+**Rationale:** The previous logic guessed based on `mokutil --sb-state`, but SB enabled is not the same as SB blocking. After a fresh Ubuntu reinstall, DKMS generates a new signing key for nvidia but the new key is never enrolled (the old key's fingerprint is still in MOK NVRAM from the previous install). `modprobe` returns the definitive error "Key was rejected by service" — this is the only reliable signal.
+**Rejected:** Comparing `modinfo nvidia` sig_key fingerprint against `dmesg` "Loaded X.509 cert" entries — correct in theory but fragile (format normalization, sudo required for dmesg, doesn't cover all keyring sources).
+**Rejected:** Branching on `mokutil --sb-state` alone — "SB enabled" ≠ "module blocked"; a properly enrolled MOK key works fine with SB on.
+
+### Secure Boot warning when `nvidia-smi` passes but Secure Boot is active (2026-03-20)
+**Decision:** Even when `nvidia-smi` works at install time, check `mokutil --sb-state`. If Secure Boot is enabled, show a three-choice menu: continue GPU mode (risky), switch to CPU mode (safe), or quit to fix first.
+**Rationale:** The NVIDIA kernel module can be loaded from a prior session at install time, making `nvidia-smi` pass the pre-check, but it will be blocked after the next reboot — leaving the container unable to start (exit 128, "Driver Not Loaded"). This happened on koa: installer completed GPU mode successfully, then reboot caused the container to fail.
+**Rejected:** Silent GPU mode despite Secure Boot active — produces a broken install that only manifests at reboot.
+**Rejected:** Forcing CPU mode unconditionally when Secure Boot is active — users who have properly enrolled a MOK key should still be able to use GPU mode.
+
 ### Native Linux installer separate from WSL installer (2026-03)
 **Decision:** `setup-linux.sh` is a distinct script from `setup-wsl.sh`, not a combined script with flags.
 **Rationale:** WSL2 requires Windows-side steps (portproxy, Task Scheduler, `.wslconfig` networking), NVIDIA toolkit setup differs, and the guard clauses would make a combined script hard to follow.
