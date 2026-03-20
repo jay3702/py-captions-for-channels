@@ -83,12 +83,13 @@ sudo -v
 _prereq_missing=()
 command -v whiptail &>/dev/null || _prereq_missing+=(whiptail)
 command -v curl     &>/dev/null || _prereq_missing+=(curl)
+command -v lspci    &>/dev/null || _prereq_missing+=(pciutils)  # GPU pre-check
 if [[ ${#_prereq_missing[@]} -gt 0 ]]; then
     echo "Installing prerequisites: ${_prereq_missing[*]} ..."
     case "$PKG_MGR" in
-        apt)    sudo apt-get install -y -qq whiptail curl 2>/dev/null ;;
-        dnf)    sudo dnf install -y -q newt curl 2>/dev/null ;;
-        zypper) sudo zypper install -y newt curl 2>/dev/null ;;
+        apt)    sudo apt-get install -y -qq whiptail curl pciutils 2>/dev/null ;;
+        dnf)    sudo dnf install -y -q newt curl pciutils 2>/dev/null ;;
+        zypper) sudo zypper install -y newt curl pciutils 2>/dev/null ;;
     esac
 fi
 
@@ -354,6 +355,147 @@ if [[ ${#_PREFLIGHT_WARN[@]} -gt 0 ]]; then
 ${_warn_text}
 You can continue, but these may cause problems.
 Fix them first, or press OK to continue anyway." 18 || true
+    fi
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
+# GPU PRE-CHECK  (before config — user knows GPU state from the start)
+# ════════════════════════════════════════════════════════════════════════════
+GPU_PRECHK_SKIP=false
+
+if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
+    : # nvidia-smi works — GPU is ready on the host; toolkit install will proceed
+else
+    _GPU_HAS_HW=false
+    _GPU_SECURE_BOOT=false
+    _GPU_PKG_INSTALLED=false
+    _GPU_MODULE_LOADED=false
+
+    if lspci 2>/dev/null | grep -qi 'NVIDIA\|3D controller.*NVIDIA\|VGA.*NVIDIA'; then
+        _GPU_HAS_HW=true
+    fi
+    if dpkg -l 2>/dev/null | grep -qE '^ii\s+nvidia-driver' || \
+       rpm -qa 2>/dev/null | grep -q 'nvidia-driver'; then
+        _GPU_PKG_INSTALLED=true
+    fi
+    if lsmod 2>/dev/null | grep -q '^nvidia'; then
+        _GPU_MODULE_LOADED=true
+    fi
+    if mokutil --sb-state 2>/dev/null | grep -qi 'SecureBoot enabled'; then
+        _GPU_SECURE_BOOT=true
+    fi
+
+    if [[ "$_GPU_HAS_HW" == false ]]; then
+        # No NVIDIA hardware found on the PCI bus.
+        if ! wt_yesno "GPU Check — No GPU Detected" \
+"No NVIDIA GPU was detected on this machine.
+
+Whisper and ffmpeg will run in CPU mode (slower but fully functional).
+
+─────────────────────────────────────────────────────────────────
+If you believe a GPU should be present, things to check:
+
+  1. Run: lspci | grep -i nvidia
+          (your card should appear in the output)
+  2. Run: nvidia-smi
+          (should show driver version and GPU details)
+  3. Is the GPU physically seated in its PCIe slot?
+  4. Did a recent driver install require a reboot?
+          Try rebooting, then re-run this installer.
+  5. Running in a VM?  Confirm PCI passthrough is configured
+          and the guest GPU driver is installed.
+─────────────────────────────────────────────────────────────────
+
+  YES = Continue in CPU mode
+   NO = Exit so I can investigate" 28; then
+            wt_msg "Exiting" \
+"Exiting installer.
+
+Once 'nvidia-smi' shows your GPU correctly, re-run:
+  bash scripts/setup-linux.sh" 10
+            exit 0
+        fi
+        GPU_PRECHK_SKIP=true
+    else
+        # GPU hardware IS present but nvidia-smi is not working.
+        if [[ "$_GPU_SECURE_BOOT" == true ]]; then
+            _gpu_diag="Secure Boot is active and is blocking the NVIDIA driver module."
+            _gpu_fix=\
+"  • Disable Secure Boot in BIOS/UEFI, or
+  • Enroll a MOK signing key:
+      sudo mokutil --import /var/lib/shim-signed/mok/MOK.der
+      (then reboot to complete enrollment)"
+            _gpu_can_reboot=false
+        elif [[ "$_GPU_PKG_INSTALLED" == true && "$_GPU_MODULE_LOADED" == false ]]; then
+            _gpu_diag=\
+"NVIDIA driver packages are installed, but the kernel module
+is not loaded yet.  A reboot is usually all that is needed."
+            _gpu_fix="  sudo reboot"
+            _gpu_can_reboot=true
+        elif [[ "$_GPU_PKG_INSTALLED" == false ]]; then
+            _gpu_diag="NVIDIA hardware found, but no driver packages are installed."
+            _gpu_fix=\
+"  Ubuntu/Debian:  sudo ubuntu-drivers install
+  Fedora/RHEL:    sudo dnf install akmod-nvidia
+  (then reboot and re-run this installer)"
+            _gpu_can_reboot=false
+        else
+            _gpu_diag=\
+"NVIDIA hardware found, but nvidia-smi is not responding.
+A reboot may be enough to load the driver."
+            _gpu_fix="  sudo reboot"
+            _gpu_can_reboot=true
+        fi
+
+        wt_msg "GPU Not Ready" \
+"${_gpu_diag}
+
+To fix:
+${_gpu_fix}
+
+This installer does not install or repair OS GPU drivers.
+Once nvidia-smi works, re-run this installer to enable GPU.
+The app will remind you on every startup while GPU is inactive." 22
+
+        if [[ "$_gpu_can_reboot" == true ]]; then
+            _GPU_CHOICE=$(wt_menu "GPU Not Ready — How to Proceed" \
+"Choose how to continue:" 14 3 \
+                "reboot" "Reboot now  (loads the driver; re-run installer after)" \
+                "cpu"    "Continue in CPU mode  (GPU can be enabled later)" \
+                "quit"   "Quit — I will fix the driver manually first") || true
+            case "${_GPU_CHOICE:-cpu}" in
+                reboot)
+                    wt_msg "Rebooting" \
+"Rebooting now.
+
+After rebooting, confirm nvidia-smi shows your GPU, then re-run:
+  bash scripts/setup-linux.sh" 11
+                    sudo reboot; exit 0 ;;
+                quit)
+                    wt_msg "Exiting" \
+"Re-run after fixing the GPU driver:
+  bash scripts/setup-linux.sh" 9
+                    exit 0 ;;
+                *)  GPU_PRECHK_SKIP=true
+                    wt_info "GPU Check" "Continuing in CPU mode.  GPU can be enabled later by re-running this installer."
+                    sleep 2 ;;
+            esac
+        else
+            if wt_yesno "GPU Not Ready — How to Proceed" \
+"How would you like to continue?
+
+  YES = Exit now to fix the GPU driver first
+   NO = Continue in CPU mode  (GPU can be enabled later)"; then
+                wt_msg "Exiting" \
+"Re-run after fixing the GPU driver:
+  bash scripts/setup-linux.sh" 9
+                exit 0
+            else
+                GPU_PRECHK_SKIP=true
+                wt_info "GPU Check" "Continuing in CPU mode.  GPU can be enabled later by re-running this installer."
+                sleep 2
+            fi
+        fi
     fi
 fi
 
@@ -669,114 +811,10 @@ fi
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 2 — NVIDIA Container Toolkit  (auto-detect; skip if no GPU)
 # ════════════════════════════════════════════════════════════════════════════
-CURRENT_STEP="GPU Detection"
+CURRENT_STEP="GPU / Container Toolkit"
 GPU_OK=false
-SKIP_NVIDIA=false
-
-if ! command -v nvidia-smi &>/dev/null || ! nvidia-smi &>/dev/null 2>&1; then
-    # ── Diagnose why nvidia-smi failed ───────────────────────────────────────
-    # Distinguish "no GPU hardware" (silent skip) from "GPU present but broken"
-    # (show guidance and let the user choose: fix first, or continue CPU-only).
-    _GPU_HAS_HW=false
-    _GPU_SECURE_BOOT=false
-    _GPU_PKG_INSTALLED=false
-    _GPU_MODULE_LOADED=false
-
-    # Check for NVIDIA hardware on the PCI bus
-    if lspci 2>/dev/null | grep -qi 'NVIDIA\|3D controller.*NVIDIA\|VGA.*NVIDIA'; then
-        _GPU_HAS_HW=true
-    fi
-
-    # Check if NVIDIA driver packages are installed
-    if dpkg -l 2>/dev/null | grep -qE '^ii\s+nvidia-driver' || \
-       rpm -qa 2>/dev/null | grep -q 'nvidia-driver'; then
-        _GPU_PKG_INSTALLED=true
-    fi
-
-    # Check if kernel module is currently loaded
-    if lsmod 2>/dev/null | grep -q '^nvidia'; then
-        _GPU_MODULE_LOADED=true
-    fi
-
-    # Check if Secure Boot is blocking unsigned modules
-    if mokutil --sb-state 2>/dev/null | grep -qi 'SecureBoot enabled'; then
-        _GPU_SECURE_BOOT=true
-    fi
-
-    if [[ "$_GPU_HAS_HW" == false ]]; then
-        # No GPU hardware detected on the PCI bus.
-        # Show a dismissable confirmation so users who expected a GPU can exit
-        # and investigate rather than silently ending up in CPU mode.
-        SKIP_NVIDIA=true
-        if ! wt_yesno "GPU Detection" \
-"No NVIDIA GPU hardware was detected on this machine.
-
-Whisper will run in CPU mode (slower, but fully functional).
-
-If you expected a GPU to be present, exit now, verify the GPU
-is visible to the OS (nvidia-smi), and re-run this installer.
-
-  YES = Continue with CPU mode
-   NO = Exit so I can verify my GPU first"; then
-            wt_msg "Exiting" \
-"Exiting installer.
-
-Verify your GPU is working (nvidia-smi should show your card),
-then re-run: bash scripts/setup-linux.sh" 10
-            exit 0
-        fi
-    else
-        # GPU hardware IS present but nvidia-smi failed — need user decision
-        _GPU_DIAGNOSIS=""
-        _GPU_FIX_HINT=""
-
-        if [[ "$_GPU_SECURE_BOOT" == true ]]; then
-            _GPU_DIAGNOSIS="NVIDIA GPU hardware detected, but Secure Boot is blocking the driver module."
-            _GPU_FIX_HINT="Disable Secure Boot in BIOS/UEFI, or enroll a MOK signing key (mokutil --import)."
-        elif [[ "$_GPU_PKG_INSTALLED" == true && "$_GPU_MODULE_LOADED" == false ]]; then
-            _GPU_DIAGNOSIS="NVIDIA GPU hardware detected — driver packages are installed but the kernel module is not loaded."
-            _GPU_FIX_HINT="A reboot is usually enough after a first-time driver install."
-        elif [[ "$_GPU_PKG_INSTALLED" == false ]]; then
-            _GPU_DIAGNOSIS="NVIDIA GPU hardware detected, but no NVIDIA driver packages are installed."
-            _GPU_FIX_HINT="Install your OS GPU driver first (e.g. ubuntu-drivers install), then re-run this installer."
-        else
-            _GPU_DIAGNOSIS="NVIDIA GPU hardware detected, but nvidia-smi is not responding."
-            _GPU_FIX_HINT="Try rebooting to let the driver activate, then verify with nvidia-smi."
-        fi
-
-        # Show diagnosis + brief pointer
-        wt_msg "GPU Driver Issue" \
-"${_GPU_DIAGNOSIS}
-
-Suggestion: ${_GPU_FIX_HINT}
-
-This installer does not install or repair OS GPU drivers.
-Once nvidia-smi works, re-run this installer to enable GPU mode.
-
-You can also continue now in CPU mode — slower but fully functional.
-The app will remind you on each startup until GPU is enabled." 20
-
-        # Let the user choose exit-to-fix or continue CPU-only
-        if wt_yesno "GPU Driver Issue" \
-"How would you like to proceed?
-
-  YES = Exit now so you can fix the GPU driver first
-   NO = Continue with CPU mode (you can enable GPU later)"; then
-            wt_msg "Exiting" \
-"Exiting installer.
-
-Once nvidia-smi works, re-run:
-  bash scripts/setup-linux.sh
-
-(All completed steps will be skipped.)" 10
-            exit 0
-        else
-            SKIP_NVIDIA=true
-            wt_info "GPU Detection" "Continuing in CPU mode.\nRe-run this installer after fixing the GPU driver to enable acceleration."
-            sleep 2
-        fi
-    fi
-fi
+# GPU_PRECHK_SKIP was determined in the pre-flight GPU check above.
+SKIP_NVIDIA=$GPU_PRECHK_SKIP
 
 if [[ "$SKIP_NVIDIA" == false ]]; then
     CURRENT_STEP="NVIDIA Container Toolkit"

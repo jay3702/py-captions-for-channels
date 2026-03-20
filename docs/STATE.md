@@ -25,10 +25,11 @@
   - **Bare-metal clean-install validated on koa (2026-03-17)** — three installer bugs found and fixed (see below)
   - **GPU driver pre-check (2026-03-18)** — installer now diagnoses why `nvidia-smi` fails (Secure Boot, module not loaded, packages missing) and offers: exit to fix first, or continue CPU-only. Silent skip only when no NVIDIA hardware is present.
 - **`__main__.py` startup GPU upgrade hint (2026-03-18)** — when running in CPU mode, the app checks `/proc/driver/nvidia` (visible inside the container via shared /proc) at every startup and logs an actionable warning with exact `.env` settings to enable GPU when the host has a working NVIDIA driver.
+- **GPU pre-check moved to installer front (2026-03-19)** — `setup-linux.sh` now runs GPU detection *before* the Welcome dialog (previously Step 2 after Docker install). Four cases: (1) nvidia-smi works → proceed silently; (2) no HW on PCI bus → CPU-only dialog with troubleshooting checklist; (3) HW present, module not loaded / unknown → three-way menu: reboot now, continue CPU, quit; (4) Secure Boot blocking or no packages → two-way: exit to fix, or continue CPU. `pciutils` added to installer prerequisites so `lspci` is always available for the early check.
 
 ## In Progress
 
-- **Re-validation after installer bug fixes** — re-run `setup-linux.sh` on koa clean install to confirm all three fixes resolve the observed issues
+- **Re-validation after installer bug fixes + GPU pre-check move** — re-run `setup-linux.sh` on koa clean install to confirm all three fixes resolve and the early GPU dialog works correctly
 
 ## Known Issues / Pending
 
