@@ -705,6 +705,16 @@ async function showManualProcessModal() {
       }
     }
 
+    // Set checkbox defaults from current pipeline settings
+    const settingsRes = await fetch('/api/settings');
+    if (settingsRes.ok) {
+      const settingsData = await settingsRes.json();
+      const generateSrtEl = document.getElementById('manual-process-generate-srt');
+      const runTranscodeEl = document.getElementById('manual-process-run-transcode');
+      if (generateSrtEl) generateSrtEl.checked = true;
+      if (runTranscodeEl) runTranscodeEl.checked = !!settingsData.transcode_for_firetv;
+    }
+
     const res = await fetch('/api/recordings');
     if (!res.ok) throw new Error('Failed to fetch recordings');
     const data = await res.json();
@@ -825,7 +835,8 @@ async function submitManualProcessing() {
     return;
   }
   
-  const skipCaptionGeneration = document.getElementById('manual-process-skip-caption').checked;
+  const generateSrt = document.getElementById('manual-process-generate-srt').checked;
+  const runTranscode = document.getElementById('manual-process-run-transcode').checked;
   const logVerbosity = document.getElementById('manual-process-log-verbosity').value;
   
   try {
@@ -834,7 +845,8 @@ async function submitManualProcessing() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         paths, 
-        skip_caption_generation: skipCaptionGeneration,
+        generate_srt: generateSrt,
+        run_transcode: runTranscode,
         log_verbosity: logVerbosity
       })
     });

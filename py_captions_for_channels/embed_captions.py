@@ -1729,6 +1729,11 @@ def main():
         help="Skip caption generation step (assume SRT exists)",
     )
     parser.add_argument(
+        "--skip-transcode",
+        action="store_true",
+        help="Skip ffmpeg transcode step (generate SRT only, no container rewrite)",
+    )
+    parser.add_argument(
         "--verbosity",
         default=os.getenv("LOG_VERBOSITY", "NORMAL"),
         help="Log verbosity (MINIMAL, NORMAL, VERBOSE)",
@@ -2326,7 +2331,8 @@ def main():
             raise
 
     # SRT-only mode: skip all ffmpeg steps when TRANSCODE_FOR_FIRETV=false
-    if not TRANSCODE_FOR_FIRETV:
+    # or when --skip-transcode is explicitly passed for this job
+    if not TRANSCODE_FOR_FIRETV or args.skip_transcode:
         log.info(
             "SRT-only mode (TRANSCODE_FOR_FIRETV=false) — " "captions written to: %s",
             srt_path,

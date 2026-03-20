@@ -117,7 +117,8 @@ class StateBackend:
     def mark_for_manual_process(
         self,
         path: str,
-        skip_caption_generation: bool = False,
+        generate_srt: bool = True,
+        run_transcode: bool = True,
         log_verbosity: str = "NORMAL",
     ):
         """
@@ -125,7 +126,12 @@ class StateBackend:
         Now stores in database via ManualQueueService.
         """
         service = self._get_service()
-        service.add_to_queue(path, skip_caption_generation, log_verbosity)
+        service.add_to_queue(
+            path,
+            log_verbosity=log_verbosity,
+            generate_srt=generate_srt,
+            run_transcode=run_transcode,
+        )
 
     def has_manual_process_request(self, path: str) -> bool:
         """
@@ -144,10 +150,17 @@ class StateBackend:
         item = service.get_queue_item(path)
         if item:
             return {
+                "generate_srt": item.generate_srt,
+                "run_transcode": item.run_transcode,
                 "skip_caption_generation": item.skip_caption_generation,
                 "log_verbosity": item.log_verbosity,
             }
-        return {"skip_caption_generation": False, "log_verbosity": "NORMAL"}
+        return {
+            "generate_srt": True,
+            "run_transcode": True,
+            "skip_caption_generation": False,
+            "log_verbosity": "NORMAL",
+        }
 
     def clear_manual_process_request(self, path: str):
         """

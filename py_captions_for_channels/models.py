@@ -151,6 +151,9 @@ class ManualQueueItem(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     path = Column(String(1000), unique=True, nullable=False)
+    generate_srt = Column(Boolean, default=True, nullable=False)
+    run_transcode = Column(Boolean, default=True, nullable=False)
+    # Kept for backwards-compat; new code uses generate_srt / run_transcode
     skip_caption_generation = Column(Boolean, default=False, nullable=False)
     log_verbosity = Column(String(50), default="NORMAL", nullable=False)
     added_at = Column(

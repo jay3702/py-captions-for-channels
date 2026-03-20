@@ -17,17 +17,26 @@ class ManualQueueService:
         path: str,
         skip_caption_generation: bool = False,
         log_verbosity: str = "NORMAL",
+        generate_srt: Optional[bool] = None,
+        run_transcode: Optional[bool] = None,
     ) -> ManualQueueItem:
         """Add a path to the manual process queue.
 
         Args:
             path: File path to process
-            skip_caption_generation: Whether to skip caption generation
+            skip_caption_generation: Legacy flag; overridden by generate_srt when set
             log_verbosity: Log verbosity level
+            generate_srt: Whether to run Whisper and write the SRT file
+            run_transcode: Whether to run the ffmpeg transcode step
 
         Returns:
             Created ManualQueueItem
         """
+        # Derive generate_srt / run_transcode from legacy flag when not given
+        if generate_srt is None:
+            generate_srt = not skip_caption_generation
+        if run_transcode is None:
+            run_transcode = True
         # Check if already exists
         existing = (
             self.db.query(ManualQueueItem).filter(ManualQueueItem.path == path).first()
@@ -35,7 +44,9 @@ class ManualQueueService:
 
         if existing:
             # Update settings if already in queue
-            existing.skip_caption_generation = skip_caption_generation
+            existing.generate_srt = generate_srt
+            existing.run_transcode = run_transcode
+            existing.skip_caption_generation = not generate_srt  # keep in sync
             existing.log_verbosity = log_verbosity
             existing.updated_at = datetime.now(timezone.utc)
             try:
@@ -56,7 +67,9 @@ class ManualQueueService:
         # Create new queue item
         item = ManualQueueItem(
             path=path,
-            skip_caption_generation=skip_caption_generation,
+            generate_srt=generate_srt,
+            run_transcode=run_transcode,
+            skip_caption_generation=not generate_srt,  # keep in sync
             log_verbosity=log_verbosity,
         )
         self.db.add(item)

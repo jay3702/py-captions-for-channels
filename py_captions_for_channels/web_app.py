@@ -42,6 +42,7 @@ from .config import (
     translate_dvr_path,
     PROCESSING_ENABLED,
     WHITELIST_REQUIRED,
+    TRANSCODE_FOR_FIRETV,
 )
 from .state import StateBackend
 from .execution_tracker import build_manual_process_job_id, get_tracker
@@ -899,7 +900,10 @@ async def set_env_settings(data: dict = Body(...)) -> dict:
 async def get_settings(db: Session = Depends(get_db)) -> dict:
     """Get pipeline settings and whitelist from database."""
     try:
-        return load_settings(db)
+        result = load_settings(db)
+        # Expose read-only config values used by the UI
+        result["transcode_for_firetv"] = TRANSCODE_FOR_FIRETV
+        return result
     except Exception as e:
         LOG.error(f"Error loading settings: {e}")
         return {"error": str(e)}
@@ -2838,13 +2842,14 @@ async def add_to_manual_process_queue(request: Request) -> dict:
     """Add paths to the manual process queue.
 
     Expects JSON body:
-    {"paths": ["path1", ...], "skip_caption_generation": bool,
+    {"paths": ["path1", ...], "generate_srt": bool, "run_transcode": bool,
     "log_verbosity": str}
     """
     try:
         data = await request.json()
         paths = data.get("paths", [])
-        skip_caption_generation = data.get("skip_caption_generation", False)
+        generate_srt = data.get("generate_srt", True)
+        run_transcode = data.get("run_transcode", True)
         log_verbosity = data.get("log_verbosity", "NORMAL")
 
         if not paths:
@@ -2858,7 +2863,10 @@ async def add_to_manual_process_queue(request: Request) -> dict:
             # mapping is not configured via DVR_PATH_PREFIX / LOCAL_PATH_PREFIX)
             path = translate_dvr_path(raw_path)
             state_backend.mark_for_manual_process(
-                path, skip_caption_generation, log_verbosity
+                path,
+                generate_srt=generate_srt,
+                run_transcode=run_transcode,
+                log_verbosity=log_verbosity,
             )
             filename = path.split("/")[-1]
             title = f"Manual: {filename}"

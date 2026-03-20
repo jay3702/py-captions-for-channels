@@ -391,10 +391,14 @@
         <div class="modal-body">
            <div class="manual-process-controls">
              <p class="muted">Browse recordings from Channels DVR and select items to process:</p>
-             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
+             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin: 15px 0;">
                <div class="settings-group">
-                 <label for="manual-process-skip-caption">Skip Caption Generation</label>
-                 <input type="checkbox" id="manual-process-skip-caption" name="skip_caption_generation">
+                 <label for="manual-process-generate-srt">Generate SRT (Whisper)</label>
+                 <input type="checkbox" id="manual-process-generate-srt" name="generate_srt" checked>
+               </div>
+               <div class="settings-group">
+                 <label for="manual-process-run-transcode">Run Transcode</label>
+                 <input type="checkbox" id="manual-process-run-transcode" name="run_transcode">
                </div>
                <div class="settings-group">
                  <label for="manual-process-log-verbosity">Log Verbosity</label>

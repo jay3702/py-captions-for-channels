@@ -594,9 +594,11 @@ class Pipeline:
                 # Build command with settings from event or config
                 whisper_model = getattr(event, "whisper_model", "medium")
                 log_verbosity = getattr(event, "log_verbosity", "NORMAL")
-                skip_caption_generation = getattr(
-                    event, "skip_caption_generation", False
-                )
+                # generate_srt / run_transcode take precedence; fall back to
+                # legacy skip_caption_generation for backwards compatibility
+                _legacy_skip = getattr(event, "skip_caption_generation", False)
+                generate_srt = getattr(event, "generate_srt", not _legacy_skip)
+                run_transcode = getattr(event, "run_transcode", True)
                 srt_path = getattr(event, "srt_path", None)
                 if not srt_path:
                     # Default SRT path: same dir as input, basename.srt
@@ -619,7 +621,8 @@ class Pipeline:
                         if log_verbosity
                         else ""
                     ),
-                    "--skip-caption-generation" if skip_caption_generation else "",
+                    "--skip-caption-generation" if not generate_srt else "",
+                    "--skip-transcode" if not run_transcode else "",
                 ]
                 options_str = " ".join([opt for opt in options if opt])
                 cmd = (
