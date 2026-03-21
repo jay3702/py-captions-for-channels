@@ -122,6 +122,37 @@ def _apply_migrations():
                     conn.commit()
                 LOG.info("Migration complete: job_sequence column added and backfilled")
 
+        # Migration: Add generate_srt, run_transcode, skip_caption_generation
+        if "manual_queue" in inspector.get_table_names():
+            mq_cols = [col["name"] for col in inspector.get_columns("manual_queue")]
+            with engine.connect() as conn:
+                if "generate_srt" not in mq_cols:
+                    LOG.info("Adding generate_srt column to manual_queue")
+                    conn.execute(
+                        text(
+                            "ALTER TABLE manual_queue"
+                            " ADD COLUMN generate_srt BOOLEAN DEFAULT 1"
+                        )
+                    )
+                if "run_transcode" not in mq_cols:
+                    LOG.info("Adding run_transcode column to manual_queue")
+                    conn.execute(
+                        text(
+                            "ALTER TABLE manual_queue"
+                            " ADD COLUMN run_transcode BOOLEAN DEFAULT 1"
+                        )
+                    )
+                if "skip_caption_generation" not in mq_cols:
+                    LOG.info("Adding skip_caption_generation column to manual_queue")
+                    conn.execute(
+                        text(
+                            "ALTER TABLE manual_queue"
+                            " ADD COLUMN skip_caption_generation BOOLEAN DEFAULT 0"
+                        )
+                    )
+                conn.commit()
+            LOG.info("Migration complete: manual_queue columns verified/added")
+
     except Exception as e:
         LOG.warning(f"Error applying migrations: {e}")
         # Don't fail startup if migration fails - column might already exist
