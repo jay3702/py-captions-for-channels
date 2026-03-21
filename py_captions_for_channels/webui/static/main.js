@@ -1095,8 +1095,14 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
                          'KEEP_ORIGINAL', 'DRY_RUN'];
   
   // Fields to hide (replaced by other settings or not user-configurable)
-  // LOCAL_PATH_PREFIX is always kept in sync with DVR_MEDIA_MOUNT automatically on save
-  const hiddenFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'CAPTION_COMMAND', 'LOCAL_PATH_PREFIX'];  // DISCOVERY_MODE replaces first 3, CAPTION_COMMAND is auto-detected, LOCAL_PATH_PREFIX mirrors DVR_MEDIA_MOUNT
+  // DVR_RECORDINGS_PATH mirrors DVR_MEDIA_MOUNT (auto-synced on save)
+  // Encoder quality keys are rendered separately in the Encoder Quality section below
+  const hiddenFields = [
+    'USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'CAPTION_COMMAND', 'LOCAL_PATH_PREFIX',
+    'DVR_RECORDINGS_PATH',
+    'NVENC_CQ', 'QSV_PRESET', 'QSV_GLOBAL_QUALITY',
+    'AMF_QUALITY', 'AMF_QP', 'VAAPI_QP', 'VAAPI_DEVICE', 'X264_CRF',
+  ];
   
   const dropdownFields = {
     'DISCOVERY_MODE': ['polling', 'webhook', 'mock'],
@@ -1160,7 +1166,8 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
       
       // Dropdown fields
       if (dropdownFields[key]) {
-        html += `<select id="env-${key}" name="${key}" data-category="${category}" style="width:100%;">`;
+        const _onch = (key === 'GPU_ENCODER' || key === 'WHISPER_DEVICE') ? ' onchange="_applyEncoderVisibility()"' : '';
+        html += `<select id="env-${key}" name="${key}" data-category="${category}"${_onch} style="width:100%;">`;
         for (const option of dropdownFields[key]) {
           const selected = value === option ? 'selected' : '';
           html += `<option value="${option}" ${selected}>${option}</option>`;
@@ -1223,6 +1230,56 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
     html += `</div>`;
   }
   
+  // Encoder Quality Tuning section — shows only the active encoder's settings
+  {
+    const _encGroups = [
+      { id: 'nvenc', label: 'NVIDIA (NVENC)', keys: ['NVENC_CQ'] },
+      { id: 'qsv',  label: 'Intel Quick Sync (QSV)', keys: ['QSV_PRESET', 'QSV_GLOBAL_QUALITY'] },
+      { id: 'amf',  label: 'AMD (AMF)', keys: ['AMF_QUALITY', 'AMF_QP'] },
+      { id: 'vaapi',label: 'VA-API (Intel/AMD Linux)', keys: ['VAAPI_QP', 'VAAPI_DEVICE'] },
+      { id: 'cpu',  label: 'CPU / libx264 fallback', keys: ['X264_CRF'] },
+    ];
+    const _gpuEnc = settings.pipeline?.GPU_ENCODER?.value || 'auto';
+    const _wDev   = settings.pipeline?.WHISPER_DEVICE?.value || 'auto';
+    const _initEnc = _gpuEnc !== 'auto' ? _gpuEnc
+      : _wDev === 'nvidia' ? 'nvenc'
+      : _wDev === 'intel'  ? 'qsv'
+      : _wDev === 'amd'    ? 'amf'
+      : _wDev === 'none'   ? 'cpu'
+      : 'auto';
+    const _encLabels = {nvenc:'NVIDIA NVENC', qsv:'Intel QSV', amf:'AMD AMF', vaapi:'VA-API', cpu:'CPU / libx264'};
+    const _encTitle = _initEnc === 'auto' ? 'All Encoders' : (_encLabels[_initEnc] || _initEnc.toUpperCase());
+    html += `<div class="settings-category" style="margin-bottom: 24px;">`;
+    html += `<h3 id="encoder-quality-title" style="margin: 0 0 8px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">Encoder Quality Tuning &mdash; ${_encTitle}</h3>`;
+    html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 16px 0;">Only applies when TRANSCODE_FOR_FIRETV is enabled. Changing GPU or GPU_ENCODER above updates which section is shown.</p>`;
+    for (const grp of _encGroups) {
+      const _show = _initEnc === 'auto' || _initEnc === grp.id;
+      html += `<div id="encoder-section-${grp.id}" style="${_show ? '' : 'display:none;'}">`;
+      html += `<h4 style="margin: 0 0 10px 0; font-size: 13px; color: var(--muted);">${grp.label}</h4>`;
+      for (const key of grp.keys) {
+        let config = null;
+        for (const cat of Object.values(settings)) {
+          if (cat && typeof cat === 'object' && cat[key]) { config = cat[key]; break; }
+        }
+        if (!config) continue;
+        const eVal = dbOverrides[key] !== undefined ? dbOverrides[key] : (config.value || '');
+        const eDesc = config.description || '';
+        const eDef  = config.default || '';
+        html += `<div class="settings-group" style="margin-bottom: 16px;">`;
+        html += `<label for="env-${key}" style="font-weight: 600; display: block; margin-bottom: 4px;">${key}</label>`;
+        if (eDesc) html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 8px 0;">${eDesc}</p>`;
+        if (numericFields.includes(key)) {
+          html += `<input type="number" id="env-${key}" name="${key}" data-category="pipeline" value="${eVal}" placeholder="${eDef}" style="width:100%;">`;
+        } else {
+          html += `<input type="text" id="env-${key}" name="${key}" data-category="pipeline" value="${eVal}" placeholder="${eDef}" style="width:100%;">`;
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
   // Add whitelist editor section after all env categories
   html += `<div class="settings-category" style="margin-bottom: 24px;">`;
   html += `<h3 style="margin: 0 0 16px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">
@@ -1242,6 +1299,28 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
     container.innerHTML = '<p style="color: orange;">No settings found in response.</p>';
   } else {
     container.innerHTML = html;
+    _applyEncoderVisibility();
+  }
+}
+
+function _applyEncoderVisibility() {
+  const gpuEncoder   = document.querySelector('select[name="GPU_ENCODER"]')?.value || 'auto';
+  const whisperDevice= document.querySelector('select[name="WHISPER_DEVICE"]')?.value || 'auto';
+  let activeEncoder  = gpuEncoder !== 'auto' ? gpuEncoder
+    : whisperDevice === 'nvidia' ? 'nvenc'
+    : whisperDevice === 'intel'  ? 'qsv'
+    : whisperDevice === 'amd'    ? 'amf'
+    : whisperDevice === 'none'   ? 'cpu'
+    : 'auto';
+  const labels = {nvenc:'NVIDIA NVENC', qsv:'Intel QSV', amf:'AMD AMF', vaapi:'VA-API', cpu:'CPU / libx264'};
+  ['nvenc','qsv','amf','vaapi','cpu'].forEach(enc => {
+    const el = document.getElementById(`encoder-section-${enc}`);
+    if (el) el.style.display = (activeEncoder === 'auto' || activeEncoder === enc) ? '' : 'none';
+  });
+  const titleEl = document.getElementById('encoder-quality-title');
+  if (titleEl) {
+    const label = activeEncoder === 'auto' ? 'All Encoders' : (labels[activeEncoder] || activeEncoder.toUpperCase());
+    titleEl.textContent = `Encoder Quality Tuning — ${label}`;
   }
 }
 
@@ -1273,11 +1352,12 @@ async function saveEnvSettings(event) {
     settings[category][name] = { value };
   });
   
-  // LOCAL_PATH_PREFIX is hidden from the UI but must always equal DVR_MEDIA_MOUNT.
-  // Mirror it automatically so the saved .env stays consistent.
+  // LOCAL_PATH_PREFIX and DVR_RECORDINGS_PATH are hidden from the UI but must
+  // always equal DVR_MEDIA_MOUNT. Mirror them automatically on save.
   for (const [cat, fields] of Object.entries(settings)) {
     if (fields['DVR_MEDIA_MOUNT'] !== undefined) {
-      settings[cat]['LOCAL_PATH_PREFIX'] = { value: fields['DVR_MEDIA_MOUNT'].value };
+      settings[cat]['LOCAL_PATH_PREFIX']   = { value: fields['DVR_MEDIA_MOUNT'].value };
+      settings[cat]['DVR_RECORDINGS_PATH'] = { value: fields['DVR_MEDIA_MOUNT'].value };
     }
   }
   
