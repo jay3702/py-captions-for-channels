@@ -69,6 +69,7 @@ logger = logging.getLogger(__name__)
 # Global orphan cleanup scheduler
 orphan_cleanup_scheduler = None
 cleanup_task = None
+quarantine_purge_task = None
 
 # Lock to prevent concurrent filesystem scans (avoids race conditions
 # where two scans quarantine the same files simultaneously)
@@ -111,7 +112,7 @@ def _build_quarantine_service(db):
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and system monitor on application startup."""
-    global orphan_cleanup_scheduler, cleanup_task
+    global orphan_cleanup_scheduler, cleanup_task, quarantine_purge_task
 
     init_db()
     # Start system monitor
@@ -144,8 +145,35 @@ async def startup_event():
             logger.error(
                 f"Failed to start orphan cleanup scheduler: {e}", exc_info=True
             )
+        # Also start daily quarantine auto-purge
+        quarantine_purge_task = asyncio.create_task(
+            quarantine_autopurge_background_task()
+        )
+        logger.info("Quarantine auto-purge task started (daily)")
     else:
         logger.info("Orphan cleanup scheduler disabled")
+
+
+async def quarantine_autopurge_background_task():
+    """Background task to purge expired quarantine items once per day."""
+    while True:
+        try:
+            await asyncio.sleep(86400)  # 24 hours
+            db = next(get_db())
+            try:
+                service = _build_quarantine_service(db)
+                count = service.delete_expired_files()
+                if count:
+                    logger.info(
+                        "Quarantine auto-purge: deleted %d expired file(s)", count
+                    )
+            finally:
+                db.close()
+        except asyncio.CancelledError:
+            logger.info("Quarantine auto-purge task cancelled")
+            break
+        except Exception as e:
+            logger.error("Error in quarantine auto-purge task: %s", e, exc_info=True)
 
 
 async def orphan_cleanup_background_task():
@@ -174,6 +202,13 @@ async def shutdown_event():
         cleanup_task.cancel()
         try:
             await cleanup_task
+        except asyncio.CancelledError:
+            pass
+
+    if quarantine_purge_task:
+        quarantine_purge_task.cancel()
+        try:
+            await quarantine_purge_task
         except asyncio.CancelledError:
             pass
 
