@@ -67,7 +67,7 @@ The script downloads the required installer files, then runs `setup-wsl.ps1`, wh
 
 ### After Install — Both Platforms
 
-1. **Open the dashboard** at `http://YOUR_SERVER_IP:8000` (Windows: `http://localhost:8000`)
+1. **Open the dashboard** at `http://YOUR_SERVER_IP:8000` (Windows: `http://localhost:8000`). See [docs/WEB_UI.md](docs/WEB_UI.md) for a full reference of every tab and button.
 2. **Setup Wizard** — click the ⚙ gear icon → **Setup Wizard** to verify the recordings mount. The wizard connects to your DVR, auto-detects the media folder path, and writes the Docker volume configuration.
 3. **Whitelist shows** — go to **Recordings**, browse completed recordings from your DVR, and check the box next to each show you want captioned. Without a whitelist, nothing is processed.
 4. **Test** — click **Manual Process** on one short recording. With `DRY_RUN=true` the pipeline logs what it would do without touching files. Review the result in **History**.

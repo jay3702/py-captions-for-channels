@@ -90,6 +90,7 @@ For manual installation, troubleshooting, and developer setup: **[INSTALL.md](IN
 | Document | Description |
 |----------|-------------|
 | [INSTALL.md](INSTALL.md) | Installation — quick one-command and manual tracks, troubleshooting, developer setup |
+| [docs/WEB_UI.md](docs/WEB_UI.md) | Web dashboard reference — tabs, buttons, dialogs |
 | [SETUP_ADVANCED.md](SETUP_ADVANCED.md) | GPU tuning, Fire TV transcoding, webhooks, whitelist regex |
 | [.env.example](.env.example) | All configuration options with descriptions |
 | [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) | Hardware benchmarks and sizing |
