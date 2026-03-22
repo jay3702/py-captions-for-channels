@@ -366,7 +366,34 @@ Proceed?" 16 || cancelled
 # STEP 1 — Docker Engine
 # ════════════════════════════════════════════════════════════════════════════
 CURRENT_STEP="Docker Engine"
+
+# Detect Docker Desktop WSL integration: docker CLI works but systemd service
+# is absent (Desktop injects the socket via its own daemon process, not systemd).
+_DOCKER_DESKTOP=false
 if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+    if ! (systemctl is-active docker &>/dev/null 2>&1 || \
+          service docker status &>/dev/null 2>&1); then
+        _DOCKER_DESKTOP=true
+    fi
+fi
+
+if $_DOCKER_DESKTOP; then
+    wt_yesno "Docker Desktop Detected" \
+"Docker appears to be provided by Docker Desktop (WSL integration).
+
+This works for running py-captions, BUT Docker Desktop must be
+running on Windows for the container to start — it will NOT
+auto-start with Windows like a native Docker Engine install would.
+
+Recommended: In Docker Desktop on Windows, go to:
+  Settings → Resources → WSL Integration
+and DISABLE integration for this distro, then re-run this installer.
+That lets native Docker Engine take over with reliable auto-start.
+
+Continue using Docker Desktop anyway?" 18 || cancelled
+    wt_info "Docker Engine" "Using Docker Desktop — skipping native Engine install."
+    sleep 1
+elif command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
     wt_info "Docker Engine" "Docker already installed — skipping."
     sleep 1
 else
@@ -402,8 +429,15 @@ fi
 
 # Ensure daemon is running
 if ! docker info &>/dev/null 2>&1; then
-    wt_info "Docker Engine" "Starting Docker daemon..."
-    sudo service docker start; sleep 2
+    if $_DOCKER_DESKTOP; then
+        wt_info "Docker Engine" \
+"Docker Desktop daemon is not responding.
+Make sure Docker Desktop is running on Windows, then press OK to retry."
+        sleep 2
+    else
+        wt_info "Docker Engine" "Starting Docker daemon..."
+        sudo service docker start; sleep 2
+    fi
 fi
 
 # Fix compose plugin symlink if needed
@@ -916,6 +950,11 @@ if [[ "$WSL_RESTART_NEEDED" == true ]]; then
     WSL_RESTART_NOTE="\n\nNOTE: systemd was just enabled — the PowerShell\nscript will restart WSL automatically when this closes."
 fi
 
+DOCKER_DESKTOP_NOTE=""
+if $_DOCKER_DESKTOP; then
+    DOCKER_DESKTOP_NOTE="\n\nNOTE: Using Docker Desktop. The container will only\nrun while Docker Desktop is open on Windows. For reliable\nauto-start, disable WSL integration in Docker Desktop\n(Settings → Resources → WSL Integration) and re-run\nthis installer to switch to native Docker Engine."
+fi
+
 wt_msg "Setup Complete" \
 "py-captions-for-channels is running!${STARTUP_STATUS}
 
@@ -927,6 +966,6 @@ Next steps:
   1. Open ${WEB_UI_URL}
   2. Run the Setup Wizard to verify recordings mount
   3. Go to Recordings and whitelist shows to caption
-  4. Set DRY_RUN=false in .env when ready${NEWGRP_NOTE}${WSL_RESTART_NOTE}" 26
+  4. Set DRY_RUN=false in .env when ready${NEWGRP_NOTE}${WSL_RESTART_NOTE}${DOCKER_DESKTOP_NOTE}" 26
 
 rm -f "$_STATUS"
