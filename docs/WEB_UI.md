@@ -33,7 +33,7 @@ The top bar is persistent across all views.
 The default view. Shows the real-time processing queue and history.
 
 **Queue section** lists:
-- Any recording currently being captured by Channels DVR (shown as ⏺ Recording)
+- Any recording currently being captured by Channels DVR that is on the whitelist (shown as ⏺ Recording)
 - Jobs currently running (⏳), waiting to run (⏸), or newly discovered (🔍)
 
 **History section** lists completed, failed, cancelled, and dry-run jobs, sorted newest first.
@@ -104,7 +104,7 @@ The status indicator in the tab shows `(streaming)`, `(polling)`, or a line coun
 
 ### Quarantine
 
-When a caption job runs, the original `.ts` file is renamed to `.orig` (backup) and the processed file takes its place. The `.orig` files are tracked here. After 30 days they are eligible for automatic purging.
+When a caption job runs, the original `.mpg` file is renamed to `.orig` (backup) and the processed file takes its place. The `.orig` files are tracked here. After 30 days they are eligible for automatic purging.
 
 **Summary line** at the top shows total quarantined size, number of expired files, last purge date, and space recovered in the past 30 days.
 
@@ -160,7 +160,9 @@ Opened by the **☑ Recordings** button. Select one or more completed recordings
 | Recording | Show title and episode title. |
 | Date | When the recording was created. |
 | Processed | ✓ green = previously succeeded; ✗ red = previously failed; blank = not yet processed. |
-| Whitelist | Interactive checkbox. Toggle whether this show is on the whitelist. Only shown when whitelist matching is enabled. |
+| Whitelist | Interactive checkbox. Toggle whether this show is on the whitelist. Only shown when whitelist matching is enabled. Checking the box adds the show's exact title as a new rule; unchecking removes it. |
+
+> **Whitelist tip:** The checkbox adds the full show title as a plain substring rule. For more advanced matching — wildcards, regular expressions, channel filters, and time-of-day restrictions — edit the whitelist directly in **Settings → Recording Whitelist**. For the full reference see [SETUP_ADVANCED.md — Whitelist](SETUP_ADVANCED.md#whitelist--full-reference).
 
 Click **Submit** to add selected recordings to the processing queue. The UI will burst-refresh for 12 seconds to show the jobs appearing.
 
