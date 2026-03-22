@@ -1304,6 +1304,21 @@ if ! command -v git &>/dev/null; then
     esac
 fi
 
+# Warn before destroying an existing non-git directory (contains data/ DB, .env, etc.)
+if [[ -d "$DEPLOY_DIR" && ! -d "$DEPLOY_DIR/.git" ]]; then
+    wt_yesno "Existing Directory — Data Loss Warning" \
+"'${DEPLOY_DIR}' already exists but is not a git repository.
+
+This installer will DELETE this directory and everything in it,
+including any existing database and configuration:
+  ${DEPLOY_DIR}/data/
+  ${DEPLOY_DIR}/.env
+
+If this is a previous install, back up those files first.
+
+Delete '${DEPLOY_DIR}' and continue?" 18 || cancelled
+fi
+
 _repo_step() {
     echo 10
     if [[ -d "$DEPLOY_DIR/.git" ]]; then
