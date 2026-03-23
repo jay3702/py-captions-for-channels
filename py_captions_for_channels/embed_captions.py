@@ -689,6 +689,20 @@ def build_hwaccel_flags(input_path: str, log) -> list:
 
     input_codec = _probe_input_codec(input_path, log)
 
+    # mpeg2_cuvid (NVDEC) hangs indefinitely on broadcast MPEG2 files that
+    # contain frames with invalid header dimensions (0x0), which are common in
+    # OTA recordings.  The software decoder handles these gracefully with a
+    # warning and continues.  validate_audio_decodability() already treats ALL
+    # MPEG2 files as potentially corrupted for the same reason — apply the same
+    # policy here so the encode step doesn't stall waiting for output that
+    # never arrives.
+    if input_codec == "mpeg2video":
+        log.warning(
+            "MPEG2 input — skipping hardware decode (mpeg2_cuvid can hang "
+            "on broadcast files with invalid frame dimensions)"
+        )
+        return []
+
     # Check if this backend has a decoder for our input codec
     decoder = backend.decoders.get(input_codec)
     if not decoder:
