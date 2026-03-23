@@ -1372,7 +1372,7 @@ def encode_av_only(
         cmd_gpu = (
             ["ffmpeg", "-y", "-progress", "pipe:2"]
             + input_flags
-            + ["-i", mpg_orig]
+            + ["-err_detect", "ignore_err", "-i", mpg_orig]
             + encoder_args
         )
 
@@ -1406,6 +1406,8 @@ def encode_av_only(
                 "-y",
                 "-progress",
                 "pipe:2",
+                "-err_detect",
+                "ignore_err",
                 "-i",
                 mpg_orig,
             ] + encoder_args
@@ -1438,6 +1440,8 @@ def encode_av_only(
         "-y",
         "-progress",
         "pipe:2",
+        "-err_detect",
+        "ignore_err",
         "-i",
         mpg_orig,
         "-c:v",
