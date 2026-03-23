@@ -1396,27 +1396,52 @@ def encode_av_only(
 
     audio_tail = audio_codec_flags + audio_map + [temp_av]
 
-    # Flags that must be placed BEFORE -i so ffmpeg applies them to the input
-    # demuxer/decoder (not as output options where they would be silently ignored).
-    input_pre_flags = [
-        "-probesize",
-        "2147483647",
-        "-analyzeduration",
-        "2147483647",
-        "-err_detect",
-        "ignore_err",
-    ]
-
-    # For MPEG2, skip NVENC entirely.  Even with software decode, NVENC can
-    # hang or produce corrupt output when decoding OTA MPEG2 files with invalid
-    # frame dimensions.  libx264 (CPU) handles these files reliably.
+    # Probe the input codec first so we can tailor the pre-flags below.
     input_codec = _probe_input_codec(mpg_orig, log)
-    force_cpu_encode = input_codec == "mpeg2video"
-    if force_cpu_encode and backend.name != "cpu":
-        log.warning(
-            "MPEG2 input — forcing CPU (libx264) encode; "
-            "NVENC is unreliable with corrupted broadcast frames"
+
+    # MPEG2 OTA recordings commonly contain frames with 0×0 (invalid) header
+    # dimensions.  If we ask ffmpeg to scan up to 2 GB of the file before
+    # starting (-probesize 2147483647 -analyzeduration 2147483647) it can spin
+    # indefinitely on those bad frames and never emit any progress — triggering
+    # the 120 s no-progress timeout.
+    #
+    # Fix: use a modest probesize (50 MB / 5 s) so ffmpeg characterises the
+    # stream quickly, and add -fflags +discardcorrupt so the invalid frames are
+    # silently dropped during the encode rather than stalling it.
+    #
+    # Hardware *decode* (mpeg2_cuvid) is already disabled for MPEG2 in
+    # build_hwaccel_flags() — it returns [] — so the encode will always use the
+    # software mpeg2video decoder regardless of which encoder we choose.
+    # Software-decode + NVENC encode is reliable and fast; we no longer force
+    # CPU-only for MPEG2.
+    if input_codec == "mpeg2video":
+        input_pre_flags = [
+            "-probesize",
+            "50000000",
+            "-analyzeduration",
+            "5000000",
+            "-fflags",
+            "+discardcorrupt",
+            "-err_detect",
+            "ignore_err",
+        ]
+        log.info(
+            "MPEG2 input — using reduced probesize/analyzeduration "
+            "and -fflags +discardcorrupt to skip corrupt frames"
         )
+    else:
+        # Flags that must be placed BEFORE -i so ffmpeg applies them to the input
+        # demuxer/decoder (not as output options where they would be silently ignored).
+        input_pre_flags = [
+            "-probesize",
+            "2147483647",
+            "-analyzeduration",
+            "2147483647",
+            "-err_detect",
+            "ignore_err",
+        ]
+
+    force_cpu_encode = False  # MPEG2 hw-decode already blocked in build_hwaccel_flags()
 
     # ---- Try GPU encode (with hwaccel decode) ----
     if backend.name != "cpu" and not force_cpu_encode:
