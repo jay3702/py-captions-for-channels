@@ -609,10 +609,11 @@ class PipelineTimeline:
             self._load_state()
 
             # Auto-clear stale active stages (subprocess killed without stage_end).
-            # Use a 5-minute cap rather than the full STALE_EXECUTION_SECONDS (1hr)
-            # so a crashed job doesn't leave the pipeline chart stuck for an hour.
+            # Use 1 hour to match STALE_EXECUTION_SECONDS — CPU ffmpeg encodes can
+            # legitimately run for 20-60 minutes, so a 5-minute cap was incorrectly
+            # clearing the chart mid-encode on slow hardware.
             if self.current_stage and not self.current_stage.ended_at:
-                _CHART_STALE_SECONDS = 300  # 5 minutes
+                _CHART_STALE_SECONDS = 3600  # 1 hour
 
                 stage_age = time.time() - self.current_stage.started_at
                 if stage_age > _CHART_STALE_SECONDS:
