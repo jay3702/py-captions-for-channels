@@ -52,6 +52,8 @@ Timings below are for the default **SRT-only** mode. `TRANSCODE_FOR_FIRETV=true`
 
 > **Note:** OTA (over-the-air) recordings require MPEG2→H.264 transcoding, which adds time even in SRT-only mode. TVE (streaming) recordings are already H.264 and only need Whisper transcription (~1–2 min with GPU, ~10 min with CPU).
 
+> **OTA Tuner Note:** If you are in the market for an OTA network tuner, prefer a model with built-in H.264 transcoding (e.g. the HDHomeRun EXTEND or FLEX 4K). Those devices write H.264 directly to disk, which is faster and more reliable to process than raw MPEG2. Raw MPEG2 recordings from devices like the HDHomeRun CONNECT are fully supported, but they contain broadcast artifacts (invalid frame headers) that require extra handling and take longer to encode.
+
 See [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for detailed benchmarks and hardware guidance.
 
 ## Installation
