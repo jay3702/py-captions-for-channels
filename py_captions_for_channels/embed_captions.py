@@ -1354,25 +1354,38 @@ def encode_av_only(
                 f"{audio_codecs} not all MP4-compatible (AUDIO_CODEC=auto)"
             )
 
-    audio_tail = (
-        audio_codec_flags
-        + [
-            "-analyzeduration",
-            "2147483647",
-            "-probesize",
-            "2147483647",
-        ]
-        + audio_map
-        + [temp_av]
-    )
+    audio_tail = audio_codec_flags + audio_map + [temp_av]
+
+    # Flags that must be placed BEFORE -i so ffmpeg applies them to the input
+    # demuxer/decoder (not as output options where they would be silently ignored).
+    input_pre_flags = [
+        "-probesize",
+        "2147483647",
+        "-analyzeduration",
+        "2147483647",
+        "-err_detect",
+        "ignore_err",
+    ]
+
+    # For MPEG2, skip NVENC entirely.  Even with software decode, NVENC can
+    # hang or produce corrupt output when decoding OTA MPEG2 files with invalid
+    # frame dimensions.  libx264 (CPU) handles these files reliably.
+    input_codec = _probe_input_codec(mpg_orig, log)
+    force_cpu_encode = input_codec == "mpeg2video"
+    if force_cpu_encode and backend.name != "cpu":
+        log.warning(
+            "MPEG2 input — forcing CPU (libx264) encode; "
+            "NVENC is unreliable with corrupted broadcast frames"
+        )
 
     # ---- Try GPU encode (with hwaccel decode) ----
-    if backend.name != "cpu":
+    if backend.name != "cpu" and not force_cpu_encode:
         encoder_args = _build_gpu_encoder_args(backend, ffmpeg_params)
         cmd_gpu = (
             ["ffmpeg", "-y", "-progress", "pipe:2"]
             + input_flags
-            + ["-err_detect", "ignore_err", "-i", mpg_orig]
+            + input_pre_flags
+            + ["-i", mpg_orig]
             + encoder_args
         )
 
@@ -1401,16 +1414,12 @@ def encode_av_only(
                 f"{backend.name.upper()} with hwaccel decode failed, "
                 f"retrying without hardware decode"
             )
-            cmd_gpu_sw = [
-                "ffmpeg",
-                "-y",
-                "-progress",
-                "pipe:2",
-                "-err_detect",
-                "ignore_err",
-                "-i",
-                mpg_orig,
-            ] + encoder_args
+            cmd_gpu_sw = (
+                ["ffmpeg", "-y", "-progress", "pipe:2"]
+                + input_pre_flags
+                + ["-i", mpg_orig]
+                + encoder_args
+            )
             if is_vfr:
                 cmd_gpu_sw.extend(["-vsync", "vfr"])
             cmd_gpu_sw.extend(audio_tail)
@@ -1435,26 +1444,16 @@ def encode_av_only(
 
     # ---- CPU fallback (libx264) ----
     x264_preset = ffmpeg_params.get("x264_preset", "fast")
-    cmd_cpu = [
-        "ffmpeg",
-        "-y",
-        "-progress",
-        "pipe:2",
-        "-err_detect",
-        "ignore_err",
-        "-i",
-        mpg_orig,
-        "-c:v",
-        "libx264",
-        "-preset",
-        x264_preset,
-        "-crf",
-        str(X264_CRF),
-    ]
+    cmd_cpu = (
+        ["ffmpeg", "-y", "-progress", "pipe:2"]
+        + input_pre_flags
+        + ["-i", mpg_orig]
+        + ["-c:v", "libx264", "-preset", x264_preset, "-crf", str(X264_CRF)]
+    )
 
     if is_vfr:
-        cmd_cpu.extend(["-vsync", "vfr"])
-    cmd_cpu.extend(audio_tail)
+        cmd_cpu += ["-vsync", "vfr"]
+    cmd_cpu += audio_tail
 
     log.info(f"Trying CPU encode: {' '.join(cmd_cpu)}")
     try:
@@ -1476,7 +1475,7 @@ def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
 
     process = subprocess.Popen(
         cmd,
-        stdout=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,  # PIPE would deadlock if ffmpeg writes to stdout
         stderr=subprocess.PIPE,
         universal_newlines=True,
         bufsize=1,
