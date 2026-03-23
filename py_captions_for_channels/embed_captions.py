@@ -2016,6 +2016,9 @@ def main():
     else:
         log.debug(f"Preparing Faster-Whisper model: {args.model}")
         step_tracker.start("whisper", input_path=input_source, output_path=srt_path)
+        # Start stage NOW so model-load time (~30-120s) is visible in the UI;
+        # all error paths inside _run_whisper() still call stage_end().
+        pipeline.stage_start("whisper", job_id, filename)
 
         def _run_whisper():
             def format_srt_timestamp(seconds):
@@ -2237,9 +2240,7 @@ def main():
                                 pass
                         raise
 
-                # Start the pipeline stage right before actual transcription
                 log.debug("Starting transcription...")
-                pipeline.stage_start("whisper", job_id, filename)
 
                 # Report initial progress immediately so UI shows status
                 if args.job_id:
