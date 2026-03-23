@@ -50,6 +50,15 @@ from py_captions_for_channels.stream_detector import select_streams
 SUBTITLE_TRACK_NAME = "py-captions-for-channels"
 
 
+class FfmpegNoProgressError(Exception):
+    """Raised when ffmpeg produces no stderr output within the timeout window.
+
+    This typically indicates the process is deadlocked (e.g. NVENC hanging on
+    a corrupted MPEG2 file with invalid frame dimensions).  The caller can
+    catch this and fall back to an alternative encoder.
+    """
+
+
 def extract_channel_number(video_path):
     """
     Attempt to extract channel number from the recording file path.
@@ -1246,6 +1255,37 @@ def _build_gpu_encoder_args(backend: "GPUBackend", ffmpeg_params: dict) -> list:
         ]
 
 
+def _run_cpu_encode(
+    mpg_orig,
+    audio_tail,
+    input_pre_flags,
+    is_vfr,
+    ffmpeg_params,
+    video_duration,
+    log,
+    job_id,
+):
+    """Run the CPU (libx264) encode and exit on failure."""
+    x264_preset = ffmpeg_params.get("x264_preset", "fast")
+    cmd_cpu = (
+        ["ffmpeg", "-y", "-progress", "pipe:2"]
+        + input_pre_flags
+        + ["-i", mpg_orig]
+        + ["-c:v", "libx264", "-preset", x264_preset, "-crf", str(X264_CRF)]
+    )
+    if is_vfr:
+        cmd_cpu += ["-vsync", "vfr"]
+    cmd_cpu += audio_tail
+    log.info(f"Trying CPU encode: {' '.join(cmd_cpu)}")
+    try:
+        _run_ffmpeg_with_progress(
+            cmd_cpu, video_duration, "Encoding (CPU)", log, job_id
+        )
+    except subprocess.CalledProcessError as e:
+        log.error(f"ffmpeg failed: {e}")
+        sys.exit(1)
+
+
 def encode_av_only(
     mpg_orig, temp_av, log, job_id=None, source_path=None, audio_stream_index=None
 ):
@@ -1405,6 +1445,21 @@ def encode_av_only(
         try:
             _run_ffmpeg_with_progress(cmd_gpu, video_duration, step_label, log, job_id)
             return
+        except FfmpegNoProgressError:
+            log.warning(
+                f"{backend.name.upper()} encode hung (no output timeout) "
+                f"— falling back to CPU"
+            )
+            return _run_cpu_encode(
+                mpg_orig,
+                audio_tail,
+                input_pre_flags,
+                is_vfr,
+                ffmpeg_params,
+                video_duration,
+                log,
+                job_id,
+            )
         except subprocess.CalledProcessError:
             log.warning(f"{backend.name.upper()} encode failed")
 
@@ -1436,6 +1491,21 @@ def encode_av_only(
                     job_id,
                 )
                 return
+            except FfmpegNoProgressError:
+                log.warning(
+                    f"{backend.name.upper()} (sw decode) hung (no output timeout) "
+                    f"— falling back to CPU"
+                )
+                return _run_cpu_encode(
+                    mpg_orig,
+                    audio_tail,
+                    input_pre_flags,
+                    is_vfr,
+                    ffmpeg_params,
+                    video_duration,
+                    log,
+                    job_id,
+                )
             except subprocess.CalledProcessError:
                 log.warning(
                     f"{backend.name.upper()} (sw decode) also failed, "
@@ -1443,33 +1513,32 @@ def encode_av_only(
                 )
 
     # ---- CPU fallback (libx264) ----
-    x264_preset = ffmpeg_params.get("x264_preset", "fast")
-    cmd_cpu = (
-        ["ffmpeg", "-y", "-progress", "pipe:2"]
-        + input_pre_flags
-        + ["-i", mpg_orig]
-        + ["-c:v", "libx264", "-preset", x264_preset, "-crf", str(X264_CRF)]
+    _run_cpu_encode(
+        mpg_orig,
+        audio_tail,
+        input_pre_flags,
+        is_vfr,
+        ffmpeg_params,
+        video_duration,
+        log,
+        job_id,
     )
 
-    if is_vfr:
-        cmd_cpu += ["-vsync", "vfr"]
-    cmd_cpu += audio_tail
 
-    log.info(f"Trying CPU encode: {' '.join(cmd_cpu)}")
-    try:
-        _run_ffmpeg_with_progress(
-            cmd_cpu, video_duration, "Encoding (CPU)", log, job_id
-        )
-    except subprocess.CalledProcessError as e:
-        log.error(f"ffmpeg failed: {e}")
-        sys.exit(1)
+def _run_ffmpeg_with_progress(
+    cmd, duration, step_name, log, job_id=None, no_progress_timeout=120
+):
+    """Run ffmpeg and parse progress from stderr output.
 
-
-def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
-    """Run ffmpeg and parse progress from stderr output."""
+    Uses a background thread to read stderr so we can apply a *no-progress
+    timeout*: if ffmpeg produces zero output for ``no_progress_timeout``
+    seconds the process is killed and ``FfmpegNoProgressError`` is raised.
+    The caller can catch this to fall back to an alternative encoder.
+    """
+    import queue
     import re
+    import threading
 
-    # Report initial progress immediately so UI shows status
     if job_id:
         update_ffmpeg_progress(job_id, 0, f"{step_name}: starting...")
 
@@ -1481,21 +1550,45 @@ def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
         bufsize=1,
     )
 
+    line_queue: queue.Queue = queue.Queue()
+
+    def _read_stderr():
+        try:
+            for line in process.stderr:
+                line_queue.put(line)
+        finally:
+            line_queue.put(None)  # sentinel: pipe closed
+
+    threading.Thread(target=_read_stderr, daemon=True).start()
+
     last_progress = 0
     progress_pattern = re.compile(r"out_time_ms=(\d+)")
-    stderr_lines: list = []  # capture for error reporting
+    stderr_lines: list = []
 
     try:
-        for line in process.stderr:
+        while True:
+            try:
+                line = line_queue.get(timeout=no_progress_timeout)
+            except queue.Empty:
+                # No output at all for no_progress_timeout seconds — hung.
+                log.warning(
+                    f"ffmpeg produced no output for {no_progress_timeout}s "
+                    f"— killing process (likely hung on corrupted input)"
+                )
+                process.kill()
+                process.wait()
+                raise FfmpegNoProgressError(
+                    f"ffmpeg hung: no output for {no_progress_timeout}s"
+                )
+
+            if line is None:
+                break  # stderr pipe closed; process is finishing
+
             stderr_lines.append(line)
-            # Parse ffmpeg progress output (format: key=value)
             match = progress_pattern.search(line)
             if match and duration > 0:
-                # out_time_ms is in microseconds
                 current_time = int(match.group(1)) / 1000000.0
                 progress = min(95, int((current_time / duration) * 100))
-
-                # Report every 5% or significant progress
                 if progress >= last_progress + 5:
                     if job_id:
                         update_ffmpeg_progress(
@@ -1509,11 +1602,9 @@ def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
                     )
                     last_progress = progress
 
-        # Wait for process to complete
         returncode = process.wait()
 
         if returncode != 0:
-            # Log the last 20 lines of stderr so encode errors are visible
             tail = stderr_lines[-20:] if len(stderr_lines) > 20 else stderr_lines
             for err_line in tail:
                 stripped = err_line.rstrip()
@@ -1521,12 +1612,10 @@ def _run_ffmpeg_with_progress(cmd, duration, step_name, log, job_id=None):
                     log.warning(f"ffmpeg stderr: {stripped}")
             raise subprocess.CalledProcessError(returncode, cmd)
 
-        # Final progress update
         if job_id:
             update_ffmpeg_progress(job_id, 100, f"{step_name} complete")
 
     finally:
-        process.stdout.close()
         process.stderr.close()
 
 
