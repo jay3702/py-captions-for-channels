@@ -922,6 +922,35 @@ Tip: hidden shares end with \$ and won't appear in anonymous scans." \
         ;;
 esac
 
+# ── Event source / discovery mode ───────────────────────────────────────────
+DISCOVERY_MODE="polling"
+CHANNELWATCH_URL=""
+
+_DISCOVERY_CHOICE=$(wt_menu "Event Source" \
+"How should py-captions detect new recordings?
+
+  Polling      — queries the DVR API on a timer (works everywhere, recommended)
+  ChannelWatch — instant webhook notifications (requires a ChannelWatch server)" \
+13 2 \
+    "polling" "Polling  (recommended — no extra server needed)" \
+    "webhook" "ChannelWatch  (instant notifications, requires ChannelWatch server)") || cancelled
+
+DISCOVERY_MODE="$_DISCOVERY_CHOICE"
+
+if [[ "$DISCOVERY_MODE" == "webhook" ]]; then
+    # Pre-fill URL from the DVR server's IP on the default ChannelWatch port
+    _CW_HOST=$(echo "$CHANNELS_DVR_URL" | sed 's|.*://||; s|[:/].*||')
+    _CW_DEFAULT="ws://${_CW_HOST}:8501/events"
+    CHANNELWATCH_URL=$(wt_input "ChannelWatch WebSocket URL" \
+"WebSocket URL of your ChannelWatch server.
+
+ChannelWatch typically runs on port 8501. The IP has been pre-filled
+from your DVR server — change it if ChannelWatch runs on a different machine.
+
+Example:  ws://192.168.1.100:8501/events" \
+        "$_CW_DEFAULT" 13) || cancelled
+fi
+
 # ── Confirm settings summary ──────────────────────────────────────────────────
 case "$STORAGE_TYPE" in
     cifs)  _STORAGE_SUMMARY="SMB   //${NAS_SERVER}/${NAS_SHARE} → ${MOUNT_POINT}" ;;
@@ -930,15 +959,22 @@ case "$STORAGE_TYPE" in
     *)     _STORAGE_SUMMARY="Manual (configure after install)" ;;
 esac
 
+if [[ "$DISCOVERY_MODE" == "webhook" ]]; then
+    _EVENT_SUMMARY="ChannelWatch  ${CHANNELWATCH_URL}"
+else
+    _EVENT_SUMMARY="Polling"
+fi
+
 wt_yesno "Confirm Settings" \
 "Ready to install with these settings:
 
-  Deploy dir  : $DEPLOY_DIR
-  DVR URL     : $CHANNELS_DVR_URL
-  Storage     : ${_STORAGE_SUMMARY}
-  Distro      : ${DISTRO_ID} ${DISTRO_VER}
+  Deploy dir    : $DEPLOY_DIR
+  DVR URL       : $CHANNELS_DVR_URL
+  Storage       : ${_STORAGE_SUMMARY}
+  Event source  : ${_EVENT_SUMMARY}
+  Distro        : ${DISTRO_ID} ${DISTRO_VER}
 
-Proceed with installation?" 16 || cancelled
+Proceed with installation?" 18 || cancelled
 
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 1 — Docker Engine
@@ -1498,6 +1534,10 @@ if ! grep -q "^DRY_RUN=false" "$ENV_FILE" 2>/dev/null; then
     set_env "DRY_RUN" "true"
 fi
 
+# Event source
+set_env "DISCOVERY_MODE" "$DISCOVERY_MODE"
+[[ -n "$CHANNELWATCH_URL" ]] && set_env "CHANNELWATCH_URL" "$CHANNELWATCH_URL"
+
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 6 — systemd auto-start
 # Goal: keep py-captions running 24/7 without any terminal open.
@@ -1671,8 +1711,8 @@ wt_msg "Setup Complete" \
 
 Next steps:
   1. Open http://${_LAN_IP}:${WEB_UI_PORT} in your browser
-  2. Click ⚙ Setup Wizard to verify the recordings path
-  3. Go to Recordings and whitelist shows to caption
-  4. Set DRY_RUN=false in Settings when you are ready to process${NEWGRP_NOTE}" 26
+  2. Go to Recordings and whitelist shows to caption
+  3. Click ⚙ Settings and turn off Dry Run when ready to go live
+  4. Click ⚙ Setup Wizard if any path or source settings need adjusting${NEWGRP_NOTE}" 24
 
 rm -f "$_STATUS"

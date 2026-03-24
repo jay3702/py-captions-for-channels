@@ -1798,6 +1798,10 @@ function wizardCollectSettings() {
     s.DVR_MEDIA_OPTS = 'bind';
     s.DVR_MEDIA_MOUNT = localPath;
     s.DVR_RECORDINGS_PATH = localPath;
+    // Explicitly clear DVR_MEDIA_HOST_PATH so Docker uses the named volume
+    // device path. A stale non-empty value from a prior install would override
+    // the volume and could point to an empty or wrong directory.
+    s.DVR_MEDIA_HOST_PATH = '';
   } else {
     const mountType = document.getElementById('wizard-mount-type')?.value || 'cifs';
     const containerPath = document.getElementById('wizard-container-path')?.value?.trim() || '/mnt/channels';
@@ -1892,6 +1896,7 @@ function wizardBuildReview() {
     `DVR_MEDIA_DEVICE=${s.DVR_MEDIA_DEVICE}`,
     `DVR_MEDIA_OPTS=${s.DVR_MEDIA_OPTS || 'bind'}`,
     `DVR_MEDIA_MOUNT=${s.DVR_MEDIA_MOUNT}`,
+    `DVR_MEDIA_HOST_PATH=${s.DVR_MEDIA_HOST_PATH ?? ''}`,
     '',
     '# Recordings path (host path for Docker volume)',
     `DVR_RECORDINGS_PATH=${s.DVR_RECORDINGS_PATH}`,

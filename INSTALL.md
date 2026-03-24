@@ -71,11 +71,7 @@ The script downloads the required installer files, then runs `setup-wsl.ps1`, wh
 2. **Setup Wizard** — click the ⚙ gear icon → **Setup Wizard** to verify the recordings mount. The wizard connects to your DVR, auto-detects the media folder path, and writes the Docker volume configuration.
 3. **Whitelist shows** — go to **Recordings**, browse completed recordings from your DVR, and check the box next to each show you want captioned. Without a whitelist, nothing is processed.
 4. **Test** — click **Manual Process** on one short recording. With `DRY_RUN=true` the pipeline logs what it would do without touching files. Review the result in **History**.
-5. **Go live** — edit `.env` and set `DRY_RUN=false`, then restart:
-   ```bash
-   docker compose down && docker compose up -d
-   ```
-   From the web dashboard you can also update settings under ⚙ **Settings** and restart from there.
+5. **Go live** — open ⚙ **Settings** in the web dashboard, turn off **Dry Run**, and click **Save & Restart**.
 
 ---
 
@@ -122,11 +118,12 @@ cp .env.example.intel  .env   # Intel GPU
 cp .env.example.amd    .env   # AMD GPU
 ```
 
-Open `.env` and set at minimum:
+Start the container, then open the dashboard at `http://YOUR_HOST_IP:8000` and run the **Setup Wizard** (⚙ gear → Setup Wizard) to configure the DVR URL, recordings path, and event source automatically.
+
+If the container cannot start at all and you need to set a variable before the wizard is accessible, the only required setting is:
 
 ```dotenv
 CHANNELS_DVR_URL=http://YOUR_DVR_IP:8089
-DRY_RUN=true    # set to false once verified
 ```
 
 The full reference for every available option is in [.env.example](.env.example).
