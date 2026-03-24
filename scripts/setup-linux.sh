@@ -837,11 +837,12 @@ case "$STORAGE_LOC" in
         MOUNT_POINT=$(wt_input "Local Recordings Path" \
 "Full path to the recordings folder on this machine.
 
-(Find it in Channels DVR → Settings → General → Storage Location)
+This is the storage path shown in Channels DVR → Settings → General → Storage Location.
+Docker will mount this directory directly — no intermediate bind mount is needed.
 
 Example:  /tank/AllMedia/Channels
           /opt/channels/recordings" \
-            "/mnt/channels") || cancelled
+            "/tank/AllMedia/Channels") || cancelled
         ;;
     remote)
         NAS_SERVER=$(wt_input "Remote Storage Server" \
@@ -1379,13 +1380,27 @@ set_env "WSL_LIB_PATH" ""
 # Recordings path / mount config
 if [[ -n "$MOUNT_POINT" ]]; then
     case "$STORAGE_TYPE" in
-        cifs|nfs|local)
-            # All storage types use a host bind-mount into the container.
+        cifs|nfs)
+            # Remote storage: /mnt/channels is the NFS/CIFS mount point managed
+            # by py-captions-mount.service. Docker bind-mounts it into the container.
             set_env "DVR_MEDIA_TYPE"      "none"
             set_env "DVR_MEDIA_DEVICE"    "$MOUNT_POINT"
             set_env "DVR_MEDIA_OPTS"      "bind"
             set_env "DVR_MEDIA_HOST_PATH" "$MOUNT_POINT"
             set_env "DVR_MEDIA_MOUNT"     "$MOUNT_POINT"
+            set_env "DVR_RECORDINGS_PATH" "$MOUNT_POINT"
+            set_env "LOCAL_PATH_PREFIX"   "$MOUNT_POINT"
+            ;;
+        local)
+            # Local storage: recordings are on a local disk (e.g. ZFS pool).
+            # Point Docker directly at the actual path — no intermediate bind mount
+            # needed, and no systemd unit to maintain. The path is already mounted
+            # by the OS (zfs-mount.service, fstab, etc.) and survives reboots natively.
+            set_env "DVR_MEDIA_TYPE"      "none"
+            set_env "DVR_MEDIA_OPTS"      "bind"
+            set_env "DVR_MEDIA_HOST_PATH" "$MOUNT_POINT"
+            set_env "DVR_MEDIA_MOUNT"     "$MOUNT_POINT"
+            set_env "DVR_MEDIA_DEVICE"    "$MOUNT_POINT"
             set_env "DVR_RECORDINGS_PATH" "$MOUNT_POINT"
             set_env "LOCAL_PATH_PREFIX"   "$MOUNT_POINT"
             ;;
