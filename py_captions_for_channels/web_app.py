@@ -2712,16 +2712,24 @@ async def get_recordings() -> dict:
                 title, start_time, rec.get("channel")
             )
 
-            # Check if processed (look for execution with this path)
+            # Check if processed (look for execution with this path).
+            # Polling-source executions store the translated (container-internal)
+            # path; manual-process executions store the raw DVR API path.
+            # Check both so the checkmark shows regardless of how the job ran.
+            local_path = translate_dvr_path(path)
             processed_exec = next(
-                (e for e in all_executions if e.get("path") == path), None
+                (e for e in all_executions if e.get("path") in (path, local_path)),
+                None,
             )
             processed_status = None
             if processed_exec:
-                if processed_exec.get("status") == "completed":
+                status = processed_exec.get("status")
+                if status == "completed":
                     processed_status = (
                         "success" if processed_exec.get("success") else "failed"
                     )
+                elif status == "failed":
+                    processed_status = "failed"
 
             # Check if .cc4chan.orig or legacy .orig backup file exists
             from pathlib import Path as FilePath
