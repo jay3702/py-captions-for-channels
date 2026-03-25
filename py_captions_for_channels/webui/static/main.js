@@ -1088,7 +1088,8 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
     webhook: 'Webhook Server Configuration',
     pipeline: 'Caption Pipeline Configuration',
     state_logging: 'State and Logging Configuration',
-    advanced: 'Advanced Configuration'
+    advanced: 'Advanced Configuration',
+    data_storage: 'Storage & Volume Mounts'
   };
   
   const booleanFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'TRANSCODE_FOR_FIRETV', 
@@ -1117,6 +1118,8 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
     'WHISPER_DEVICE': 'GPU',
     'DVR_PATH_PREFIX': 'DVR Media Folder Path',
     'DVR_MEDIA_MOUNT': 'Container Mount Path',
+    'LIBRARY_HOST_PATH': 'Library Host Path (host machine)',
+    'LIBRARY_CONTAINER_PATH': 'Library Container Mount Path',
   };
   
   // Common IANA timezones grouped by region (also used by setup wizard)
@@ -4329,9 +4332,9 @@ async function _renderLibraryPathList() {
   }
 }
 
-async function addLibraryPath() {
+async function addLibraryPath(pathArg) {
   const input = document.getElementById('library-new-path');
-  const path = input.value.trim();
+  const path = pathArg != null ? pathArg : input.value.trim();
   if (!path) { alert('Enter a path.'); return; }
   try {
     const res = await fetch('/api/library/paths', {
@@ -4341,7 +4344,7 @@ async function addLibraryPath() {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error || 'Failed');
-    input.value = '';
+    if (pathArg == null) input.value = '';
     await _renderLibraryPathList();
   } catch (e) {
     alert('Error: ' + e.message);

@@ -442,6 +442,7 @@ def _parse_env_file(file_path: Path) -> dict:
         "pipeline": {},
         "state_logging": {},
         "advanced": {},
+        "data_storage": {},
     }
 
     current_category = None
@@ -469,6 +470,8 @@ def _parse_env_file(file_path: Path) -> dict:
                 current_category = "state_logging"
             elif "ADVANCED CONFIGURATION" in line_upper:
                 current_category = "advanced"
+            elif "DATA STORAGE CONFIGURATION" in line_upper:
+                current_category = "data_storage"
 
             # Parse setting line (active or commented)
             # Check this BEFORE comment collection

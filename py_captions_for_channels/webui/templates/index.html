@@ -502,7 +502,7 @@
           <ul id="library-path-list" style="list-style:none;padding:0;margin:0 0 16px 0;"></ul>
           <div style="display:flex;gap:8px;">
             <input type="text" id="library-new-path" placeholder="/media/my-library" style="flex:1;">
-            <button class="btn-small" onclick="openFsBrowser(path => { document.getElementById('library-new-path').value = path; })">Browse…</button>
+            <button class="btn-small" onclick="openFsBrowser(async path => { await addLibraryPath(path); })">Browse…</button>
             <button class="btn-small" onclick="addLibraryPath()">Add</button>
           </div>
           <p class="muted" style="font-size:0.82em;margin-top:6px;">Path must be accessible inside the container (or on the host if running without Docker).</p>
