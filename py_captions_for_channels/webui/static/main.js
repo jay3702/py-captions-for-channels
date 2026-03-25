@@ -4377,12 +4377,16 @@ function openFsBrowser(callback, startPath) {
 }
 
 async function openLibraryBrowser() {
-  let startPath = '/mnt';
+  let startPath = '/';
   try {
     const s = await fetch('/api/env-settings').then(r => r.json());
-    const configured = s.data_storage?.LIBRARY_CONTAINER_PATH?.value;
-    if (configured) startPath = configured;
-  } catch (_) { /* fall back to /mnt */ }
+    const configured = (s.data_storage?.LIBRARY_CONTAINER_PATH?.value || '').trim();
+    if (configured) {
+      // Verify the path is actually accessible before using it
+      const check = await fetch('/api/filesystem/browse?path=' + encodeURIComponent(configured)).then(r => r.json());
+      if (!check.error) startPath = configured;
+    }
+  } catch (_) { /* use / */ }
   openFsBrowser(async path => { await addLibraryPath(path); }, startPath);
 }
 
@@ -4406,7 +4410,8 @@ async function _fsBrowse(path) {
     const data = await res.json();
 
     _fsBrowserCurrentPath = data.path || path;
-    if (pathEl) pathEl.textContent = _fsBrowserCurrentPath;
+    const pathEl = document.getElementById('fs-browser-path');
+    if (pathEl) pathEl.value = _fsBrowserCurrentPath;
 
     if (data.error && !data.dirs) {
       listEl.innerHTML = `<p style="padding:8px;color:#ef5350;">${escapeHtml(data.error)}</p>`;

@@ -518,8 +518,9 @@
           <button class="modal-close" onclick="closeFsBrowser()">&times;</button>
         </div>
         <div class="modal-body">
-          <div style="margin-bottom:10px;">
-            <span id="fs-browser-path" style="font-size:0.85em;word-break:break-all;color:var(--muted);"></span>
+          <div style="display:flex;gap:6px;margin-bottom:10px;">
+            <input id="fs-browser-path" type="text" style="flex:1;font-size:0.85em;padding:4px 8px;background:var(--input-bg,#1e1e1e);border:1px solid var(--border);border-radius:4px;color:var(--text);" placeholder="/mnt/library" onkeydown="if(event.key==='Enter')_fsBrowse(this.value.trim())">
+            <button class="btn-small" onclick="_fsBrowse(document.getElementById('fs-browser-path').value.trim())" style="white-space:nowrap;">Go</button>
           </div>
           <div id="fs-browser-list" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px 0;">
             <p class="muted" style="padding:8px;">Loading...</p>
