@@ -39,6 +39,7 @@ LOG = logging.getLogger(__name__)
 CC4CHAN_TEMP_SUFFIXES = (
     ".cc4chan.orig.tmp",
     ".cc4chan.orig",
+    ".cc4chan.transcoded",
     ".cc4chan.av.mp4",
     ".cc4chan.muxed.mp4",
     ".cc4chan.temp.wav",
@@ -59,15 +60,16 @@ def _video_path_for_orphan(filepath: str) -> Optional[str]:
     filename doesn't match any known pattern.
 
     Handles:
-        *.cc4chan.orig      -> *            (new backup)
-        *.cc4chan.orig.tmp  -> *            (new backup tmp)
-        *.cc4chan.av.mp4    -> *            (new encoded A/V)
-        *.cc4chan.muxed.mp4 -> *            (new muxed output)
-        *.cc4chan.temp.wav  -> *            (new WAV extraction)
-        *.srt.cc4chan.tmp   -> *            (derives .srt path, not video)
-        *.orig              -> *            (legacy backup)
-        *.orig.tmp          -> *            (legacy backup tmp)
-        *.orig.mpg          -> *.mpg        (old-style renamed original)
+        *.cc4chan.orig        -> *          (new backup)
+        *.cc4chan.orig.tmp    -> *          (new backup tmp)
+        *.cc4chan.transcoded  -> *          (library restore: renamed transcoded copy)
+        *.cc4chan.av.mp4      -> *          (new encoded A/V)
+        *.cc4chan.muxed.mp4   -> *          (new muxed output)
+        *.cc4chan.temp.wav    -> *          (new WAV extraction)
+        *.srt.cc4chan.tmp     -> *          (derives .srt path, not video)
+        *.orig                -> *          (legacy backup)
+        *.orig.tmp            -> *          (legacy backup tmp)
+        *.orig.mpg            -> *.mpg      (old-style renamed original)
     """
     # Check cc4chan patterns first (most specific)
     for suffix in CC4CHAN_TEMP_SUFFIXES:

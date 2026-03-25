@@ -3392,3 +3392,382 @@ async def cancel_channels_files_audit() -> dict:
     _audit_cancel.set()
     logger.info("Channels Files audit cancellation requested")
     return {"success": True, "message": "Cancel signal sent"}
+
+
+# ---------------------------------------------------------------------------
+# Library paths CRUD
+# ---------------------------------------------------------------------------
+
+_LIBRARY_PATHS_KEY = "library_paths"
+
+
+def _get_library_paths(db) -> list:
+    """Return the saved library paths list from settings."""
+    settings_service = SettingsService(db)
+    raw = settings_service.get(_LIBRARY_PATHS_KEY, [])
+    if isinstance(raw, list):
+        return raw
+    # Stored as JSON string by older code paths
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
+
+@app.get("/api/library/paths")
+async def get_library_paths() -> dict:
+    """Return the list of configured library paths."""
+    try:
+        db = next(get_db())
+        try:
+            paths = _get_library_paths(db)
+        finally:
+            db.close()
+        return {"paths": paths}
+    except Exception as e:
+        logger.error(f"get_library_paths failed: {e}", exc_info=True)
+        return {"error": str(e), "paths": []}
+
+
+@app.post("/api/library/paths")
+async def add_library_path(request: Request) -> dict:
+    """Add a path to the library paths list.
+
+    Body: {"path": "/media/my-library"}
+    """
+    try:
+        data = await request.json()
+        new_path = (data.get("path") or "").strip()
+        if not new_path:
+            return {"error": "path is required", "success": False}
+        if not os.path.exists(new_path):
+            return {
+                "error": f"Path does not exist on server: {new_path}",
+                "success": False,
+            }
+        db = next(get_db())
+        try:
+            paths = _get_library_paths(db)
+            if new_path in paths:
+                return {"error": "Path already in list", "success": False}
+            paths.append(new_path)
+            SettingsService(db).set(_LIBRARY_PATHS_KEY, paths)
+            db.commit()
+        finally:
+            db.close()
+        logger.info(f"Library path added: {new_path}")
+        return {"success": True, "paths": paths}
+    except Exception as e:
+        logger.error(f"add_library_path failed: {e}", exc_info=True)
+        return {"error": str(e), "success": False}
+
+
+@app.put("/api/library/paths/{index}")
+async def update_library_path(index: int, request: Request) -> dict:
+    """Replace a library path by index.
+
+    Body: {"path": "/media/new-path"}
+    """
+    try:
+        data = await request.json()
+        new_path = (data.get("path") or "").strip()
+        if not new_path:
+            return {"error": "path is required", "success": False}
+        if not os.path.exists(new_path):
+            return {
+                "error": f"Path does not exist on server: {new_path}",
+                "success": False,
+            }
+        db = next(get_db())
+        try:
+            paths = _get_library_paths(db)
+            if index < 0 or index >= len(paths):
+                return {"error": f"Index {index} out of range", "success": False}
+            paths[index] = new_path
+            SettingsService(db).set(_LIBRARY_PATHS_KEY, paths)
+            db.commit()
+        finally:
+            db.close()
+        logger.info(f"Library path updated at index {index}: {new_path}")
+        return {"success": True, "paths": paths}
+    except Exception as e:
+        logger.error(f"update_library_path failed: {e}", exc_info=True)
+        return {"error": str(e), "success": False}
+
+
+@app.delete("/api/library/paths/{index}")
+async def delete_library_path(index: int) -> dict:
+    """Remove a library path by index."""
+    try:
+        db = next(get_db())
+        try:
+            paths = _get_library_paths(db)
+            if index < 0 or index >= len(paths):
+                return {"error": f"Index {index} out of range", "success": False}
+            removed = paths.pop(index)
+            SettingsService(db).set(_LIBRARY_PATHS_KEY, paths)
+            db.commit()
+        finally:
+            db.close()
+        logger.info(f"Library path removed at index {index}: {removed}")
+        return {"success": True, "paths": paths}
+    except Exception as e:
+        logger.error(f"delete_library_path failed: {e}", exc_info=True)
+        return {"error": str(e), "success": False}
+
+
+# ---------------------------------------------------------------------------
+# Library file scanner
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/library/files")
+async def get_library_files(
+    path: str,
+    recursive: bool = False,
+) -> dict:
+    """Scan a library directory and return per-file metadata.
+
+    Query params:
+        path      - directory to scan
+        recursive - include sub-folders (default false)
+
+    Returns one entry per media file:
+        name, path, extension, processed_status, processed_at,
+        has_orig, has_transcoded, has_srt
+    """
+    try:
+        from py_captions_for_channels.config import MEDIA_FILE_EXTENSIONS
+
+        if not path:
+            return {"error": "path parameter is required", "files": []}
+        if not os.path.isdir(path):
+            return {"error": f"Directory not found: {path}", "files": []}
+
+        # Collect media files
+        scan_dir = Path(path)
+        if recursive:
+            candidates = [
+                f
+                for f in scan_dir.rglob("*")
+                if f.is_file()
+                and f.suffix.lower() in MEDIA_FILE_EXTENSIONS
+                and ".cc4chan." not in f.name
+            ]
+        else:
+            candidates = [
+                f
+                for f in scan_dir.iterdir()
+                if f.is_file()
+                and f.suffix.lower() in MEDIA_FILE_EXTENSIONS
+                and ".cc4chan." not in f.name
+            ]
+
+        # Build processed-path lookup from execution history
+        tracker = get_tracker()
+        all_executions = tracker.get_executions(limit=5000)
+        exec_by_path: dict = {}
+        for ex in all_executions:
+            p = ex.get("path")
+            if p:
+                # Keep the most recent execution per path
+                existing = exec_by_path.get(p)
+                if existing is None or (ex.get("started_at") or "") > (
+                    existing.get("started_at") or ""
+                ):
+                    exec_by_path[p] = ex
+
+        files = []
+        for f in sorted(candidates, key=lambda x: x.name):
+            fpath = str(f)
+            orig_path = Path(fpath + ".cc4chan.orig")
+            legacy_orig_path = Path(fpath + ".orig")
+            transcoded_path = Path(fpath + ".cc4chan.transcoded")
+            srt_path = f.with_suffix(".srt")
+
+            has_orig = orig_path.exists() or legacy_orig_path.exists()
+            has_transcoded = transcoded_path.exists()
+            has_srt = srt_path.exists()
+
+            # Check both raw path and translated path (same logic as recordings)
+            local_path = translate_dvr_path(fpath)
+            ex = exec_by_path.get(fpath) or exec_by_path.get(local_path)
+            processed_status = None
+            processed_at = None
+            if ex:
+                status = ex.get("status")
+                if status == "completed":
+                    processed_status = "success" if ex.get("success") else "failed"
+                elif status == "failed":
+                    processed_status = "failed"
+                processed_at = ex.get("completed_at") or ex.get("started_at")
+
+            files.append(
+                {
+                    "name": f.name,
+                    "path": fpath,
+                    "extension": f.suffix.lower(),
+                    "processed_status": processed_status,
+                    "processed_at": processed_at,
+                    "has_orig": has_orig,
+                    "has_transcoded": has_transcoded,
+                    "has_srt": has_srt,
+                }
+            )
+
+        return {
+            "files": files,
+            "count": len(files),
+            "path": path,
+            "recursive": recursive,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"get_library_files failed: {e}", exc_info=True)
+        return {"error": str(e), "files": []}
+
+
+# ---------------------------------------------------------------------------
+# Library restore
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/library/restore")
+async def restore_library_files(request: Request) -> dict:
+    """Restore library files from .cc4chan.orig backup.
+
+    For each file:
+      - Renames file.ext → file.ext.cc4chan.transcoded
+      - If keep_transcoded is False, moves it to quarantine
+      - Renames file.ext.cc4chan.orig → file.ext  (restores original)
+      - If keep_srt is False, moves .srt sidecar to quarantine
+
+    Body: {"files": [{"path": str, "keep_srt": bool, "keep_transcoded": bool}, ...]}
+    """
+    try:
+        from py_captions_for_channels.config import QUARANTINE_DIR
+
+        data = await request.json()
+        file_specs = data.get("files", [])
+        if not file_specs:
+            return {"error": "No files provided", "restored": 0}
+
+        db = next(get_db())
+        try:
+            qs = _build_quarantine_service(db)
+        except Exception:
+            qs = None
+
+        restored = 0
+        errors = []
+
+        for spec in file_specs:
+            fpath = spec.get("path", "")
+            keep_srt = spec.get("keep_srt", True)
+            keep_transcoded = spec.get("keep_transcoded", False)
+
+            try:
+                video = Path(fpath)
+                orig = Path(fpath + ".cc4chan.orig")
+                legacy_orig = Path(fpath + ".orig")
+                transcoded = Path(fpath + ".cc4chan.transcoded")
+                srt = video.with_suffix(".srt")
+
+                actual_orig = (
+                    orig
+                    if orig.exists()
+                    else (legacy_orig if legacy_orig.exists() else None)
+                )
+                if actual_orig is None:
+                    errors.append(f"{fpath}: no .cc4chan.orig backup found")
+                    continue
+
+                # Step 1: rename current video → .cc4chan.transcoded
+                if video.exists():
+                    video.rename(transcoded)
+                    logger.info(
+                        f"Library restore: renamed {video.name} → {transcoded.name}"
+                    )
+
+                # Step 2: restore original
+                actual_orig.rename(video)
+                logger.info(
+                    f"Library restore: restored {actual_orig.name} → {video.name}"
+                )
+
+                # Step 3: handle .cc4chan.transcoded
+                if transcoded.exists() and not keep_transcoded:
+                    if qs is not None:
+                        try:
+                            qs.quarantine_file(
+                                str(transcoded),
+                                file_type="transcoded",
+                                recording_path=fpath,
+                                reason="library_restore",
+                            )
+                            logger.info(
+                                f"Library restore: quarantined {transcoded.name}"
+                            )
+                        except Exception as qe:
+                            logger.warning(
+                                f"Could not quarantine {transcoded}: {qe};"
+                                " leaving in place"
+                            )
+                    else:
+                        # Fallback: move to default quarantine dir
+                        os.makedirs(QUARANTINE_DIR, exist_ok=True)
+                        import shutil
+
+                        dest = os.path.join(QUARANTINE_DIR, transcoded.name)
+                        shutil.move(str(transcoded), dest)
+                        logger.info(
+                            f"Library restore: moved {transcoded.name} to {dest}"
+                        )
+
+                # Step 4: handle .srt
+                if srt.exists() and not keep_srt:
+                    if qs is not None:
+                        try:
+                            qs.quarantine_file(
+                                str(srt),
+                                file_type="srt",
+                                recording_path=fpath,
+                                reason="library_restore",
+                            )
+                            logger.info(f"Library restore: quarantined {srt.name}")
+                        except Exception as qe:
+                            logger.warning(
+                                f"Could not quarantine {srt}: {qe};" " leaving in place"
+                            )
+                    else:
+                        os.makedirs(QUARANTINE_DIR, exist_ok=True)
+                        import shutil
+
+                        dest = os.path.join(QUARANTINE_DIR, srt.name)
+                        shutil.move(str(srt), dest)
+                        logger.info(f"Library restore: moved {srt.name} to {dest}")
+
+                restored += 1
+
+            except Exception as e:
+                errors.append(f"{fpath}: {e}")
+                logger.error(f"Library restore failed for {fpath}: {e}", exc_info=True)
+
+        result = {
+            "restored": restored,
+            "total": len(file_specs),
+            "errors": errors,
+            "timestamp": datetime.now().isoformat(),
+        }
+        if errors:
+            result["message"] = (
+                f"Restored {restored}/{len(file_specs)} file(s)"
+                f" with {len(errors)} error(s)"
+            )
+        else:
+            result["message"] = f"Successfully restored {restored} file(s)"
+        return result
+
+    except Exception as e:
+        logger.error(f"restore_library_files failed: {e}", exc_info=True)
+        return {"error": str(e), "restored": 0}
