@@ -4360,6 +4360,72 @@ async function deleteLibraryPath(index) {
   }
 }
 
+// =========================================
+// Filesystem Browser
+// =========================================
+
+let _fsBrowserCallback = null;
+let _fsBrowserCurrentPath = '/';
+
+function openFsBrowser(callback, startPath) {
+  _fsBrowserCallback = callback;
+  document.getElementById('fs-browser-modal').style.display = 'flex';
+  _fsBrowse(startPath || '/');
+}
+
+function closeFsBrowser() {
+  document.getElementById('fs-browser-modal').style.display = 'none';
+  _fsBrowserCallback = null;
+}
+
+function confirmFsBrowserSelection() {
+  if (_fsBrowserCallback) _fsBrowserCallback(_fsBrowserCurrentPath);
+  closeFsBrowser();
+}
+
+async function _fsBrowse(path) {
+  const listEl = document.getElementById('fs-browser-list');
+  const pathEl = document.getElementById('fs-browser-path');
+  listEl.innerHTML = '<p class="muted" style="padding:8px;">Loading...</p>';
+
+  try {
+    const res = await fetch('/api/filesystem/browse?path=' + encodeURIComponent(path));
+    const data = await res.json();
+
+    _fsBrowserCurrentPath = data.path || path;
+    if (pathEl) pathEl.textContent = _fsBrowserCurrentPath;
+
+    if (data.error && !data.dirs) {
+      listEl.innerHTML = `<p style="padding:8px;color:#ef5350;">${escapeHtml(data.error)}</p>`;
+      return;
+    }
+
+    let html = '';
+    if (data.parent && data.parent !== data.path) {
+      html += `<div onclick="_fsBrowse(${JSON.stringify(data.parent)})"
+        style="padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);color:var(--muted);">
+        <span>&#8593;</span> <span>..</span>
+      </div>`;
+    }
+    if (!data.dirs || !data.dirs.length) {
+      html += '<p style="padding:8px;color:var(--muted);font-size:0.88em;">No sub-folders</p>';
+    } else {
+      data.dirs.forEach(d => {
+        const fullPath = (_fsBrowserCurrentPath.endsWith('/') ? _fsBrowserCurrentPath : _fsBrowserCurrentPath + '/') + d;
+        html += `<div onclick="_fsBrowse(${JSON.stringify(fullPath)})"
+          style="padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);"
+          onmouseover="this.style.background='var(--hover,rgba(255,255,255,0.05))'"
+          onmouseout="this.style.background=''">
+          <span>📁</span> <span>${escapeHtml(d)}</span>
+        </div>`;
+      });
+    }
+    listEl.innerHTML = html;
+  } catch (e) {
+    listEl.innerHTML = `<p style="padding:8px;color:#ef5350;">${escapeHtml(e.message)}</p>`;
+  }
+}
+
 
 
 

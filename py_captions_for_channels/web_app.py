@@ -3771,3 +3771,55 @@ async def restore_library_files(request: Request) -> dict:
     except Exception as e:
         logger.error(f"restore_library_files failed: {e}", exc_info=True)
         return {"error": str(e), "restored": 0}
+
+
+# ---------------------------------------------------------------------------
+# Filesystem browser (for picking library paths in the UI)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/filesystem/browse")
+async def browse_filesystem(path: str = "/") -> dict:
+    """List immediate subdirectories of *path* for the UI folder browser.
+
+    Only directories are returned — no file contents are exposed.
+    """
+    try:
+        # Resolve and normalise (prevents path traversal via ../)
+        resolved = os.path.realpath(os.path.abspath(path))
+
+        if not os.path.isdir(resolved):
+            return {"error": f"Not a directory: {resolved}", "dirs": []}
+
+        try:
+            entries = os.scandir(resolved)
+        except PermissionError:
+            return {
+                "path": resolved,
+                "parent": str(Path(resolved).parent),
+                "dirs": [],
+                "error": "Permission denied",
+            }
+
+        dirs = []
+        with entries:
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=True):
+                    try:
+                        # Skip hidden dirs (.") unless we're at filesystem root
+                        if entry.name.startswith("."):
+                            continue
+                        dirs.append(entry.name)
+                    except OSError:
+                        continue
+
+        dirs.sort(key=str.lower)
+        parent = str(Path(resolved).parent)
+        return {
+            "path": resolved,
+            "parent": parent if parent != resolved else None,
+            "dirs": dirs,
+        }
+    except Exception as e:
+        logger.error(f"browse_filesystem failed: {e}", exc_info=True)
+        return {"error": str(e), "dirs": []}

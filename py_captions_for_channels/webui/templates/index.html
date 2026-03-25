@@ -502,9 +502,32 @@
           <ul id="library-path-list" style="list-style:none;padding:0;margin:0 0 16px 0;"></ul>
           <div style="display:flex;gap:8px;">
             <input type="text" id="library-new-path" placeholder="/media/my-library" style="flex:1;">
-            <button class="btn-small" onclick="addLibraryPath()">Add Path</button>
+            <button class="btn-small" onclick="openFsBrowser(path => { document.getElementById('library-new-path').value = path; })">Browse…</button>
+            <button class="btn-small" onclick="addLibraryPath()">Add</button>
           </div>
-          <p class="muted" style="font-size:0.82em;margin-top:6px;">Path must exist inside the container (or on the host if running without Docker).</p>
+          <p class="muted" style="font-size:0.82em;margin-top:6px;">Path must be accessible inside the container (or on the host if running without Docker).</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filesystem Browser Modal -->
+    <div id="fs-browser-modal" class="modal">
+      <div class="modal-content" style="max-width:500px;">
+        <div class="modal-header">
+          <h2>Browse Folders</h2>
+          <button class="modal-close" onclick="closeFsBrowser()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="margin-bottom:10px;">
+            <span id="fs-browser-path" style="font-size:0.85em;word-break:break-all;color:var(--muted);"></span>
+          </div>
+          <div id="fs-browser-list" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px 0;">
+            <p class="muted" style="padding:8px;">Loading...</p>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
+            <button class="btn-secondary" onclick="closeFsBrowser()">Cancel</button>
+            <button class="btn-primary" onclick="confirmFsBrowserSelection()">Select This Folder</button>
+          </div>
         </div>
       </div>
     </div>
