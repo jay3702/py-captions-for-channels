@@ -4376,6 +4376,16 @@ function openFsBrowser(callback, startPath) {
   _fsBrowse(startPath || '/');
 }
 
+async function openLibraryBrowser() {
+  let startPath = '/mnt';
+  try {
+    const s = await fetch('/api/env-settings').then(r => r.json());
+    const configured = s.data_storage?.LIBRARY_CONTAINER_PATH?.value;
+    if (configured) startPath = configured;
+  } catch (_) { /* fall back to /mnt */ }
+  openFsBrowser(async path => { await addLibraryPath(path); }, startPath);
+}
+
 function closeFsBrowser() {
   document.getElementById('fs-browser-modal').style.display = 'none';
   _fsBrowserCallback = null;
