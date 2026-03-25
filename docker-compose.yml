@@ -71,6 +71,11 @@ services:
       # Native Linux / non-WSL: set WSL_LIB_PATH=/tmp (or leave unset — /tmp is
       # the default, a harmless empty mount that doesn't affect anything).
       - ${WSL_LIB_PATH:-/tmp}:/usr/lib/wsl/lib:ro
+      # Optional: additional media/library mount for personal video libraries.
+      # Set LIBRARY_HOST_PATH in .env to expose the folder inside the container.
+      # Example: LIBRARY_HOST_PATH=/tank/AllMedia/Videos
+      # Leave unset (or set to empty) to skip this mount.
+      - ${LIBRARY_HOST_PATH:-/tmp}:${LIBRARY_CONTAINER_PATH:-/mnt/library}
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
