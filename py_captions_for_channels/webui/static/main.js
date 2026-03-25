@@ -4438,7 +4438,25 @@ async function _fsBrowse(path) {
         </div>`;
       });
     }
+    // Render DVR-blocked directories (non-navigable)
+    if (data.dvr_blocked && data.dvr_blocked.length) {
+      data.dvr_blocked.forEach(d => {
+        const dvr_mount = data.dvr_mount_label || 'DVR';
+        html += `<div title="Channels DVR root — cannot be used as a library folder"
+          style="padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);opacity:0.45;cursor:not-allowed;">
+          <span>🔒</span> <span style="text-decoration:line-through;">${escapeHtml(d)}</span>
+          <span style="font-size:0.78em;color:var(--muted);margin-left:auto;">DVR</span>
+        </div>`;
+      });
+    }
     listEl.innerHTML = html;
+
+    // Disable/enable "Select This Folder" based on whether current path is DVR root
+    const selectBtn = document.getElementById('fs-select-btn');
+    if (selectBtn) {
+      selectBtn.disabled = !!data.is_dvr_root;
+      selectBtn.title = data.is_dvr_root ? 'Cannot select the Channels DVR root as a library folder' : '';
+    }
   } catch (e) {
     listEl.innerHTML = `<p style="padding:8px;color:#ef5350;">${escapeHtml(e.message)}</p>`;
   }

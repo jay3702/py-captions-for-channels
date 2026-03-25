@@ -3404,6 +3404,69 @@ async def cancel_channels_files_audit() -> dict:
 _LIBRARY_PATHS_KEY = "library_paths"
 
 
+def _dvr_stat() -> tuple | None:
+    """Return (st_dev, st_ino) for the configured DVR media mount, or None."""
+    dvr_mount = os.environ.get("DVR_MEDIA_MOUNT", "/mnt/media").strip()
+    if not dvr_mount:
+        return None
+    try:
+        s = os.stat(dvr_mount)
+        return (s.st_dev, s.st_ino)
+    except OSError:
+        return None
+
+
+def _is_dvr_overlap(path: str) -> bool:
+    """Return True if *path* is, contains, or is inside the DVR media mount.
+
+    Uses device+inode comparison so that bind-mount aliases (e.g.
+    /mnt/library/Channels == /mnt/media) are caught even when the string
+    paths have nothing in common.
+    """
+    dvr_mount = os.environ.get("DVR_MEDIA_MOUNT", "/mnt/media").strip()
+    if not dvr_mount:
+        return False
+    dvr_real = os.path.realpath(dvr_mount)
+    prop_real = os.path.realpath(path)
+
+    # Fast string-prefix check (same mount namespace)
+    if prop_real == dvr_real:
+        return True
+    if prop_real.startswith(dvr_real + os.sep):
+        return True
+    if dvr_real.startswith(prop_real + os.sep):
+        return True
+
+    # Cross-bind-mount inode check
+    dvr_key = _dvr_stat()
+    if dvr_key is None:
+        return False
+
+    def _stat_key(p: str) -> tuple | None:
+        try:
+            s = os.stat(p)
+            return (s.st_dev, s.st_ino)
+        except OSError:
+            return None
+
+    # Proposed path == DVR root?
+    if _stat_key(prop_real) == dvr_key:
+        return True
+
+    # DVR root is inside proposed path — walk up from dvr_real
+    check = dvr_real
+    prop_key = _stat_key(prop_real)
+    while True:
+        parent = str(Path(check).parent)
+        if parent == check:
+            break
+        check = parent
+        if _stat_key(check) == prop_key:
+            return True
+
+    return False
+
+
 def _get_library_paths(db) -> list:
     """Return the saved library paths list from settings."""
     settings_service = SettingsService(db)
@@ -3448,6 +3511,15 @@ async def add_library_path(request: Request) -> dict:
                 "error": f"Path does not exist on server: {new_path}",
                 "success": False,
             }
+        if _is_dvr_overlap(new_path):
+            return {
+                "error": (
+                    "This path overlaps with the Channels DVR recordings root "
+                    f"({os.environ.get('DVR_MEDIA_MOUNT', '/mnt/media')}). "
+                    "Choose a different folder to avoid processing DVR recordings."
+                ),
+                "success": False,
+            }
         db = next(get_db())
         try:
             paths = _get_library_paths(db)
@@ -3479,6 +3551,15 @@ async def update_library_path(index: int, request: Request) -> dict:
         if not os.path.exists(new_path):
             return {
                 "error": f"Path does not exist on server: {new_path}",
+                "success": False,
+            }
+        if _is_dvr_overlap(new_path):
+            return {
+                "error": (
+                    "This path overlaps with the Channels DVR recordings root "
+                    f"({os.environ.get('DVR_MEDIA_MOUNT', '/mnt/media')}). "
+                    "Choose a different folder to avoid processing DVR recordings."
+                ),
                 "success": False,
             }
         db = next(get_db())
@@ -3805,23 +3886,48 @@ async def browse_filesystem(path: str = "/") -> dict:
             }
 
         dirs = []
+        dvr_blocked = []
+        dvr_key = _dvr_stat()
         with entries:
             for entry in entries:
                 if entry.is_dir(follow_symlinks=True):
                     try:
-                        # Skip hidden dirs (.") unless we're at filesystem root
+                        # Skip hidden dirs (".")
                         if entry.name.startswith("."):
                             continue
+                        # Detect DVR-overlap via inode so bind-mount aliases
+                        # (e.g. /mnt/library/Channels == /mnt/media) are caught.
+                        if dvr_key is not None:
+                            try:
+                                es = entry.stat(follow_symlinks=True)
+                                if (es.st_dev, es.st_ino) == dvr_key:
+                                    dvr_blocked.append(entry.name)
+                                    continue
+                            except OSError:
+                                pass
                         dirs.append(entry.name)
                     except OSError:
                         continue
 
         dirs.sort(key=str.lower)
+        dvr_blocked.sort(key=str.lower)
         parent = str(Path(resolved).parent)
+
+        # Flag if the browsed path itself is the DVR root
+        is_dvr_root = False
+        if dvr_key is not None:
+            try:
+                cs = os.stat(resolved)
+                is_dvr_root = (cs.st_dev, cs.st_ino) == dvr_key
+            except OSError:
+                pass
+
         return {
             "path": resolved,
             "parent": parent if parent != resolved else None,
             "dirs": dirs,
+            "dvr_blocked": dvr_blocked,
+            "is_dvr_root": is_dvr_root,
         }
     except Exception as e:
         logger.error(f"browse_filesystem failed: {e}", exc_info=True)
