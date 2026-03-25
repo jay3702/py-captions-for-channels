@@ -4091,5 +4091,275 @@ function filterAuditOrphans() {
 }
 
 
+// =========================================
+// Libraries
+// =========================================
+
+let _libraryMode = 'process'; // 'process' | 'restore'
+let _libraryFiles = [];
+
+async function showLibraryModal() {
+  document.getElementById('library-modal').style.display = 'flex';
+  await _refreshLibraryPathSelect();
+  loadLibraryFiles();
+}
+
+function closeLibraryModal() {
+  document.getElementById('library-modal').style.display = 'none';
+}
+
+function setLibraryMode(mode) {
+  _libraryMode = mode;
+  const processBtn = document.getElementById('library-mode-process');
+  const restoreBtn = document.getElementById('library-mode-restore');
+  const processControls = document.getElementById('library-process-controls');
+  const restoreControls = document.getElementById('library-restore-controls');
+  const submitBtn = document.getElementById('library-submit-btn');
+
+  if (mode === 'process') {
+    processBtn.style.opacity = '1';
+    restoreBtn.style.opacity = '0.5';
+    processControls.style.display = 'grid';
+    restoreControls.style.display = 'none';
+    submitBtn.textContent = 'Process Selected';
+  } else {
+    processBtn.style.opacity = '0.5';
+    restoreBtn.style.opacity = '1';
+    processControls.style.display = 'none';
+    restoreControls.style.display = 'block';
+    submitBtn.textContent = 'Restore Selected';
+  }
+  _renderLibraryTable();
+}
+
+async function _refreshLibraryPathSelect() {
+  const sel = document.getElementById('library-path-select');
+  const prevVal = sel.value;
+  sel.innerHTML = '<option value="">-- select a library --</option>';
+  try {
+    const res = await fetch('/api/library/paths');
+    const data = await res.json();
+    (data.paths || []).forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      sel.appendChild(opt);
+    });
+    if (prevVal && data.paths && data.paths.includes(prevVal)) sel.value = prevVal;
+  } catch (e) {
+    console.error('Failed to load library paths:', e);
+  }
+}
+
+async function loadLibraryFiles() {
+  const path = document.getElementById('library-path-select').value;
+  const recursive = document.getElementById('library-recursive').checked;
+  const container = document.getElementById('library-file-list');
+
+  if (!path) {
+    container.innerHTML = '<p class="muted">Select a library path to browse files.</p>';
+    _libraryFiles = [];
+    return;
+  }
+
+  container.innerHTML = '<p class="muted">Loading...</p>';
+  try {
+    const res = await fetch(`/api/library/files?path=${encodeURIComponent(path)}&recursive=${recursive}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    _libraryFiles = data.files || [];
+    _renderLibraryTable();
+  } catch (e) {
+    container.innerHTML = `<p class="muted">Error: ${escapeHtml(e.message)}</p>`;
+    _libraryFiles = [];
+  }
+}
+
+function _renderLibraryTable() {
+  const container = document.getElementById('library-file-list');
+  if (!_libraryFiles.length) {
+    container.innerHTML = '<p class="muted">No media files found in this directory.</p>';
+    return;
+  }
+
+  const isRestore = _libraryMode === 'restore';
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:0.88em;">
+    <thead>
+      <tr style="border-bottom:2px solid var(--border);text-align:left;">
+        <th style="padding:6px 4px;width:28px;"></th>
+        <th style="padding:6px;">File</th>
+        <th style="padding:6px;width:70px;text-align:center;">Processed</th>
+        <th style="padding:6px;width:50px;text-align:center;">.orig</th>`;
+  if (isRestore) {
+    html += `<th style="padding:6px;width:80px;text-align:center;">Keep SRT</th>
+             <th style="padding:6px;width:100px;text-align:center;">Keep Transcoded</th>`;
+  }
+  html += `</tr></thead><tbody>`;
+
+  _libraryFiles.forEach((f, idx) => {
+    const canProcess = !isRestore;
+    const canRestore = isRestore && f.has_orig;
+    const disabled = isRestore && !f.has_orig ? 'disabled' : '';
+
+    let processedIcon = '';
+    if (f.processed_status === 'success') {
+      processedIcon = '<span style="color:#4caf50;font-size:16px;" title="Processed successfully">✓</span>';
+    } else if (f.processed_status === 'failed') {
+      processedIcon = '<span style="color:#ef5350;font-size:16px;" title="Processing failed">✗</span>';
+    } else {
+      processedIcon = '<span style="color:var(--muted);font-size:13px;">—</span>';
+    }
+
+    const origIcon = f.has_orig
+      ? '<span style="color:#4caf50;" title="Backup exists">✓</span>'
+      : '<span style="color:var(--muted);">—</span>';
+
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:6px 4px;">
+        <input type="checkbox" class="library-file-cb" value="${escapeAttr(f.path)}" data-idx="${idx}" ${disabled}>
+      </td>
+      <td style="padding:6px;">
+        <div style="font-weight:500;">${escapeHtml(f.name)}</div>`;
+    if (f.processed_at) {
+      html += `<div style="font-size:0.82em;color:var(--muted);">${new Date(f.processed_at).toLocaleString()}</div>`;
+    }
+    html += `</td>
+      <td style="padding:6px;text-align:center;">${processedIcon}</td>
+      <td style="padding:6px;text-align:center;">${origIcon}</td>`;
+
+    if (isRestore) {
+      html += `<td style="padding:6px;text-align:center;">
+                 <input type="checkbox" class="lib-keep-srt" data-idx="${idx}" ${f.has_orig ? 'checked' : 'disabled'}>
+               </td>
+               <td style="padding:6px;text-align:center;">
+                 <input type="checkbox" class="lib-keep-transcoded" data-idx="${idx}" ${!f.has_orig ? 'disabled' : ''}>
+               </td>`;
+    }
+
+    html += `</tr>`;
+  });
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function submitLibraryAction() {
+  const checkboxes = document.querySelectorAll('.library-file-cb:checked');
+  if (!checkboxes.length) {
+    alert('Please select at least one file.');
+    return;
+  }
+
+  if (_libraryMode === 'process') {
+    const paths = Array.from(checkboxes).map(cb => cb.value);
+    const generateSrt = document.getElementById('library-generate-srt').checked;
+    const runTranscode = document.getElementById('library-run-transcode').checked;
+    const logVerbosity = document.getElementById('library-log-verbosity').value;
+    try {
+      const res = await fetch('/api/manual-process/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, generate_srt: generateSrt, run_transcode: runTranscode, log_verbosity: logVerbosity }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      closeLibraryModal();
+      scheduleRefreshBurst();
+    } catch (e) {
+      alert('Error queuing files: ' + e.message);
+    }
+  } else {
+    // Restore mode
+    const files = Array.from(checkboxes).map(cb => {
+      const idx = parseInt(cb.dataset.idx);
+      const keepSrt = document.querySelector(`.lib-keep-srt[data-idx="${idx}"]`)?.checked ?? true;
+      const keepTranscoded = document.querySelector(`.lib-keep-transcoded[data-idx="${idx}"]`)?.checked ?? false;
+      return { path: cb.value, keep_srt: keepSrt, keep_transcoded: keepTranscoded };
+    });
+
+    if (!confirm(`Restore ${files.length} file(s) from backup? This replaces the current file with the original.`)) return;
+
+    try {
+      const res = await fetch('/api/library/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      alert(data.message || `Restored ${data.restored} file(s).`);
+      loadLibraryFiles(); // refresh table
+    } catch (e) {
+      alert('Error restoring files: ' + e.message);
+    }
+  }
+}
+
+// ---- Library Path Manager ----
+
+async function showLibraryPathManager() {
+  document.getElementById('library-path-manager-modal').style.display = 'flex';
+  await _renderLibraryPathList();
+}
+
+function closeLibraryPathManager() {
+  document.getElementById('library-path-manager-modal').style.display = 'none';
+  _refreshLibraryPathSelect();
+}
+
+async function _renderLibraryPathList() {
+  const ul = document.getElementById('library-path-list');
+  ul.innerHTML = '<li class="muted">Loading...</li>';
+  try {
+    const res = await fetch('/api/library/paths');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (!data.paths || !data.paths.length) {
+      ul.innerHTML = '<li style="color:var(--muted);font-size:0.9em;">No paths configured yet.</li>';
+      return;
+    }
+    ul.innerHTML = data.paths.map((p, i) => `
+      <li style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+        <span style="flex:1;font-size:0.9em;word-break:break-all;">${escapeHtml(p)}</span>
+        <button class="btn-small" style="color:#ef5350;" onclick="deleteLibraryPath(${i})">✕</button>
+      </li>`).join('');
+  } catch (e) {
+    ul.innerHTML = `<li style="color:#ef5350;">${escapeHtml(e.message)}</li>`;
+  }
+}
+
+async function addLibraryPath() {
+  const input = document.getElementById('library-new-path');
+  const path = input.value.trim();
+  if (!path) { alert('Enter a path.'); return; }
+  try {
+    const res = await fetch('/api/library/paths', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    input.value = '';
+    await _renderLibraryPathList();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function deleteLibraryPath(index) {
+  if (!confirm('Remove this path from the list?')) return;
+  try {
+    const res = await fetch(`/api/library/paths/${index}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    await _renderLibraryPathList();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+
 
 

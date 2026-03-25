@@ -57,6 +57,10 @@
         <span class="navbar-btn-icon">☑</span>
         <span class="navbar-btn-label">Recordings</span>
       </button>
+      <button class="navbar-btn" onclick="showLibraryModal()" title="Browse and process personal media libraries">
+        <span class="navbar-btn-icon">🎬</span>
+        <span class="navbar-btn-label">Libraries</span>
+      </button>
       <button class="navbar-btn" onclick="openSettingsModal()" title="Settings">
         <span class="navbar-btn-icon">⚙</span>
       </button>
@@ -418,6 +422,89 @@
             <button onclick="closeManualProcessModal()" class="btn-secondary">Cancel</button>
             <button onclick="submitManualProcessing()" class="btn-primary">Submit</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Libraries Modal -->
+    <div id="library-modal" class="modal">
+      <div class="modal-content" style="max-width:900px;">
+        <div class="modal-header">
+          <h2>Libraries</h2>
+          <button class="modal-close" onclick="closeLibraryModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+
+          <!-- Library path selector row -->
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+            <label style="font-weight:600;white-space:nowrap;">Library:</label>
+            <select id="library-path-select" style="flex:1;" onchange="loadLibraryFiles()"></select>
+            <button class="btn-small" onclick="showLibraryPathManager()">Manage Paths</button>
+            <label style="white-space:nowrap;">
+              <input type="checkbox" id="library-recursive" onchange="loadLibraryFiles()"> Subfolders
+            </label>
+          </div>
+
+          <!-- Mode toggle -->
+          <div style="display:flex;gap:0;margin-bottom:12px;">
+            <button id="library-mode-process" class="btn-small" style="border-radius:4px 0 0 4px;" onclick="setLibraryMode('process')">Process</button>
+            <button id="library-mode-restore" class="btn-small" style="border-radius:0 4px 4px 0;opacity:0.5;" onclick="setLibraryMode('restore')">Restore</button>
+          </div>
+
+          <!-- Process-mode controls -->
+          <div id="library-process-controls" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div class="settings-group">
+              <label for="library-generate-srt">Generate SRT (Whisper)</label>
+              <input type="checkbox" id="library-generate-srt" checked>
+            </div>
+            <div class="settings-group">
+              <label for="library-run-transcode">Run Transcode</label>
+              <input type="checkbox" id="library-run-transcode">
+            </div>
+            <div class="settings-group">
+              <label for="library-log-verbosity">Log Verbosity</label>
+              <select id="library-log-verbosity">
+                <option value="MINIMAL">Minimal</option>
+                <option value="NORMAL" selected>Normal</option>
+                <option value="VERBOSE">Verbose</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Restore-mode controls -->
+          <div id="library-restore-controls" style="display:none;font-size:0.88em;color:var(--muted);margin-bottom:10px;">
+            Only files with a <code>.cc4chan.orig</code> backup can be restored.
+            Per-row Keep SRT / Keep Transcoded checkboxes control what happens to the processed copies.
+          </div>
+
+          <!-- File table -->
+          <div id="library-file-list" style="max-height:380px;overflow-y:auto;margin-bottom:12px;">
+            <p class="muted">Select a library path to browse files.</p>
+          </div>
+
+          <!-- Footer buttons -->
+          <div style="display:flex;gap:10px;margin-top:4px;justify-content:flex-end;">
+            <button onclick="closeLibraryModal()" class="btn-secondary">Close</button>
+            <button id="library-submit-btn" onclick="submitLibraryAction()" class="btn-primary">Process Selected</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Library Path Manager Modal -->
+    <div id="library-path-manager-modal" class="modal">
+      <div class="modal-content" style="max-width:540px;">
+        <div class="modal-header">
+          <h2>Manage Library Paths</h2>
+          <button class="modal-close" onclick="closeLibraryPathManager()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <ul id="library-path-list" style="list-style:none;padding:0;margin:0 0 16px 0;"></ul>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="library-new-path" placeholder="/media/my-library" style="flex:1;">
+            <button class="btn-small" onclick="addLibraryPath()">Add Path</button>
+          </div>
+          <p class="muted" style="font-size:0.82em;margin-top:6px;">Path must exist inside the container (or on the host if running without Docker).</p>
         </div>
       </div>
     </div>
