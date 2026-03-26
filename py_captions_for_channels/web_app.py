@@ -3865,6 +3865,242 @@ async def restore_library_files(request: Request) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Library discovery (via Channels DVR personal-media API)
+# ---------------------------------------------------------------------------
+
+
+def _find_common_ancestor(paths: list[str]) -> str:
+    """Return the deepest directory that is a prefix of every path."""
+    if not paths:
+        return "/"
+    if len(paths) == 1:
+        return paths[0]
+    parts_list = [Path(p).parts for p in paths]
+    common: list[str] = []
+    for parts in zip(*parts_list):
+        if len(set(parts)) == 1:
+            common.append(parts[0])
+        else:
+            break
+    return str(Path(*common)) if common else "/"
+
+
+@app.get("/api/library/discover")
+async def discover_library_paths() -> dict:
+    """Query Channels DVR personal-media sources and derive a proposed mount plan.
+
+    Returns:
+        {
+          "sources": { "movies": [...paths], "tv": [...], "videos": [...] },
+          "all_host_dirs": [...unique host dirs, DVR excluded],
+          "host_root":      "/tank/AllMedia",     # proposed LIBRARY_HOST_PATH
+          "container_root": "/mnt/library",       # proposed LIBRARY_CONTAINER_PATH
+          "container_paths": ["/mnt/library/Videos",…],  # add to library list
+          "outside_root":   [...host dirs not under host_root],  # unreachable
+          "already_mounted": bool,                # container_root accessible
+        }
+    """
+    api_url = os.environ.get("CHANNELS_API_URL") or os.environ.get(
+        "CHANNELS_DVR_URL", ""
+    )
+    api_url = api_url.rstrip("/")
+    if not api_url:
+        return {"error": "CHANNELS_API_URL is not configured", "success": False}
+
+    dvr_mount = os.environ.get("DVR_MEDIA_MOUNT", "/mnt/media").strip()
+    dvr_real = os.path.realpath(dvr_mount) if dvr_mount else None
+
+    sources_data: dict[str, list[str]] = {}
+    all_host_dirs: set[str] = set()
+
+    for source in ("movies", "tv", "videos"):
+        try:
+            resp = requests.get(
+                f"{api_url}/api/v1/all",
+                params={"source": source},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            items = resp.json()
+        except Exception as exc:
+            logger.warning(f"discover_library_paths: source={source} failed: {exc}")
+            sources_data[source] = []
+            continue
+
+        paths_for_source: list[str] = []
+        for item in items:
+            p = (item.get("path") or "").strip()
+            if not p:
+                continue
+            d = str(Path(p).parent)
+            # Exclude items that live inside the DVR recordings root
+            if dvr_real:
+                d_real = os.path.realpath(d) if os.path.exists(d) else d
+                if d_real == dvr_real or d_real.startswith(dvr_real + os.sep):
+                    continue
+                if dvr_real.startswith(d_real + os.sep):
+                    continue
+            paths_for_source.append(d)
+            all_host_dirs.add(d)
+        sources_data[source] = sorted(set(paths_for_source))
+
+    if not all_host_dirs:
+        return {
+            "success": True,
+            "sources": sources_data,
+            "all_host_dirs": [],
+            "host_root": None,
+            "container_root": None,
+            "container_paths": [],
+            "outside_root": [],
+            "already_mounted": False,
+            "message": "No personal media found in Channels DVR.",
+        }
+
+    # Deduplicate: remove dirs that are sub-dirs of another dir in the set
+    sorted_dirs = sorted(all_host_dirs)
+    unique_roots: list[str] = []
+    for d in sorted_dirs:
+        if not any(d != r and (d + os.sep).startswith(r + os.sep) for r in sorted_dirs):
+            unique_roots.append(d)
+
+    host_root = _find_common_ancestor(unique_roots)
+
+    # Propose a container mount root — use existing LIBRARY_CONTAINER_PATH if set
+    container_root = (
+        os.environ.get("LIBRARY_CONTAINER_PATH", "").strip() or "/mnt/library"
+    )
+
+    # Map each unique host root to a container path
+    container_paths: list[str] = []
+    outside_root: list[str] = []
+    for d in unique_roots:
+        if (d + os.sep).startswith(host_root + os.sep) or d == host_root:
+            rel = os.path.relpath(d, host_root)
+            if rel == ".":
+                container_paths.append(container_root)
+            else:
+                container_paths.append(container_root.rstrip("/") + "/" + rel)
+        else:
+            outside_root.append(d)
+
+    already_mounted = os.path.isdir(container_root)
+
+    return {
+        "success": True,
+        "sources": sources_data,
+        "all_host_dirs": sorted(all_host_dirs),
+        "unique_roots": unique_roots,
+        "host_root": host_root,
+        "container_root": container_root,
+        "container_paths": container_paths,
+        "outside_root": outside_root,
+        "already_mounted": already_mounted,
+    }
+
+
+@app.post("/api/library/apply-discovery")
+async def apply_library_discovery(request: Request) -> dict:
+    """Write discovered mount plan to .env and pre-populate library paths.
+
+    Body:
+        {
+          "host_root":      "/tank/AllMedia",
+          "container_root": "/mnt/library",
+          "container_paths": ["/mnt/library/Videos", ...]
+        }
+
+    Writes LIBRARY_HOST_PATH and LIBRARY_CONTAINER_PATH to .env.
+    Adds container_paths to the library collection (existence check skipped —
+    paths won't be accessible until the container is restarted with the new mount).
+    """
+    try:
+        data = await request.json()
+        host_root = (data.get("host_root") or "").strip()
+        container_root = (data.get("container_root") or "").strip()
+        container_paths: list[str] = data.get("container_paths") or []
+
+        if not host_root or not container_root:
+            return {
+                "error": "host_root and container_root are required",
+                "success": False,
+            }
+
+        # --- Write to .env ---
+        env_path = get_env_file_path()
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            keys_to_set = {
+                "LIBRARY_HOST_PATH": host_root,
+                "LIBRARY_CONTAINER_PATH": container_root,
+            }
+            written: set[str] = set()
+            new_lines: list[str] = []
+            for line in lines:
+                stripped = line.strip().lstrip("#").strip()
+                if "=" in stripped:
+                    key = stripped.split("=", 1)[0].strip()
+                    if key in keys_to_set:
+                        new_lines.append(f"{key}={keys_to_set[key]}\n")
+                        written.add(key)
+                        continue
+                new_lines.append(line)
+            for key, val in keys_to_set.items():
+                if key not in written:
+                    new_lines.append(f"{key}={val}\n")
+
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            logger.info(
+                f"apply_library_discovery: wrote LIBRARY_HOST_PATH={host_root}, "
+                f"LIBRARY_CONTAINER_PATH={container_root}"
+            )
+        except Exception as e:
+            return {"error": f"Failed to write .env: {e}", "success": False}
+
+        # --- Add container paths to DB (skip existence check) ---
+        added: list[str] = []
+        skipped: list[str] = []
+        if container_paths:
+            db = next(get_db())
+            try:
+                existing = _get_library_paths(db)
+                for cp in container_paths:
+                    cp = cp.strip()
+                    if not cp:
+                        continue
+                    if _is_dvr_overlap(cp):
+                        skipped.append(cp)
+                        continue
+                    if cp in existing:
+                        skipped.append(cp)
+                        continue
+                    existing.append(cp)
+                    added.append(cp)
+                SettingsService(db).set(_LIBRARY_PATHS_KEY, existing)
+                db.commit()
+            finally:
+                db.close()
+
+        return {
+            "success": True,
+            "host_root": host_root,
+            "container_root": container_root,
+            "paths_added": added,
+            "paths_skipped": skipped,
+            "message": (
+                f"Written to .env. Restart the container to activate the mount. "
+                f"Added {len(added)} path(s) to library list."
+            ),
+        }
+    except Exception as e:
+        logger.error(f"apply_library_discovery failed: {e}", exc_info=True)
+        return {"error": str(e), "success": False}
+
+
+# ---------------------------------------------------------------------------
 # Filesystem browser (for picking library paths in the UI)
 # ---------------------------------------------------------------------------
 

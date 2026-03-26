@@ -4390,6 +4390,112 @@ async function openLibraryBrowser() {
   openFsBrowser(async path => { await addLibraryPath(path); }, startPath);
 }
 
+// ---- Library path auto-discovery ----------------------------------------
+
+let _discoveryPlan = null;
+
+async function discoverLibraryPaths() {
+  const spinner = document.getElementById('discover-spinner');
+  const btn = document.getElementById('discover-btn');
+  const panel = document.getElementById('discovery-panel');
+  const msgEl = document.getElementById('disc-result-msg');
+
+  spinner.style.display = 'inline';
+  btn.disabled = true;
+  panel.style.display = 'none';
+  msgEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/library/discover');
+    const data = await res.json();
+
+    if (data.error || !data.success) {
+      alert('Discovery failed: ' + (data.error || 'Unknown error'));
+      return;
+    }
+    if (!data.host_root) {
+      alert(data.message || 'No personal media libraries were found in Channels DVR.');
+      return;
+    }
+
+    _discoveryPlan = data;
+
+    document.getElementById('disc-host-root').textContent = data.host_root;
+    document.getElementById('disc-container-root').textContent = data.container_root;
+
+    const ul = document.getElementById('disc-container-paths');
+    ul.innerHTML = '';
+    for (const cp of (data.container_paths || [])) {
+      const li = document.createElement('li');
+      li.textContent = cp;
+      ul.appendChild(li);
+    }
+
+    const outsideDiv = document.getElementById('disc-outside-root');
+    const outsideUl = document.getElementById('disc-outside-list');
+    if (data.outside_root && data.outside_root.length > 0) {
+      outsideUl.innerHTML = data.outside_root.map(p => `<li>${p}</li>`).join('');
+      outsideDiv.style.display = 'block';
+    } else {
+      outsideDiv.style.display = 'none';
+    }
+
+    const mountedDiv = document.getElementById('disc-already-mounted');
+    mountedDiv.style.display = data.already_mounted ? 'block' : 'none';
+
+    const applyBtn = document.getElementById('apply-discovery-btn');
+    applyBtn.textContent = data.already_mounted
+      ? 'Apply (no restart needed)'
+      : 'Apply (restart required)';
+
+    panel.style.display = 'block';
+
+  } catch (e) {
+    alert('Discovery error: ' + e);
+  } finally {
+    spinner.style.display = 'none';
+    btn.disabled = false;
+  }
+}
+
+async function applyLibraryDiscovery() {
+  if (!_discoveryPlan) return;
+  const applyBtn = document.getElementById('apply-discovery-btn');
+  const msgEl = document.getElementById('disc-result-msg');
+  applyBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/library/apply-discovery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        host_root: _discoveryPlan.host_root,
+        container_root: _discoveryPlan.container_root,
+        container_paths: _discoveryPlan.container_paths,
+      }),
+    });
+    const data = await res.json();
+
+    msgEl.style.display = 'block';
+    if (data.success) {
+      msgEl.style.color = '#4caf50';
+      msgEl.textContent = data.message;
+      await _renderLibraryPathList();
+    } else {
+      msgEl.style.color = '#f44336';
+      msgEl.textContent = 'Error: ' + (data.error || 'Unknown error');
+    }
+  } catch (e) {
+    msgEl.style.display = 'block';
+    msgEl.style.color = '#f44336';
+    msgEl.textContent = 'Request failed: ' + e;
+  } finally {
+    applyBtn.disabled = false;
+  }
+}
+
+// ---- End Library path auto-discovery -------------------------------------
+
 function closeFsBrowser() {
   document.getElementById('fs-browser-modal').style.display = 'none';
   _fsBrowserCallback = null;

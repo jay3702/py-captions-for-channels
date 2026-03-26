@@ -506,6 +506,39 @@
             <button class="btn-small" onclick="addLibraryPath()">Add</button>
           </div>
           <p class="muted" style="font-size:0.82em;margin-top:6px;">Path must be accessible inside the container (or on the host if running without Docker).</p>
+
+          <hr style="margin:14px 0;border-color:var(--border);">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button class="btn-secondary" id="discover-btn" onclick="discoverLibraryPaths()">Discover from Channels…</button>
+            <span id="discover-spinner" class="muted" style="display:none;font-size:0.85em;">Querying Channels DVR…</span>
+          </div>
+
+          <!-- Discovery result panel (hidden until discover returns) -->
+          <div id="discovery-panel" style="display:none;margin-top:12px;padding:10px;background:var(--surface2,#1e1e1e);border:1px solid var(--border);border-radius:6px;">
+            <p style="margin:0 0 6px 0;font-size:0.88em;font-weight:600;">Proposed mount plan</p>
+            <table style="font-size:0.82em;border-collapse:collapse;width:100%;">
+              <tr>
+                <td style="color:var(--muted);padding:2px 6px 2px 0;white-space:nowrap;">Host path&nbsp;(Docker host)</td>
+                <td id="disc-host-root" style="font-family:monospace;word-break:break-all;"></td>
+              </tr>
+              <tr>
+                <td style="color:var(--muted);padding:2px 6px 2px 0;white-space:nowrap;">Container path</td>
+                <td id="disc-container-root" style="font-family:monospace;"></td>
+              </tr>
+            </table>
+            <p style="margin:8px 0 4px;font-size:0.82em;font-weight:600;">Paths to add to library list:</p>
+            <ul id="disc-container-paths" style="margin:0 0 8px 0;padding-left:16px;font-size:0.82em;font-family:monospace;"></ul>
+            <div id="disc-outside-root" style="display:none;">
+              <p style="margin:4px 0;font-size:0.8em;color:#c97a0c;">⚠ These paths are outside the proposed mount root and will not be reachable unless you choose a higher-level host path:</p>
+              <ul id="disc-outside-list" style="margin:0 0 8px 0;padding-left:16px;font-size:0.8em;font-family:monospace;color:#c97a0c;"></ul>
+            </div>
+            <div id="disc-already-mounted" style="display:none;font-size:0.82em;color:#4caf50;margin-bottom:6px;">✓ Container path already mounted — no restart needed.</div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <button class="btn-primary" id="apply-discovery-btn" onclick="applyLibraryDiscovery()">Apply (restart required)</button>
+              <button class="btn-secondary" onclick="document.getElementById('discovery-panel').style.display='none'">Dismiss</button>
+            </div>
+            <p id="disc-result-msg" style="display:none;margin:8px 0 0;font-size:0.82em;"></p>
+          </div>
         </div>
       </div>
     </div>
