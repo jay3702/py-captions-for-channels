@@ -13,6 +13,7 @@ Monitors your DVR for completed recordings, transcribes them with Faster Whisper
 - **Web Dashboard** — Real-time status, execution history, settings, system/GPU monitoring, and manual reprocessing
 - **Smart Optimization** — Automatically tunes Whisper and ffmpeg parameters based on source type (OTA vs streaming)
 - **Show Whitelist** — Process only the shows you care about; interactive toggle from the web UI
+- **Personal Media Libraries** — Caption VHS transfers, home movies, ripped Blu-rays, and other personal media stored outside the DVR. Auto-discovers mount paths from Channels DVR; supports up to three separate NAS/server mounts
 - **Fire TV / Android Support** — Optional MP4 transcoding with an embedded captions track for clients that don't support sidecar SRT files
 - **Idempotent** — Tracks processed recordings in a database to avoid duplicates
 - **Quarantine System** — Cleans up orphaned `.srt` and `.orig` files after source media is deleted, conserving storage space
@@ -94,6 +95,7 @@ For manual installation, troubleshooting, and developer setup: **[INSTALL.md](IN
 | [INSTALL.md](INSTALL.md) | Installation — quick one-command and manual tracks, troubleshooting, developer setup |
 | [docs/WEB_UI.md](docs/WEB_UI.md) | Web dashboard reference — tabs, buttons, dialogs |
 | [SETUP_ADVANCED.md](SETUP_ADVANCED.md) | GPU tuning, Fire TV transcoding, webhooks, whitelist regex |
+| [docs/LIBRARY_PROCESSING.md](docs/LIBRARY_PROCESSING.md) | Personal media libraries — setup, multi-server mounts, auto-discovery |
 | [.env.example](.env.example) | All configuration options with descriptions |
 | [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) | Hardware benchmarks and sizing |
 | [docs/AUTOMATIC_WHISPER_OPTIMIZATION.md](docs/AUTOMATIC_WHISPER_OPTIMIZATION.md) | Smart encoding optimization |

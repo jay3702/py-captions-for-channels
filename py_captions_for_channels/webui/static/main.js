@@ -4419,32 +4419,50 @@ async function discoverLibraryPaths() {
     }
 
     _discoveryPlan = data;
+    const mounts = data.proposed_mounts || [];
+    const allMounted = mounts.every(m => m.already_mounted);
+    const multiMount = data.multiple_mounts_required;
 
-    document.getElementById('disc-host-root').textContent = data.host_root;
-    document.getElementById('disc-container-root').textContent = data.container_root;
+    // Build the mount table rows
+    const mountTableBody = document.getElementById('disc-mount-table-body');
+    if (mountTableBody) {
+      mountTableBody.innerHTML = '';
+      // Single-mount: show legacy simplified view
+      // Multi-mount: show one row per slot
+      if (!multiMount && mounts.length === 1) {
+        const m = mounts[0];
+        mountTableBody.innerHTML = `
+          <tr><td style="color:var(--muted);padding:2px 6px 2px 0;white-space:nowrap;">Host path</td>
+              <td style="font-family:monospace;word-break:break-all;">${m.host_root}</td></tr>
+          <tr><td style="color:var(--muted);padding:2px 6px 2px 0;white-space:nowrap;">Container path</td>
+              <td style="font-family:monospace;">${m.container_root}</td></tr>`;
+      } else {
+        for (const m of mounts) {
+          mountTableBody.innerHTML += `
+          <tr><td style="color:var(--muted);padding:4px 6px 2px 0;white-space:nowrap;font-weight:600;" colspan="2">Mount ${m.slot} (${m.env_key_host})</td></tr>
+          <tr><td style="color:var(--muted);padding:2px 6px 2px 12px;white-space:nowrap;">Host path</td>
+              <td style="font-family:monospace;word-break:break-all;">${m.host_root}</td></tr>
+          <tr><td style="color:var(--muted);padding:2px 6px 6px 12px;white-space:nowrap;">Container path</td>
+              <td style="font-family:monospace;">${m.container_root}</td></tr>`;
+        }
+      }
+    }
 
+    // All container paths to add
+    const allContainerPaths = mounts.flatMap(m => m.container_paths || []);
     const ul = document.getElementById('disc-container-paths');
-    ul.innerHTML = '';
-    for (const cp of (data.container_paths || [])) {
-      const li = document.createElement('li');
-      li.textContent = cp;
-      ul.appendChild(li);
-    }
+    ul.innerHTML = allContainerPaths.map(cp => `<li>${cp}</li>`).join('');
 
-    const outsideDiv = document.getElementById('disc-outside-root');
-    const outsideUl = document.getElementById('disc-outside-list');
-    if (data.outside_root && data.outside_root.length > 0) {
-      outsideUl.innerHTML = data.outside_root.map(p => `<li>${p}</li>`).join('');
-      outsideDiv.style.display = 'block';
-    } else {
-      outsideDiv.style.display = 'none';
-    }
+    // Multi-mount warning
+    const multiDiv = document.getElementById('disc-multi-mount-warn');
+    if (multiDiv) multiDiv.style.display = multiMount ? 'block' : 'none';
 
+    // Already-mounted notice
     const mountedDiv = document.getElementById('disc-already-mounted');
-    mountedDiv.style.display = data.already_mounted ? 'block' : 'none';
+    mountedDiv.style.display = allMounted ? 'block' : 'none';
 
     const applyBtn = document.getElementById('apply-discovery-btn');
-    applyBtn.textContent = data.already_mounted
+    applyBtn.textContent = allMounted
       ? 'Apply (no restart needed)'
       : 'Apply (restart required)';
 
@@ -4468,11 +4486,7 @@ async function applyLibraryDiscovery() {
     const res = await fetch('/api/library/apply-discovery', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        host_root: _discoveryPlan.host_root,
-        container_root: _discoveryPlan.container_root,
-        container_paths: _discoveryPlan.container_paths,
-      }),
+      body: JSON.stringify({ proposed_mounts: _discoveryPlan.proposed_mounts }),
     });
     const data = await res.json();
 

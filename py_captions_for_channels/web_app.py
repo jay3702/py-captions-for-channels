@@ -3403,6 +3403,13 @@ async def cancel_channels_files_audit() -> dict:
 
 _LIBRARY_PATHS_KEY = "library_paths"
 
+# Up to three independent library mounts (LIBRARY_HOST_PATH, LIBRARY_HOST_PATH_2, etc.)
+_LIBRARY_MOUNT_SLOTS: list[tuple[str, str, str]] = [
+    ("LIBRARY_HOST_PATH", "LIBRARY_CONTAINER_PATH", "/mnt/library"),
+    ("LIBRARY_HOST_PATH_2", "LIBRARY_CONTAINER_PATH_2", "/mnt/library2"),
+    ("LIBRARY_HOST_PATH_3", "LIBRARY_CONTAINER_PATH_3", "/mnt/library3"),
+]
+
 
 def _dvr_stat() -> tuple | None:
     """Return (st_dev, st_ino) for the configured DVR media mount, or None."""
@@ -3868,6 +3875,8 @@ async def restore_library_files(request: Request) -> dict:
 # Library discovery (via Channels DVR personal-media API)
 # ---------------------------------------------------------------------------
 
+_SHALLOW_ANCESTOR_DEPTH = 3  # host_root with fewer Path.parts is "too broad"
+
 
 def _find_common_ancestor(paths: list[str]) -> str:
     """Return the deepest directory that is a prefix of every path."""
@@ -3885,20 +3894,45 @@ def _find_common_ancestor(paths: list[str]) -> str:
     return str(Path(*common)) if common else "/"
 
 
+def _split_path_groups(dirs: list[str]) -> list[list[str]]:
+    """Group dirs into Docker-mount candidates.
+
+    If all dirs share a common ancestor at depth >= ``_SHALLOW_ANCESTOR_DEPTH``
+    (e.g. ``/mnt/nas1``), they stay as one group.  When the ancestor is too
+    shallow (``/``, ``/mnt``, ``/volume1``), paths are grouped by their
+    second-level prefix so each server/NAS becomes its own mount slot.
+    """
+    if not dirs:
+        return []
+    common = _find_common_ancestor(dirs)
+    if len(Path(common).parts) >= _SHALLOW_ANCESTOR_DEPTH:
+        return [dirs]
+    # Common ancestor is too broad — group by second-level prefix
+    groups: dict[str, list[str]] = {}
+    for d in dirs:
+        parts = Path(d).parts
+        if len(parts) >= 3:
+            # e.g. /mnt/nas1/Movies -> prefix /mnt/nas1
+            prefix = str(Path(*parts[:3]))
+        elif len(parts) >= 2:
+            # e.g. /tank/Videos -> prefix /tank
+            prefix = str(Path(*parts[:2]))
+        else:
+            prefix = d
+        groups.setdefault(prefix, []).append(d)
+    return list(groups.values())
+
+
 @app.get("/api/library/discover")
 async def discover_library_paths() -> dict:
-    """Query Channels DVR personal-media sources and derive a proposed mount plan.
+    """Query Channels DVR personal-media sources and derive a mount plan.
 
-    Returns:
-        {
-          "sources": { "movies": [...paths], "tv": [...], "videos": [...] },
-          "all_host_dirs": [...unique host dirs, DVR excluded],
-          "host_root":      "/tank/AllMedia",     # proposed LIBRARY_HOST_PATH
-          "container_root": "/mnt/library",       # proposed LIBRARY_CONTAINER_PATH
-          "container_paths": ["/mnt/library/Videos",…],  # add to library list
-          "outside_root":   [...host dirs not under host_root],  # unreachable
-          "already_mounted": bool,                # container_root accessible
-        }
+    Supports up to three separate mount slots for media spread across multiple
+    servers/NAS devices.
+
+    Returns a ``proposed_mounts`` list with one entry per required Docker
+    volume mount.  For single-server setups this will have one entry; for
+    multi-server setups it may have two or three.
     """
     api_url = os.environ.get("CHANNELS_API_URL") or os.environ.get(
         "CHANNELS_DVR_URL", ""
@@ -3948,11 +3982,12 @@ async def discover_library_paths() -> dict:
         return {
             "success": True,
             "sources": sources_data,
-            "all_host_dirs": [],
+            "unique_roots": [],
+            "proposed_mounts": [],
+            "multiple_mounts_required": False,
             "host_root": None,
             "container_root": None,
             "container_paths": [],
-            "outside_root": [],
             "already_mounted": False,
             "message": "No personal media found in Channels DVR.",
         }
@@ -3964,38 +3999,51 @@ async def discover_library_paths() -> dict:
         if not any(d != r and (d + os.sep).startswith(r + os.sep) for r in sorted_dirs):
             unique_roots.append(d)
 
-    host_root = _find_common_ancestor(unique_roots)
+    # Split into per-server mount groups (handles multi-NAS setups)
+    groups = _split_path_groups(unique_roots)[: len(_LIBRARY_MOUNT_SLOTS)]
 
-    # Propose a container mount root — use existing LIBRARY_CONTAINER_PATH if set
-    container_root = (
-        os.environ.get("LIBRARY_CONTAINER_PATH", "").strip() or "/mnt/library"
-    )
+    proposed_mounts: list[dict] = []
+    for i, group_dirs in enumerate(groups):
+        slot_key_host, slot_key_container, slot_default_container = (
+            _LIBRARY_MOUNT_SLOTS[i]
+        )
+        group_host_root = _find_common_ancestor(group_dirs)
+        container_root = (
+            os.environ.get(slot_key_container, "").strip() or slot_default_container
+        )
 
-    # Map each unique host root to a container path
-    container_paths: list[str] = []
-    outside_root: list[str] = []
-    for d in unique_roots:
-        if (d + os.sep).startswith(host_root + os.sep) or d == host_root:
-            rel = os.path.relpath(d, host_root)
+        group_container_paths: list[str] = []
+        for d in group_dirs:
+            rel = os.path.relpath(d, group_host_root)
             if rel == ".":
-                container_paths.append(container_root)
+                group_container_paths.append(container_root)
             else:
-                container_paths.append(container_root.rstrip("/") + "/" + rel)
-        else:
-            outside_root.append(d)
+                group_container_paths.append(container_root.rstrip("/") + "/" + rel)
 
-    already_mounted = os.path.isdir(container_root)
+        proposed_mounts.append(
+            {
+                "slot": i + 1,
+                "env_key_host": slot_key_host,
+                "env_key_container": slot_key_container,
+                "host_root": group_host_root,
+                "container_root": container_root,
+                "container_paths": group_container_paths,
+                "already_mounted": os.path.isdir(container_root),
+            }
+        )
 
+    first = proposed_mounts[0] if proposed_mounts else {}
     return {
         "success": True,
         "sources": sources_data,
-        "all_host_dirs": sorted(all_host_dirs),
         "unique_roots": unique_roots,
-        "host_root": host_root,
-        "container_root": container_root,
-        "container_paths": container_paths,
-        "outside_root": outside_root,
-        "already_mounted": already_mounted,
+        "proposed_mounts": proposed_mounts,
+        "multiple_mounts_required": len(proposed_mounts) > 1,
+        # Legacy single-mount fields (first proposed mount)
+        "host_root": first.get("host_root"),
+        "container_root": first.get("container_root"),
+        "container_paths": first.get("container_paths", []),
+        "already_mounted": first.get("already_mounted", False),
     }
 
 
@@ -4003,39 +4051,57 @@ async def discover_library_paths() -> dict:
 async def apply_library_discovery(request: Request) -> dict:
     """Write discovered mount plan to .env and pre-populate library paths.
 
-    Body:
-        {
-          "host_root":      "/tank/AllMedia",
-          "container_root": "/mnt/library",
-          "container_paths": ["/mnt/library/Videos", ...]
-        }
+    Accepts either:
+      * New multi-mount format:
+          { "proposed_mounts": [{slot, env_key_host, env_key_container,
+                                 host_root, container_root, container_paths}] }
+      * Legacy single-mount format:
+          { "host_root": "...", "container_root": "...",
+            "container_paths": [...] }
 
-    Writes LIBRARY_HOST_PATH and LIBRARY_CONTAINER_PATH to .env.
-    Adds container_paths to the library collection (existence check skipped —
-    paths won't be accessible until the container is restarted with the new mount).
+    Writes LIBRARY_HOST_PATH[_N] and LIBRARY_CONTAINER_PATH[_N] to .env.
+    Adds container_paths to the library collection without an existence check;
+    paths won't be accessible until the container restarts with the new mount.
     """
     try:
         data = await request.json()
-        host_root = (data.get("host_root") or "").strip()
-        container_root = (data.get("container_root") or "").strip()
-        container_paths: list[str] = data.get("container_paths") or []
 
-        if not host_root or not container_root:
-            return {
-                "error": "host_root and container_root are required",
-                "success": False,
-            }
+        # Normalise to a list of mount dicts
+        if "proposed_mounts" in data:
+            mounts: list[dict] = data["proposed_mounts"]
+        else:
+            # Legacy single-mount body
+            host_root = (data.get("host_root") or "").strip()
+            container_root = (data.get("container_root") or "").strip()
+            if not host_root or not container_root:
+                return {
+                    "error": "host_root and container_root are required",
+                    "success": False,
+                }
+            mounts = [
+                {
+                    "env_key_host": "LIBRARY_HOST_PATH",
+                    "env_key_container": "LIBRARY_CONTAINER_PATH",
+                    "host_root": host_root,
+                    "container_root": container_root,
+                    "container_paths": data.get("container_paths") or [],
+                }
+            ]
 
-        # --- Write to .env ---
+        if not mounts:
+            return {"error": "No mount proposals supplied", "success": False}
+
+        # --- Patch .env ---
         env_path = get_env_file_path()
         try:
             with open(env_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
-            keys_to_set = {
-                "LIBRARY_HOST_PATH": host_root,
-                "LIBRARY_CONTAINER_PATH": container_root,
-            }
+            keys_to_set: dict[str, str] = {}
+            for m in mounts:
+                keys_to_set[m["env_key_host"]] = m["host_root"]
+                keys_to_set[m["env_key_container"]] = m["container_root"]
+
             written: set[str] = set()
             new_lines: list[str] = []
             for line in lines:
@@ -4054,8 +4120,9 @@ async def apply_library_discovery(request: Request) -> dict:
             with open(env_path, "w", encoding="utf-8") as f:
                 f.writelines(new_lines)
             logger.info(
-                f"apply_library_discovery: wrote LIBRARY_HOST_PATH={host_root}, "
-                f"LIBRARY_CONTAINER_PATH={container_root}"
+                "apply_library_discovery: wrote %d key(s) to .env: %s",
+                len(keys_to_set),
+                ", ".join(f"{k}={v}" for k, v in keys_to_set.items()),
             )
         except Exception as e:
             return {"error": f"Failed to write .env: {e}", "success": False}
@@ -4063,11 +4130,14 @@ async def apply_library_discovery(request: Request) -> dict:
         # --- Add container paths to DB (skip existence check) ---
         added: list[str] = []
         skipped: list[str] = []
-        if container_paths:
+        all_container_paths = [
+            cp for m in mounts for cp in (m.get("container_paths") or [])
+        ]
+        if all_container_paths:
             db = next(get_db())
             try:
                 existing = _get_library_paths(db)
-                for cp in container_paths:
+                for cp in all_container_paths:
                     cp = cp.strip()
                     if not cp:
                         continue
@@ -4084,15 +4154,22 @@ async def apply_library_discovery(request: Request) -> dict:
             finally:
                 db.close()
 
+        already_mounted = all(
+            os.path.isdir(m.get("container_root", "")) for m in mounts
+        )
         return {
             "success": True,
-            "host_root": host_root,
-            "container_root": container_root,
+            "mounts_written": len(mounts),
             "paths_added": added,
             "paths_skipped": skipped,
             "message": (
-                f"Written to .env. Restart the container to activate the mount. "
-                f"Added {len(added)} path(s) to library list."
+                "Written to .env. "
+                + (
+                    "No restart needed — mount already active."
+                    if already_mounted
+                    else "Restart the container to activate the volume mount(s)."
+                )
+                + f" Added {len(added)} path(s) to library list."
             ),
         }
     except Exception as e:
