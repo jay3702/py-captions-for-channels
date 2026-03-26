@@ -5,15 +5,12 @@
 #   1. Download the installer scripts it needs (setup-wsl.ps1, setup-wsl.sh, autostart.ps1)
 #   2. Hand off to setup-wsl.ps1, which installs WSL2, Docker, and the container
 #
-# Usage:
-#   Right-click PowerShell → "Run as Administrator", then:
-#     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-#     .\setup-windows.ps1
+# Usage (one-liner — paste into an elevated PowerShell):
+#   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+#   irm https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main/setup-windows.ps1 | iex
 #
-# Or as a one-liner (paste into an elevated PowerShell):
-#   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; `
-#     Invoke-WebRequest -Uri https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main/setup-windows.ps1 -OutFile "$env:TEMP\setup-windows.ps1"; `
-#     & "$env:TEMP\setup-windows.ps1"
+# Or save locally first, then run:
+#   .\setup-windows.ps1
 # ---------------------------------------------------------------------------
 param(
     [string]$Distro = "Ubuntu-22.04"
@@ -22,6 +19,15 @@ param(
 $ErrorActionPreference = "Stop"
 
 $REPO_RAW = "https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main"
+
+# ── When piped through iex, MyCommand.Path is null — re-run from a temp file
+if (-not $MyInvocation.MyCommand.Path) {
+    $tmpScript = Join-Path $env:TEMP "setup-windows.ps1"
+    Write-Host "  Downloading setup-windows.ps1 to $tmpScript..." -ForegroundColor DarkGray
+    Invoke-WebRequest -Uri "$REPO_RAW/setup-windows.ps1" -OutFile $tmpScript -UseBasicParsing
+    & $tmpScript -Distro $Distro
+    return
+}
 
 $SCRIPTS_NEEDED = @(
     "scripts/setup-wsl.ps1",
