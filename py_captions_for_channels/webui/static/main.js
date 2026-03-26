@@ -1808,6 +1808,9 @@ function wizardCollectSettings() {
     // An empty value falls back to the named volume "channels_media" (wrong for same-host).
     s.DVR_MEDIA_HOST_PATH = localPath;
   } else {
+    // DVR_MEDIA_HOST_PATH is intentionally NOT set for remote deployments.
+    // Omitting it from the posted settings preserves whatever value is already
+    // in .env (e.g. a Windows mapped-drive path set outside the wizard).
     const mountType = document.getElementById('wizard-mount-type')?.value || 'cifs';
     const containerPath = document.getElementById('wizard-container-path')?.value?.trim() || '/mnt/channels';
     s.DVR_PATH_PREFIX = wizardState.probedPrefix || '';
@@ -1901,7 +1904,7 @@ function wizardBuildReview() {
     `DVR_MEDIA_DEVICE=${s.DVR_MEDIA_DEVICE}`,
     `DVR_MEDIA_OPTS=${s.DVR_MEDIA_OPTS || 'bind'}`,
     `DVR_MEDIA_MOUNT=${s.DVR_MEDIA_MOUNT}`,
-    `DVR_MEDIA_HOST_PATH=${s.DVR_MEDIA_HOST_PATH ?? ''}`,
+    ...(s.DVR_MEDIA_HOST_PATH !== undefined ? [`DVR_MEDIA_HOST_PATH=${s.DVR_MEDIA_HOST_PATH}`] : ['# DVR_MEDIA_HOST_PATH — preserved from existing config (not changed by wizard)']),
     '',
     '# Recordings path (host path for Docker volume)',
     `DVR_RECORDINGS_PATH=${s.DVR_RECORDINGS_PATH}`,
