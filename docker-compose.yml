@@ -73,12 +73,15 @@ services:
       - ${WSL_LIB_PATH:-/tmp}:/usr/lib/wsl/lib:ro
       # Optional: personal media library mounts (up to 3 slots).
       # Use the web UI "Discover from Channels" button to populate these automatically.
+      # Named-volume fallbacks (library_slot_N) are harmless empty volumes used when
+      # LIBRARY_HOST_PATH[_N] is not configured.  Do NOT use /tmp — that exposes the
+      # host's temp directory inside the container.
       # Slot 1 — primary library mount
-      - ${LIBRARY_HOST_PATH:-/tmp}:${LIBRARY_CONTAINER_PATH:-/mnt/library}
+      - ${LIBRARY_HOST_PATH:-library_slot_1}:${LIBRARY_CONTAINER_PATH:-/mnt/library}
       # Slot 2 — second NAS / server (leave LIBRARY_HOST_PATH_2 unset to skip)
-      - ${LIBRARY_HOST_PATH_2:-/tmp}:${LIBRARY_CONTAINER_PATH_2:-/mnt/library2}
+      - ${LIBRARY_HOST_PATH_2:-library_slot_2}:${LIBRARY_CONTAINER_PATH_2:-/mnt/library2}
       # Slot 3 — third NAS / server (leave LIBRARY_HOST_PATH_3 unset to skip)
-      - ${LIBRARY_HOST_PATH_3:-/tmp}:${LIBRARY_CONTAINER_PATH_3:-/mnt/library3}
+      - ${LIBRARY_HOST_PATH_3:-library_slot_3}:${LIBRARY_CONTAINER_PATH_3:-/mnt/library3}
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
@@ -114,3 +117,8 @@ volumes:
       type: ${DVR_MEDIA_TYPE:-none}
       device: ${DVR_MEDIA_DEVICE:-${DVR_MEDIA_MOUNT:-/mnt/media}}
       o: ${DVR_MEDIA_OPTS:-bind}
+  # Empty placeholder volumes for unused library slots.
+  # These are only used when LIBRARY_HOST_PATH[_N] is not set in .env.
+  library_slot_1:
+  library_slot_2:
+  library_slot_3:
