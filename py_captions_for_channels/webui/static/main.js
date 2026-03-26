@@ -1622,6 +1622,8 @@ function wizardGoToStep(step) {
   if (step === 3) {
     const pathCheckResult = document.getElementById('wizard-path-check-result');
     if (pathCheckResult) { pathCheckResult.style.display = 'none'; pathCheckResult.innerHTML = ''; }
+    const libCheckResult = document.getElementById('wizard-library-check-result');
+    if (libCheckResult) { libCheckResult.style.display = 'none'; libCheckResult.innerHTML = ''; }
     const isSame = wizardState.deploymentType === 'same-host';
     const sameEl = document.getElementById('wizard-step-3-same');
     const remoteEl = document.getElementById('wizard-step-3-remote');
@@ -1801,10 +1803,10 @@ function wizardCollectSettings() {
     s.DVR_MEDIA_OPTS = 'bind';
     s.DVR_MEDIA_MOUNT = localPath;
     s.DVR_RECORDINGS_PATH = localPath;
-    // Explicitly clear DVR_MEDIA_HOST_PATH so Docker uses the named volume
-    // device path. A stale non-empty value from a prior install would override
-    // the volume and could point to an empty or wrong directory.
-    s.DVR_MEDIA_HOST_PATH = '';
+    // Set DVR_MEDIA_HOST_PATH to the local path so docker-compose bind-mounts it.
+    // docker-compose.yml: ${DVR_MEDIA_HOST_PATH:-channels_media}:${DVR_MEDIA_MOUNT:-/mnt/media}
+    // An empty value falls back to the named volume "channels_media" (wrong for same-host).
+    s.DVR_MEDIA_HOST_PATH = localPath;
   } else {
     const mountType = document.getElementById('wizard-mount-type')?.value || 'cifs';
     const containerPath = document.getElementById('wizard-container-path')?.value?.trim() || '/mnt/channels';
@@ -1865,7 +1867,7 @@ function wizardBuildReview() {
       exp += row('DVR_MEDIA_DEVICE', s.DVR_MEDIA_DEVICE, 'The network share Docker will mount (CIFS UNC path or NFS export).');
       exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Path inside the container where recordings appear.');
     } else {
-      exp += row('DVR_MEDIA_DEVICE', s.DVR_MEDIA_DEVICE, 'Local path Docker bind-mounts into the container.');
+      exp += row('DVR_MEDIA_HOST_PATH', s.DVR_MEDIA_HOST_PATH, 'Host path Docker bind-mounts into the container (left side of the volume in docker-compose.yml).');
       exp += row('DVR_MEDIA_MOUNT', s.DVR_MEDIA_MOUNT, 'Container path where recordings appear (same as local path).');
     }
     exp += `<tr><td colspan="3" style="padding:8px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Event Source</td></tr>`;
@@ -1968,15 +1970,18 @@ async function wizardNext() {
             const entries = data.entry_count !== null ? ` (${data.entry_count} item${data.entry_count !== 1 ? 's' : ''})` : '';
             resultDiv.innerHTML = `<div style="background:#d4edda;border:1px solid #28a745;padding:8px 12px;border-radius:5px;font-size:12px;color:#1a3c2e;">&#10003; Path is accessible from the container${entries}</div>`;
             resultDiv.style.display = 'block';
+            wizardCheckLibraryPaths(document.getElementById('wizard-library-check-result'));
             setTimeout(() => wizardGoToStep(4), 500);
           } else if (data.exists) {
             resultDiv.innerHTML = `<div style="background:#f8d7da;border:1px solid #dc3545;padding:8px 12px;border-radius:5px;font-size:12px;color:#721c24;"><strong>&#10007; Path exists but is not readable.</strong> Check Docker volume mount permissions.</div>`;
           } else {
-            resultDiv.innerHTML = `<div style="background:#fff3cd;border:1px solid #856404;padding:8px 12px;border-radius:5px;font-size:12px;color:#856404;">
-              <strong>&#9888; Path not found inside the container.</strong><br>
-              <span style="font-size:11px;">Make sure <code>DVR_MEDIA_MOUNT</code> matches this path and the volume is mounted. You can continue anyway if this is expected.</span><br>
-              <button type="button" class="btn-small btn-secondary" style="margin-top:8px;" onclick="wizardGoToStep(4)">Continue anyway &rarr;</button>
+            const safePath = localPath.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            resultDiv.innerHTML = `<div style="background:#fff3cd;border:1px solid #856404;padding:8px 12px;border-radius:5px;font-size:12px;color:#664d03;">
+              <strong>&#9888; Path not accessible inside the container.</strong><br>
+              <span style="font-size:11px;">Make sure <code>${safePath}</code> exists on the Docker host and is listed in <code>DVR_MEDIA_DEVICE</code> in your <code>docker-compose.yml</code>. After <strong>Apply &amp; Restart</strong> Docker will bind-mount it into the container. You can continue if you know the path is correct.</span><br>
+              <button type="button" class="btn-small btn-secondary" style="margin-top:8px;" onclick="wizardGoToStep(4)">Continue &rarr;</button>
             </div>`;
+            wizardCheckLibraryPaths(document.getElementById('wizard-library-check-result'));
           }
         } else {
           wizardGoToStep(4);
@@ -2017,6 +2022,52 @@ async function wizardNext() {
 function wizardBack() {
   if (wizardState.step > 1) wizardGoToStep(wizardState.step - 1);
 }
+
+async function wizardCheckLibraryPaths(containerEl) {
+  if (!containerEl) return;
+  // Read configured library container paths from the Settings form DOM (populated at page load)
+  const slots = [
+    { label: 'Library 1', input: document.querySelector('input[name="LIBRARY_CONTAINER_PATH"]') },
+    { label: 'Library 2', input: document.querySelector('input[name="LIBRARY_CONTAINER_PATH_2"]') },
+    { label: 'Library 3', input: document.querySelector('input[name="LIBRARY_CONTAINER_PATH_3"]') },
+  ];
+  const configured = slots.filter(s => s.input?.value?.trim());
+  if (!configured.length) {
+    containerEl.style.display = 'none';
+    return;
+  }
+  containerEl.style.display = 'block';
+  containerEl.innerHTML = '<span style="color:var(--muted);font-size:12px;">Checking library paths…</span>';
+  const results = await Promise.all(configured.map(async s => {
+    const path = s.input.value.trim();
+    try {
+      const res = await fetch(`/api/setup/check-path?path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      return { label: s.label, path, accessible: data.accessible, exists: data.exists };
+    } catch {
+      return { label: s.label, path, accessible: false, exists: false };
+    }
+  }));
+  const rows = results.map(r => {
+    const safePath = r.path.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    if (r.accessible) {
+      return `<tr><td style="padding:3px 6px;font-size:11px;color:#1a3c2e;">&#10003; ${r.label}</td><td style="padding:3px 6px;font-family:monospace;font-size:11px;color:#1a3c2e;">${safePath}</td><td style="padding:3px 6px;font-size:11px;color:#1a3c2e;">Mounted</td></tr>`;
+    } else {
+      return `<tr><td style="padding:3px 6px;font-size:11px;color:#664d03;">&#9888; ${r.label}</td><td style="padding:3px 6px;font-family:monospace;font-size:11px;color:#664d03;">${safePath}</td><td style="padding:3px 6px;font-size:11px;color:#664d03;">Not mounted yet</td></tr>`;
+    }
+  }).join('');
+  const allOk = results.every(r => r.accessible);
+  const bg = allOk ? '#d4edda' : '#fff3cd';
+  const border = allOk ? '#28a745' : '#856404';
+  const note = allOk
+    ? ''
+    : '<p style="margin:6px 0 0 0;font-size:11px;color:#664d03;">Library mounts will be active after Apply &amp; Restart.</p>';
+  containerEl.innerHTML = `<div style="background:${bg};border:1px solid ${border};padding:8px 12px;border-radius:5px;margin-top:8px;">
+    <strong style="font-size:12px;color:${allOk ? '#1a3c2e' : '#664d03'};">Library Path${results.length > 1 ? 's' : ''}</strong>
+    <table style="width:100%;border-collapse:collapse;margin-top:4px;">${rows}</table>${note}
+  </div>`;
+}
+
 
 // ─── End Setup Wizard ───────────────────────────────────────────────────────
 
