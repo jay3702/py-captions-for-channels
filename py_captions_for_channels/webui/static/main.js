@@ -4223,8 +4223,21 @@ async function loadLibraryFiles() {
   try {
     const res = await fetch(`/api/library/files?path=${encodeURIComponent(path)}&recursive=${recursive}`);
     const data = await res.json();
-    if (data.error) throw new Error(data.error);
+    if (data.error) {
+      const notFound = data.error.includes('not found') || data.error.includes('not exist');
+      container.innerHTML = notFound
+        ? `<p class="muted" style="color:#c97a0c;">⚠ ${escapeHtml(data.error)}<br>
+           <span style="font-size:0.9em;">If you just applied the discovery, restart the container to activate the mount, then try again.<br>
+           You can also enable <strong>Recursive</strong> above and try a parent path like the mount root.</span></p>`
+        : `<p class="muted">Error: ${escapeHtml(data.error)}</p>`;
+      _libraryFiles = [];
+      return;
+    }
     _libraryFiles = data.files || [];
+    if (!_libraryFiles.length && !recursive) {
+      container.innerHTML = `<p class="muted">No media files found directly in this folder. Try enabling <strong>Recursive</strong> to include sub-folders.</p>`;
+      return;
+    }
     _renderLibraryTable();
   } catch (e) {
     container.innerHTML = `<p class="muted">Error: ${escapeHtml(e.message)}</p>`;
@@ -4502,8 +4515,11 @@ async function discoverLibraryPaths() {
       }
     }
 
-    // All container paths to add
+    // All container paths to add — also pre-check the 'use root' toggle
+    const useRootCb = document.getElementById('disc-use-root');
+    if (useRootCb) useRootCb.checked = false; // reset on each new discovery
     const allContainerPaths = mounts.flatMap(m => m.container_paths || []);
+    const rootPaths = mounts.map(m => m.container_root);
     const ul = document.getElementById('disc-container-paths');
     ul.innerHTML = allContainerPaths.map(cp => `<li>${cp}</li>`).join('');
 
@@ -4530,17 +4546,34 @@ async function discoverLibraryPaths() {
   }
 }
 
+function discUpdatePathList() {
+  if (!_discoveryPlan) return;
+  const useRoot = document.getElementById('disc-use-root')?.checked;
+  const mounts = _discoveryPlan.proposed_mounts || [];
+  const paths = useRoot
+    ? mounts.map(m => m.container_root)
+    : mounts.flatMap(m => m.container_paths || []);
+  const ul = document.getElementById('disc-container-paths');
+  if (ul) ul.innerHTML = paths.map(cp => `<li>${cp}</li>`).join('');
+}
+
 async function applyLibraryDiscovery() {
   if (!_discoveryPlan) return;
   const applyBtn = document.getElementById('apply-discovery-btn');
   const msgEl = document.getElementById('disc-result-msg');
   applyBtn.disabled = true;
 
+  const useRoot = document.getElementById('disc-use-root')?.checked;
+  const mounts = (_discoveryPlan.proposed_mounts || []).map(m => ({
+    ...m,
+    container_paths: useRoot ? [m.container_root] : (m.container_paths || []),
+  }));
+
   try {
     const res = await fetch('/api/library/apply-discovery', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ proposed_mounts: _discoveryPlan.proposed_mounts }),
+      body: JSON.stringify({ proposed_mounts: mounts }),
     });
     const data = await res.json();
 

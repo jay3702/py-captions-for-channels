@@ -523,6 +523,12 @@
               ⚠ Your media spans multiple servers. Two or three Docker volume mounts will be written to <code>.env</code> — review the values before restarting.
             </div>
             <p style="margin:8px 0 4px;font-size:0.82em;font-weight:600;">Paths to add to library list:</p>
+            <div style="margin-bottom:6px;">
+              <label style="display:flex;align-items:center;gap:8px;font-size:0.82em;cursor:pointer;" title="Store the mount root instead of each individual sub-folder. This lets you browse the whole library in one place.">
+                <input type="checkbox" id="disc-use-root" onchange="discUpdatePathList()">
+                Use mount root only (simpler — one entry per mount)
+              </label>
+            </div>
             <ul id="disc-container-paths" style="margin:0 0 8px 0;padding-left:16px;font-size:0.82em;font-family:monospace;"></ul>
             <div id="disc-already-mounted" style="display:none;font-size:0.82em;color:#4caf50;margin-bottom:6px;">✓ Container paths already mounted — no restart needed.</div>
             <div style="display:flex;gap:8px;margin-top:8px;">
