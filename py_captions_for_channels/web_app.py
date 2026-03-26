@@ -3967,13 +3967,38 @@ async def discover_library_paths() -> dict:
             if not p:
                 continue
             d = str(Path(p).parent)
-            # Exclude items that live inside the DVR recordings root
+            # Exclude items that live inside the DVR recordings root.
+            # The API returns host paths, so we use two complementary checks:
+            #  1. String prefix against DVR_PATH_PREFIX (the host-side DVR folder).
+            #     Catches the common case where DVR is at e.g. /tank/AllMedia/Channels
+            #     and a library is at /tank/AllMedia/Videos — without touching the FS.
+            #  2. Translate host→container via translate_dvr_path, then compare the
+            #     container path against DVR_MEDIA_MOUNT.  Handles same-host setups
+            #     where DVR_PATH_PREFIX is empty.
+            dvr_prefix = (os.getenv("DVR_PATH_PREFIX") or "").strip().rstrip("/")
+            if dvr_prefix:
+                d_norm = d.replace("\\", "/")
+                pfx_norm = dvr_prefix.replace("\\", "/")
+                if d_norm == pfx_norm or d_norm.startswith(pfx_norm + "/"):
+                    continue
             if dvr_real:
-                d_real = os.path.realpath(d) if os.path.exists(d) else d
-                if d_real == dvr_real or d_real.startswith(dvr_real + os.sep):
+                d_translated = translate_dvr_path(d)
+                dt_real = (
+                    os.path.realpath(d_translated)
+                    if os.path.exists(d_translated)
+                    else d_translated
+                )
+                if dt_real == dvr_real or dt_real.startswith(dvr_real + os.sep):
                     continue
-                if dvr_real.startswith(d_real + os.sep):
+                if dvr_real.startswith(dt_real + os.sep):
                     continue
+                # Also check the raw host path (same-host, DVR_PATH_PREFIX empty)
+                if d_translated != d:
+                    d_raw = os.path.realpath(d) if os.path.exists(d) else d
+                    if d_raw == dvr_real or d_raw.startswith(dvr_real + os.sep):
+                        continue
+                    if dvr_real.startswith(d_raw + os.sep):
+                        continue
             paths_for_source.append(d)
             all_host_dirs.add(d)
         sources_data[source] = sorted(set(paths_for_source))
