@@ -462,7 +462,9 @@ QUARANTINE_EXPIRATION_DAYS = get_env_int("QUARANTINE_EXPIRATION_DAYS", 30)
 # extensions exists at the same path stem.
 MEDIA_FILE_EXTENSIONS = tuple(
     ext.strip()
-    for ext in os.getenv("MEDIA_FILE_EXTENSIONS", ".mpg,.ts,.mkv,.mp4,.avi").split(",")
+    for ext in os.getenv("MEDIA_FILE_EXTENSIONS", ".mpg,.ts,.mkv,.mp4,.avi,.wmv").split(
+        ","
+    )
     if ext.strip()
 )
 

@@ -3621,7 +3621,14 @@ async def get_library_files(
         has_orig, has_transcoded, has_srt
     """
     try:
-        from py_captions_for_channels.config import MEDIA_FILE_EXTENSIONS
+        # Read extensions dynamically so .env changes take effect without restart
+        media_extensions = tuple(
+            ext.strip()
+            for ext in os.getenv(
+                "MEDIA_FILE_EXTENSIONS", ".mpg,.ts,.mkv,.mp4,.avi,.wmv"
+            ).split(",")
+            if ext.strip()
+        )
 
         if not path:
             return {"error": "path parameter is required", "files": []}
@@ -3635,7 +3642,7 @@ async def get_library_files(
                 f
                 for f in scan_dir.rglob("*")
                 if f.is_file()
-                and f.suffix.lower() in MEDIA_FILE_EXTENSIONS
+                and f.suffix.lower() in media_extensions
                 and ".cc4chan." not in f.name
             ]
         else:
@@ -3643,7 +3650,7 @@ async def get_library_files(
                 f
                 for f in scan_dir.iterdir()
                 if f.is_file()
-                and f.suffix.lower() in MEDIA_FILE_EXTENSIONS
+                and f.suffix.lower() in media_extensions
                 and ".cc4chan." not in f.name
             ]
 
