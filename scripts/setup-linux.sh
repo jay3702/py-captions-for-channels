@@ -22,7 +22,8 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/jay3702/py-captions-for-channels.git"
-DEFAULT_DEPLOY_DIR="$HOME/py-captions-for-channels"
+# Default to current directory (like git clone), so running from any folder installs there
+DEFAULT_DEPLOY_DIR="$PWD/py-captions-for-channels"
 LOG=/tmp/py_captions_install.log
 BT="py-captions-for-channels — Linux installer"
 W=72
@@ -76,6 +77,14 @@ DOCKER_REPO="${DOCKER_REPO:-$DISTRO_ID}"
 echo ""
 echo "This installer needs administrator (sudo) access for Docker, firewall, and mount config."
 echo "Enter your sudo password when prompted."
+
+# Parse optional flags
+for _arg in "$@"; do
+    case "$_arg" in
+        --deploy-dir=*) DEFAULT_DEPLOY_DIR="${_arg#--deploy-dir=}" ;;
+    esac
+done
+
 sudo -v
 
 # ── ensure whiptail and curl are available ───────────────────────────────────

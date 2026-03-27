@@ -13,7 +13,8 @@
 #   .\setup-windows.ps1
 # ---------------------------------------------------------------------------
 param(
-    [string]$Distro = "Ubuntu-22.04"
+    [string]$Distro    = "Ubuntu-22.04",
+    [string]$DeployDir = ""  # Windows path to install into; defaults to caller's working directory
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,7 +26,9 @@ if (-not $MyInvocation.MyCommand.Path) {
     $tmpScript = Join-Path $env:TEMP "setup-windows.ps1"
     Write-Host "  Downloading setup-windows.ps1 to $tmpScript..." -ForegroundColor DarkGray
     Invoke-WebRequest -Uri "$REPO_RAW/setup-windows.ps1" -OutFile $tmpScript -UseBasicParsing
-    & $tmpScript -Distro $Distro
+    # Preserve caller's working directory as the deploy location
+    $callerDir = if ($DeployDir) { $DeployDir } else { $PWD.Path }
+    & $tmpScript -Distro $Distro -DeployDir $callerDir
     return
 }
 
@@ -95,4 +98,8 @@ Write-Host ""
 Write-Step "Launching setup-wsl.ps1..."
 Write-Host ""
 
-& $wslSetup -Distro $Distro
+$setupArgs = @{ Distro = $Distro }
+# Pass caller's working directory as the install target (like git clone)
+$effectiveDeployDir = if ($DeployDir) { $DeployDir } else { $PWD.Path }
+if ($effectiveDeployDir) { $setupArgs['DeployDir'] = $effectiveDeployDir }
+& $wslSetup @setupArgs

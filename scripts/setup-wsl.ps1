@@ -7,9 +7,11 @@
 # Usage (run as Administrator):
 #   .\scripts\setup-wsl.ps1
 #   .\scripts\setup-wsl.ps1 -Distro Ubuntu-24.04
+#   .\scripts\setup-wsl.ps1 -DeployDir "C:\Projects"   # install to C:\Projects\py-captions-for-channels
 # ---------------------------------------------------------------------------
 param(
-    [string]$Distro = "Ubuntu-22.04"
+    [string]$Distro    = "Ubuntu-22.04",
+    [string]$DeployDir = ""  # Windows path whose WSL equivalent becomes the default deploy location
 )
 
 $ErrorActionPreference = "Stop"
@@ -315,12 +317,29 @@ Write-Host ""
 Read-Host "  The installer will ask for your Linux (sudo) password immediately when it starts.`n  Press Enter to launch the setup wizard"
 Write-Host ""
 
+# Build the --deploy-dir flag to pass to the bash installer if a Windows path was given
+$DeployDirFlag = ""
+if ($DeployDir -and (Test-Path -IsValid $DeployDir)) {
+    # Convert Windows path → WSL path: C:\Foo\Bar → /mnt/c/Foo/Bar
+    $wslDeployDir = (wsl -d $Distro wslpath -u ($DeployDir -replace '\\', '/') 2>$null) -join ""
+    if (-not $wslDeployDir) {
+        # Fallback: manual conversion (drive letter + path)
+        $driveLetter = $DeployDir[0].ToString().ToLower()
+        $restOfPath  = $DeployDir.Substring(2).Replace('\', '/')
+        $wslDeployDir = "/mnt/$driveLetter$restOfPath"
+    }
+    # Append repo folder name so it mirrors git-clone behaviour
+    $wslDeployDir = $wslDeployDir.TrimEnd('/') + "/py-captions-for-channels"
+    $DeployDirFlag = "--deploy-dir=$wslDeployDir"
+    Write-Ok "Deploy location: $wslDeployDir (inside WSL)"
+}
+
 # Run bash directly (not via `--`) so WSL allocates a proper PTY.
 # Without a PTY, ncurses/whiptail cannot draw its TUI.
 if ($HasGpu) {
-    wsl -d $Distro bash "$WslBashPath"
+    wsl -d $Distro bash "$WslBashPath" $DeployDirFlag
 } else {
-    wsl -d $Distro bash "$WslBashPath" --no-gpu
+    wsl -d $Distro bash "$WslBashPath" --no-gpu $DeployDirFlag
 }
 
 if ($LASTEXITCODE -ne 0) {
