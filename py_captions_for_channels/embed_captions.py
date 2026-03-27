@@ -21,13 +21,13 @@ from py_captions_for_channels.database import get_db
 from py_captions_for_channels.progress_tracker import get_progress_tracker
 from py_captions_for_channels.services.execution_service import ExecutionService
 from py_captions_for_channels.config import (
+    EMBED_CAPTIONS,
     OPTIMIZATION_MODE,
     CAPTION_DELAY_MS,
     AUDIO_LANGUAGE,
     SUBTITLE_LANGUAGE,
     LANGUAGE_FALLBACK,
     PRESERVE_ALL_AUDIO_TRACKS,
-    TRANSCODE_FOR_FIRETV,
     NVENC_CQ,
     X264_CRF,
     HWACCEL_DECODE,
@@ -182,6 +182,53 @@ def detect_variable_frame_rate(video_path, log):
     except subprocess.CalledProcessError as e:
         log.warning(f"Failed to probe frame rate, assuming CFR: {e}")
         return False
+
+
+def determine_pipeline_mode(video_path: str, log) -> str:
+    """Decide how to embed captions for *video_path*.
+
+    Returns one of:
+      "srt_only"  — write the .srt sidecar; do not modify the recording
+      "remux"     — lossless container rewrite (-c copy + mov_text)
+      "transcode" — full re-encode (required for VFR / Chrome TabCapture)
+
+    Decision rules when EMBED_CAPTIONS="auto":
+      • VFR content (avg_frame_rate=0/0 or r_frame_rate=90000/1)
+            → "transcode"  (MP4 requires CFR; must fix timing)
+      • Everything else (OTA MPEG2, H.264, H.265 …)
+            → "remux"      (stream-copy is safe and near-instant)
+    """
+    mode = EMBED_CAPTIONS  # already normalised to lower-case in config
+
+    if mode == "srt_only":
+        log.info("Pipeline mode: srt_only (EMBED_CAPTIONS=srt_only)")
+        return "srt_only"
+
+    if mode == "transcode":
+        log.info("Pipeline mode: transcode (EMBED_CAPTIONS=transcode)")
+        return "transcode"
+
+    if mode == "remux":
+        # Honour explicit remux but warn if VFR — will fall back at runtime
+        if detect_variable_frame_rate(video_path, log):
+            log.warning(
+                "EMBED_CAPTIONS=remux but source is VFR — "
+                "falling back to transcode to fix frame timing"
+            )
+            return "transcode"
+        log.info("Pipeline mode: remux (EMBED_CAPTIONS=remux)")
+        return "remux"
+
+    # auto
+    if detect_variable_frame_rate(video_path, log):
+        log.info(
+            "Pipeline mode: transcode (auto — VFR content detected, "
+            "must re-encode to fix frame timing)"
+        )
+        return "transcode"
+
+    log.info("Pipeline mode: remux (auto — CFR content, lossless stream-copy)")
+    return "remux"
 
 
 # ---------------------------------------------------------------------------
@@ -1819,6 +1866,77 @@ def mux_subs(av_path, srt_path, output_path, log, job_id=None):
         sys.exit(1)
 
 
+def remux_with_subs(orig_path, srt_path, output_path, log, job_id=None):
+    """Lossless container rewrite: stream-copy video + audio, add mov_text subs.
+
+    This is the fast path for CFR content (OTA, H.264, MPEG2 broadcast).
+    No decode or re-encode occurs — ffmpeg just rewrites the container,
+    which completes in seconds regardless of file length.
+
+    MPEG2 input flags (-fflags +discardcorrupt etc.) are applied to avoid
+    the same pipeline hangs that affect the transcode path on corrupt frames.
+    """
+    if job_id:
+        update_ffmpeg_progress(job_id, 0, "Remuxing with captions...")
+
+    input_codec = _probe_input_codec(orig_path, log)
+
+    # Apply the same input guards used in encode_av_only() for MPEG2 so that
+    # corrupt broadcast frames are discarded rather than causing an ffmpeg hang.
+    if input_codec == "mpeg2video":
+        pre_flags = [
+            "-probesize",
+            "50000000",
+            "-analyzeduration",
+            "5000000",
+            "-fflags",
+            "+discardcorrupt",
+            "-err_detect",
+            "ignore_err",
+        ]
+        log.info("Remux: MPEG2 input — applying corruption-guard flags")
+    else:
+        pre_flags = []
+
+    cmd = (
+        ["ffmpeg", "-y"]
+        + pre_flags
+        + [
+            "-i",
+            orig_path,
+            "-i",
+            srt_path,
+            "-c:v",
+            "copy",
+            "-c:a",
+            "copy",
+            "-c:s",
+            "mov_text",
+            "-map",
+            "0:v",
+            "-map",
+            "0:a?",
+            "-map",
+            "1",
+            "-metadata:s:s:0",
+            f"title={SUBTITLE_TRACK_NAME}",
+            "-metadata:s:s:0",
+            f"handler_name={SUBTITLE_TRACK_NAME}",
+            "-movflags",
+            "+faststart",
+            output_path,
+        ]
+    )
+    log.info(f"Remuxing: {' '.join(cmd)}")
+    try:
+        subprocess.check_call(cmd)
+        if job_id:
+            update_ffmpeg_progress(job_id, 100, "Remux complete")
+    except subprocess.CalledProcessError as e:
+        log.error(f"ffmpeg remux failed: {e}")
+        sys.exit(1)
+
+
 def atomic_replace(src, dst, log):
     """
     Atomically replace dst with src using os.rename (same filesystem only).
@@ -2462,18 +2580,28 @@ def main():
             step_tracker.finish("whisper", status="failed")
             raise
 
-    # SRT-only mode: skip all ffmpeg steps when TRANSCODE_FOR_FIRETV=false
-    # or when --skip-transcode is explicitly passed for this job
-    if not TRANSCODE_FOR_FIRETV or args.skip_transcode:
+    # ── Determine how to embed captions ──────────────────────────────────────
+    # --skip-transcode is a legacy override meaning "srt_only for this job"
+    if args.skip_transcode:
+        pipeline_mode = "srt_only"
+    else:
+        pipeline_mode = determine_pipeline_mode(mpg_path, log)
+
+    # ── SRT-only: nothing more to do ─────────────────────────────────────────
+    if pipeline_mode == "srt_only":
         log.info(
-            "SRT-only mode (TRANSCODE_FOR_FIRETV=false) — " "captions written to: %s",
+            "SRT-only mode — captions written to: %s",
             srt_path,
         )
         pipeline.job_complete(job_id)
         log.info("Caption generation complete.")
         return
 
-    # Now preserve the original AFTER caption generation (transcode mode only)
+    # ── Both remux and transcode need a valid SRT and a preserved original ────
+    if not srt_exists_and_valid(srt_path):
+        log.error("Missing or invalid SRT file.")
+        sys.exit(1)
+
     run_step(
         "file_copy",
         lambda: preserve_original(mpg_path, log),
@@ -2482,13 +2610,55 @@ def main():
         misc_label="Preserving original",
     )
 
-    if not srt_exists_and_valid(srt_path):
-        log.error("Missing or invalid SRT file.")
-        sys.exit(1)
     orig_path = mpg_path + ".cc4chan.orig"
-    temp_av = mpg_path + ".cc4chan.av.mp4"
     temp_muxed = mpg_path + ".cc4chan.muxed.mp4"
-    # Step 1: Encode A/V only (behavior controlled by PRESERVE_ALL_AUDIO_TRACKS)
+
+    # ── Remux path: lossless container rewrite ────────────────────────────────
+    if pipeline_mode == "remux":
+        if CAPTION_DELAY_MS > 0:
+            run_step(
+                "shift_srt",
+                lambda: shift_srt_timestamps(srt_path, CAPTION_DELAY_MS, log),
+                input_path=srt_path,
+                misc_label="Adjusting captions",
+            )
+        run_step(
+            "ffmpeg_remux",
+            lambda: remux_with_subs(orig_path, srt_path, temp_muxed, log, args.job_id),
+            input_path=orig_path,
+            output_path=temp_muxed,
+        )
+        # Verify and atomically replace
+        v_dur, a_dur, s_dur = run_step(
+            "verify_mux",
+            lambda: probe_muxed_durations(temp_muxed, log),
+            input_path=temp_muxed,
+            misc_label="Verifying output",
+        )
+        max_av = max(v_dur, a_dur)
+        if s_dur <= max_av + 0.050:
+            run_step(
+                "replace_output",
+                lambda: atomic_replace(temp_muxed, mpg_path, log),
+                input_path=temp_muxed,
+                output_path=mpg_path,
+                misc_label="Replacing output",
+            )
+            pipeline.job_complete(job_id)
+            log.info("Caption embedding complete (remux).")
+        else:
+            pipeline.job_complete(job_id)
+            log.error(
+                f"Remux verification failed: subtitle_duration={s_dur:.3f}s > "
+                f"max_av+0.050={max_av + 0.050:.3f}s. Not replacing target file."
+            )
+            log.error(f"Temp file kept for inspection: {temp_muxed}")
+            sys.exit(1)
+        return
+
+    # ── Transcode path: full re-encode (VFR or explicit) ─────────────────────
+    temp_av = mpg_path + ".cc4chan.av.mp4"
+    # Step 1: Encode A/V only
     run_step(
         "ffmpeg_encode",
         lambda: encode_av_only(
@@ -2517,21 +2687,21 @@ def main():
             input_path=srt_path,
             misc_label="Adjusting captions",
         )
-    # Step 4: Clamp SRT
+    # Step 4: Clamp SRT to encoded duration
     run_step(
         "clamp_srt",
         lambda: clamp_srt_to_end(srt_path, end_time, log),
         input_path=srt_path,
         misc_label="Finalizing captions",
     )
-    # Step 5: Mux subtitles
+    # Step 5: Mux subtitles into encoded A/V
     run_step(
         "ffmpeg_mux",
         lambda: mux_subs(temp_av, srt_path, temp_muxed, log, args.job_id),
         input_path=temp_av,
         output_path=temp_muxed,
     )
-    # Final verification for Android compatibility
+    # Final verification
     v_dur, a_dur, s_dur = run_step(
         "verify_mux",
         lambda: probe_muxed_durations(temp_muxed, log),
@@ -2547,19 +2717,18 @@ def main():
             output_path=mpg_path,
             misc_label="Replacing output",
         )
-        # Clean up temp files
         run_step(
             "cleanup",
             lambda: [os.remove(f) for f in [temp_av] if os.path.exists(f)],
             misc_label="Cleaning up",
         )
         pipeline.job_complete(job_id)
-        log.debug("Caption embedding complete.")
+        log.info("Caption embedding complete (transcode).")
     else:
         pipeline.job_complete(job_id)
         log.error(
-            f"Verification failed: subtitle_duration={s_dur:.3f}s > "
-            f"max_av+0.050={max_av+0.050:.3f}s. Not replacing target file."
+            f"Transcode verification failed: subtitle_duration={s_dur:.3f}s > "
+            f"max_av+0.050={max_av + 0.050:.3f}s. Not replacing target file."
         )
         log.error(f"Temp files kept for inspection: {temp_av}, {temp_muxed}")
         sys.exit(1)
