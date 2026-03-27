@@ -1876,6 +1876,8 @@ def remux_with_subs(orig_path, srt_path, output_path, log, job_id=None):
     MPEG2 input flags (-fflags +discardcorrupt etc.) are applied to avoid
     the same pipeline hangs that affect the transcode path on corrupt frames.
     """
+    from py_captions_for_channels.config import AUDIO_CODEC
+
     if job_id:
         update_ffmpeg_progress(job_id, 0, "Remuxing with captions...")
 
@@ -1898,6 +1900,32 @@ def remux_with_subs(orig_path, srt_path, output_path, log, job_id=None):
     else:
         pre_flags = []
 
+    # Determine audio codec — mirror encode_av_only() logic so Android doesn't
+    # reject the output as "corrupt" (MP4 parsers on Android barf on audio codecs
+    # that aren't MP4-native; we must re-encode those tracks to AAC).
+    audio_codecs = _probe_audio_codecs(orig_path, log)
+    all_mp4_ok = audio_codecs and all(c in _MP4_COMPATIBLE_AUDIO for c in audio_codecs)
+
+    if AUDIO_CODEC == "copy":
+        audio_codec_flags = ["-c:a", "copy"]
+        log.info("Remux audio: stream copy (AUDIO_CODEC=copy)")
+    elif AUDIO_CODEC == "aac":
+        audio_codec_flags = ["-c:a", "aac", "-b:a", "256k"]
+        log.info("Remux audio: re-encode to AAC 256k (AUDIO_CODEC=aac)")
+    else:  # auto
+        if all_mp4_ok:
+            audio_codec_flags = ["-c:a", "copy"]
+            log.info(
+                f"Remux audio: stream copy — source codecs {audio_codecs} "
+                f"are MP4-compatible (AUDIO_CODEC=auto)"
+            )
+        else:
+            audio_codec_flags = ["-c:a", "aac", "-b:a", "256k"]
+            log.info(
+                f"Remux audio: re-encode to AAC 256k — source codecs "
+                f"{audio_codecs} not all MP4-compatible (AUDIO_CODEC=auto)"
+            )
+
     cmd = (
         ["ffmpeg", "-y"]
         + pre_flags
@@ -1908,8 +1936,9 @@ def remux_with_subs(orig_path, srt_path, output_path, log, job_id=None):
             srt_path,
             "-c:v",
             "copy",
-            "-c:a",
-            "copy",
+        ]
+        + audio_codec_flags
+        + [
             "-c:s",
             "mov_text",
             "-map",
