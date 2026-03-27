@@ -155,18 +155,24 @@ async def startup_event():
 
 
 async def quarantine_autopurge_background_task():
-    """Background task to purge expired quarantine items once per day."""
+    """Background task to purge expired quarantine items once per day.
+
+    Runs immediately at startup, then every 24 hours.  Sleeping first was
+    the previous behaviour — it meant every container restart reset the
+    clock and the purge could go days without firing.
+    """
+    first_run = True
     while True:
         try:
-            await asyncio.sleep(86400)  # 24 hours
+            if first_run:
+                first_run = False
+            else:
+                await asyncio.sleep(86400)  # 24 hours between subsequent runs
             db = next(get_db())
             try:
                 service = _build_quarantine_service(db)
                 count = service.delete_expired_files()
-                if count:
-                    logger.info(
-                        "Quarantine auto-purge: deleted %d expired file(s)", count
-                    )
+                logger.info("Quarantine auto-purge: deleted %d expired file(s)", count)
             finally:
                 db.close()
         except asyncio.CancelledError:
