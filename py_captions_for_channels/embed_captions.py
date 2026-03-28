@@ -190,13 +190,14 @@ def determine_pipeline_mode(video_path: str, log) -> str:
     Returns one of:
       "srt_only"  — write the .srt sidecar; do not modify the recording
       "remux"     — lossless container rewrite (-c copy + mov_text)
-      "transcode" — full re-encode (required for VFR / Chrome TabCapture)
+      "h264"      — full H.264/AAC re-encode (required for VFR / Chrome TabCapture;
+                     also useful for codec conversion or storage savings)
 
     Decision rules when EMBED_CAPTIONS="auto":
       • VFR content (avg_frame_rate=0/0 or r_frame_rate=90000/1)
-            → "transcode"  (MP4 requires CFR; must fix timing)
+            → "h264"   (MP4 requires CFR; must fix timing)
       • Everything else (OTA MPEG2, H.264, H.265 …)
-            → "remux"      (stream-copy is safe and near-instant)
+            → "remux"  (stream-copy is safe and near-instant)
     """
     mode = EMBED_CAPTIONS  # already normalised to lower-case in config
 
@@ -204,28 +205,28 @@ def determine_pipeline_mode(video_path: str, log) -> str:
         log.info("Pipeline mode: srt_only (EMBED_CAPTIONS=srt_only)")
         return "srt_only"
 
-    if mode == "transcode":
-        log.info("Pipeline mode: transcode (EMBED_CAPTIONS=transcode)")
-        return "transcode"
+    if mode == "h264":
+        log.info("Pipeline mode: h264 (EMBED_CAPTIONS=h264)")
+        return "h264"
 
     if mode == "remux":
         # Honour explicit remux but warn if VFR — will fall back at runtime
         if detect_variable_frame_rate(video_path, log):
             log.warning(
                 "EMBED_CAPTIONS=remux but source is VFR — "
-                "falling back to transcode to fix frame timing"
+                "falling back to h264 to fix frame timing"
             )
-            return "transcode"
+            return "h264"
         log.info("Pipeline mode: remux (EMBED_CAPTIONS=remux)")
         return "remux"
 
     # auto
     if detect_variable_frame_rate(video_path, log):
         log.info(
-            "Pipeline mode: transcode (auto — VFR content detected, "
+            "Pipeline mode: h264 (auto — VFR content detected, "
             "must re-encode to fix frame timing)"
         )
-        return "transcode"
+        return "h264"
 
     log.info("Pipeline mode: remux (auto — CFR content, lossless stream-copy)")
     return "remux"
@@ -2626,7 +2627,7 @@ def main():
         log.info("Caption generation complete.")
         return
 
-    # ── Both remux and transcode need a valid SRT and a preserved original ────
+    # ── Both remux and h264 paths need a valid SRT and a preserved original ─────
     if not srt_exists_and_valid(srt_path):
         log.error("Missing or invalid SRT file.")
         sys.exit(1)
@@ -2700,7 +2701,7 @@ def main():
             sys.exit(1)
         return
 
-    # ── Transcode path: full re-encode (VFR or explicit) ─────────────────────
+    # ── H.264 transcode path: full re-encode (VFR or explicit) ───────────────
     temp_av = mpg_path + ".cc4chan.av.mp4"
     # Step 1: Encode A/V only
     run_step(
@@ -2767,11 +2768,11 @@ def main():
             misc_label="Cleaning up",
         )
         pipeline.job_complete(job_id)
-        log.info("Caption embedding complete (transcode).")
+        log.info("Caption embedding complete (h264).")
     else:
         pipeline.job_complete(job_id)
         log.error(
-            f"Transcode verification failed: subtitle_duration={s_dur:.3f}s > "
+            f"H.264 transcode verification failed: subtitle_duration={s_dur:.3f}s > "
             f"max_av+0.050={max_av + 0.050:.3f}s. Not replacing target file."
         )
         log.error(f"Temp files kept for inspection: {temp_av}, {temp_muxed}")

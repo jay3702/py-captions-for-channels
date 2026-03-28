@@ -280,30 +280,37 @@ PRESERVE_ALL_AUDIO_TRACKS = os.getenv("PRESERVE_ALL_AUDIO_TRACKS", "1").lower() 
 
 # Caption embedding mode
 #
-# "auto"      (default) — Choose the best method automatically:
-#               • "remux"     if the video is CFR (broadcast/OTA/H.264) — add captions
-#                             via a fast stream-copy mux (seconds, no quality loss).
-#               • "transcode" if the video is VFR (Chrome TabCapture) — must re-encode
-#                             to fix frame timing before captions can be embedded.
-#               • "srt_only"  is never chosen by auto; use it explicitly if you want
-#                             sidecar files only (fastest, no container rewrite).
-# "remux"     — Always lossless container rewrite. Fails gracefully to "transcode"
-#               if the source has VFR content.
-# "transcode" — Always full re-encode (legacy TRANSCODE_FOR_FIRETV=true behaviour).
-#               Required only for VFR recordings.
-# "srt_only"  — Generate the .srt file only; do not touch the recording.
+# "auto"     (default) — Choose the best method automatically:
+#              • "remux" for CFR content (broadcast/OTA/H.264/H.265) — fast
+#                        stream-copy mux, seconds, no quality loss.
+#              • "h264"  for VFR content (Chrome TabCapture) — must re-encode
+#                        to fix frame timing before captions can be embedded.
+#              • "srt_only" is never chosen by auto; use it explicitly.
+# "remux"    — Lossless container rewrite. Falls back to "h264" if source is VFR.
+# "h264"     — Full H.264/AAC re-encode + mux. Useful if you want to convert
+#              recordings to H.264 for storage efficiency or playback on devices
+#              that cannot decode the original codec. Required for VFR content.
+#              Takes 10-30 min per recording; GPU strongly recommended.
+#              Note: Android/Fire TV compatibility is handled automatically by
+#              the remux path — you do NOT need h264 for client compatibility.
+# "srt_only" — Generate the .srt file only; do not touch the recording.
 #
-# Legacy alias: TRANSCODE_FOR_FIRETV=true is equivalent to EMBED_CAPTIONS=transcode.
+# Legacy aliases (still accepted for back-compat):
+#   EMBED_CAPTIONS=transcode  →  treated as "h264"
+#   TRANSCODE_FOR_FIRETV=true →  treated as "h264"
 EMBED_CAPTIONS = os.getenv("EMBED_CAPTIONS", "auto").lower()
+# Normalise legacy alias value
+if EMBED_CAPTIONS == "transcode":
+    EMBED_CAPTIONS = "h264"
 
 # Back-compat: TRANSCODE_FOR_FIRETV=true overrides EMBED_CAPTIONS unless EMBED_CAPTIONS
 # is explicitly set by the user.
 _transcode_legacy = get_env_bool("TRANSCODE_FOR_FIRETV", False)
 if _transcode_legacy and os.getenv("EMBED_CAPTIONS") is None:
-    EMBED_CAPTIONS = "transcode"
+    EMBED_CAPTIONS = "h264"
 
 # Keep the old name around so other modules that imported it still work.
-TRANSCODE_FOR_FIRETV = EMBED_CAPTIONS == "transcode"
+TRANSCODE_FOR_FIRETV = EMBED_CAPTIONS == "h264"
 
 # Audio codec for the encode step
 # "auto"  - Copy audio if source codec is MP4-compatible (ac3, eac3, aac, mp3, flac,
