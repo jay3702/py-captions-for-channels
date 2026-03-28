@@ -18,7 +18,7 @@ Different encoding profiles benefit from different parameters:
    - **VAD (Voice Activity Detection) silence threshold**: Cleaner audio can use longer silence detection
    - **Beam size**: Lower quality sources may benefit from different search strategies
 
-2. **ffmpeg Encoding** (when `TRANSCODE_FOR_FIRETV=true`):
+2. **ffmpeg Encoding** (when `EMBED_CAPTIONS=h264`):
    - **NVENC preset**: Clean OTA sources can use faster presets (hp = high performance)
    - **x264 preset**: High quality sources encode faster with veryfast/faster presets
    - Result: 30-50% faster encoding for OTA content
@@ -135,7 +135,7 @@ Or simply omit the setting (standard is default).
 
 - **ffprobe overhead**: ~0.1 seconds per recording
 - **Transcription time**: 5-15 minutes per recording (Whisper)
-- **Encoding time**: 10-30 minutes per recording (ffmpeg, if TRANSCODE_FOR_FIRETV=true)
+- **Encoding time**: 10-30 minutes per recording (ffmpeg, if EMBED_CAPTIONS=h264)
 - **Net impact**: Negligible detection overhead, potential 20-50% speedup on encoding
 
 **Example speedup for OTA 720p60 content:**

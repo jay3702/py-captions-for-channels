@@ -1,12 +1,12 @@
 # Advanced Setup
 
-This guide covers topics beyond the [Quick Setup Guide](SETUP.md): Fire TV transcoding, GPU configuration, webhook-based discovery, and the full capabilities of the whitelist system.
+This guide covers topics beyond the [Quick Setup Guide](SETUP.md): caption embedding modes, GPU configuration, webhook-based discovery, and the full capabilities of the whitelist system.
 
 ---
 
 ## Table of Contents
 
-- [Fire TV / Android Transcoding](#fire-tv--android-transcoding)
+- [Caption Embedding Modes (EMBED\_CAPTIONS)](#caption-embedding-modes-embed_captions)
 - [GPU Configuration](#gpu-configuration)
 - [ChannelWatch (Webhook Mode)](#channelwatch-webhook-mode)
 - [Whitelist — Full Reference](#whitelist--full-reference)
@@ -17,28 +17,36 @@ This guide covers topics beyond the [Quick Setup Guide](SETUP.md): Fire TV trans
 
 ---
 
-## Fire TV / Android Transcoding
+## Caption Embedding Modes (EMBED_CAPTIONS)
 
 By default, the system generates `.srt` (sidecar) caption files alongside your recordings. Most clients — Apple TV, Roku, and the Channels web player — pick these up automatically.
 
-If you need to support clients that don't directly support `.srt` files, such as **Fire TV** and **Android**, enable transcoding mode. This option transcodes the recording and adds a new captions track that these clients can recognize.
+`EMBED_CAPTIONS` controls how (or whether) captions are also embedded directly into the recording file:
+
+| Value | Behaviour |
+|---|---|
+| `auto` (default) | Auto-select based on content: lossless remux for most recordings, SRT-only for variable-frame-rate content |
+| `remux` | Always mux captions losslessly into the recording file (fast — ~10 s ffmpeg, no re-encode) |
+| `h264` | Re-encode the recording to H.264+AAC MP4 with embedded captions (slower: ~4–10 min GPU, ~10–30 min CPU) |
+| `srt_only` | Never modify the recording file — write a `.srt` sidecar only |
+
+**You do not need `h264` for Android or Fire TV.** The `auto`/`remux` modes already produce an MP4 with compatible audio and an embedded captions track that these clients recognise.
+
+`h264` is useful when you specifically want to convert recordings to H.264 — for example:
+- Reducing storage for MPEG2 OTA recordings (~2–3× smaller)
+- Devices that cannot decode the source codec at all
+- VFR (variable-frame-rate) content such as screen recordings (`auto` routes these to `h264` automatically)
 
 ```bash
-TRANSCODE_FOR_FIRETV=true
-KEEP_ORIGINAL=true    # archive the original .mpg as .mpg.orig
+# .env
+EMBED_CAPTIONS=auto   # recommended default
 ```
 
-Transcoding is significantly slower than SRT-only mode:
+> **Legacy alias:** `TRANSCODE_FOR_FIRETV=true` still works and is silently treated as `EMBED_CAPTIONS=h264`.
 
-| | With GPU | Without GPU |
-|---|---|---|
-| **Per 1-hour recording** | ~4–10 min | ~10–30 min |
+### Hardware Acceleration for H.264 Encoding
 
-The time depends on the type of recording (OTA vs TV Everywhere) and available hardware. See [GPU Configuration](#gpu-configuration) below.
-
-### Hardware Acceleration for Transcoding
-
-When `TRANSCODE_FOR_FIRETV=true`, the system uses ffmpeg to re-encode the video. These settings control GPU use during that encoding step:
+When `EMBED_CAPTIONS=h264`, the system uses ffmpeg to re-encode the video. These settings control GPU use during that encoding step:
 
 ```bash
 # Hardware-accelerated video decoding
@@ -50,7 +58,7 @@ HWACCEL_DECODE=auto
 GPU_ENCODER=auto
 ```
 
-`auto` is recommended. If you're troubleshooting transcoding issues specifically, you can force a value to bypass auto-detection.
+`auto` is recommended. If you’re troubleshooting encoding issues, you can force a value to bypass auto-detection.
 
 ---
 
@@ -76,11 +84,11 @@ WHISPER_DEVICE=auto
 
 `auto` is recommended. If you're troubleshooting transcription GPU issues, try forcing `nvidia` to see if auto-detection is the problem.
 
-> **Note:** Hardware acceleration for video transcoding (`HWACCEL_DECODE`, `GPU_ENCODER`) is only relevant when `TRANSCODE_FOR_FIRETV=true`. See [Fire TV / Android Transcoding](#fire-tv--android-transcoding) above.
+> **Note:** Hardware acceleration for video encoding (`HWACCEL_DECODE`, `GPU_ENCODER`) is only relevant when `EMBED_CAPTIONS=h264`. See [Caption Embedding Modes](#caption-embedding-modes-embed_captions) above.
 
 ### NVIDIA Encoding Quality
 
-> Only applies when `TRANSCODE_FOR_FIRETV=true`.
+> Only applies when `EMBED_CAPTIONS=h264`.
 
 ```bash
 # Constant-quality level for NVENC (0–51, lower = better quality)
@@ -104,9 +112,10 @@ Measured on an i7-7700K + RTX 2080 (8 GB). Newer GPUs will be proportionally fas
 | Mode | Per 1-hour recording |
 |---|---|
 | SRT-only (GPU) | ~1–2 min |
-| Full transcode (GPU) | ~4–10 min |
+| Remux (GPU or CPU) | ~10–20 s |
+| H.264 encode (GPU) | ~4–10 min |
 | SRT-only (CPU-only) | ~10 min |
-| Full transcode (CPU-only) | ~10–20 min |
+| H.264 encode (CPU-only) | ~10–20 min |
 
 > CPU-only benchmarks are estimates — your mileage may vary depending on CPU. See [docs/SYSTEM_REQUIREMENTS.md](docs/SYSTEM_REQUIREMENTS.md) for more detailed benchmarks.
 

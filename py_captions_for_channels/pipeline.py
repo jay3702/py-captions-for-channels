@@ -175,7 +175,7 @@ class Pipeline:
 
         Looks for:
         - .srt caption file (same directory/name as recording)
-        - .mp4 transcoded file (if TRANSCODE_FOR_FIRETV=true)
+        - .mp4 remuxed/encoded file (if EMBED_CAPTIONS is not srt_only)
 
         Args:
             recording_path: Path to the original recording file
@@ -198,8 +198,8 @@ class Pipeline:
         if mp4_file.exists():
             output_files[mp4_file.name] = mp4_file.stat().st_size
 
-        # Include the recording itself — for in-place processing (no TRANSCODE),
-        # the modified .mpg IS the output and without this output size is 0.0 B
+        # Include the recording itself — for in-place processing (remux/h264),
+        # the modified file IS the output and without this output size is 0.0 B
         if recording_path.exists() and recording_path.name not in output_files:
             output_files[recording_path.name] = recording_path.stat().st_size
 

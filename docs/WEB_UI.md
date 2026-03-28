@@ -149,7 +149,7 @@ Opened by the **☑ Recordings** button. Select one or more completed recordings
 | Option | Default | Effect |
 |---|---|---|
 | **Generate SRT (Whisper)** | On | Run Whisper transcription to produce captions. Uncheck to skip transcription (e.g. you only want to transcode). |
-| **Run Transcode** | On (matches `TRANSCODE_FOR_FIRETV` setting) | Run the ffmpeg encode/mux step. Uncheck to do transcription only. |
+| **Embed Captions** | On when `EMBED_CAPTIONS` is not `srt_only` | Run the ffmpeg mux/encode step. Uncheck to produce a transcription-only SRT file without modifying the recording. |
 | **Log Verbosity** | Normal | Controls how much detail appears in the job log: Minimal, Normal, or Verbose. |
 
 **Recordings table:**
@@ -191,7 +191,7 @@ Opened by the **⚙** button. Configure every aspect of the system without editi
 | Polling Source Configuration | Poll interval, polling limit. (Hidden in webhook mode.) |
 | Webhook Server Configuration | Webhook port. (Hidden in polling mode.) |
 | ChannelWatch Configuration | ChannelWatch WebSocket URL. (Hidden in polling mode.) |
-| Caption Pipeline Configuration | Whisper model, transcription device (GPU), Fire TV transcode, dry-run mode, pipeline timeout. |
+| Caption Pipeline Configuration | Whisper model, transcription device (GPU), caption embedding mode (`EMBED_CAPTIONS`), dry-run mode, pipeline timeout. |
 | State and Logging Configuration | Log level, state storage settings. |
 | Advanced Configuration | API timeout, caption delay, stale execution threshold, etc. |
 | Encoder Quality Tuning | Encoding quality settings — section title shows the active encoder name. |
@@ -209,7 +209,7 @@ Opened from the Settings dialog. A 6-step guided configurator — the recommende
 | 2 — Deployment Type | Choose **Same host** (DVR and py-captions on one machine) or **Remote / Distributed** (DVR recordings on a NAS or different server). |
 | 3 — Recordings Path | Same host: enter the local recordings path. Remote: configure a CIFS/SMB or NFS mount with credentials. |
 | 4 — New Recording Events | Choose **Polling** (recommended — periodically checks the DVR API) or **ChannelWatch Webhook** (event-driven, requires ChannelWatch). Set server timezone. |
-| 5 — Caption Engine | Choose Whisper model size, transcription device, Fire TV transcode option, and whether to start in dry-run mode. |
+| 5 — Caption Engine | Choose Whisper model size, transcription device, `EMBED_CAPTIONS` mode (H.264 conversion option), and whether to start in dry-run mode. |
 | 6 — Review & Apply | Confirms all settings. Expand the details section to see the raw `.env` values that will be written. |
 
 At step 6, **Apply & Restart** writes the configuration and immediately restarts the container. **Apply Only** writes the configuration without restarting (a manual restart will be needed for most changes to take effect).

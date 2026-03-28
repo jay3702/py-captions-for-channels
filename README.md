@@ -28,10 +28,10 @@ Channels DVR ──recording complete──▶ py-captions-for-channels
                                         ├─ Fetch recording metadata (DVR API)
                                         ├─ Whisper AI transcription (GPU)
                                         ├─ Write .srt caption file
-                                        └─ (optional) Transcode to .mp4 with embedded captions track
+                                        └─ (configurable) Mux captions into the recording file (remux/h264) or write .srt only
 ```
 
-Some Channels DVR clients — such as Apple TV and the web player — automatically detect and display captions from `.srt` files placed alongside recordings. Others, such as Fire TV and Android clients, require captions to be muxed into the recording file itself (see `TRANSCODE_FOR_FIRETV` in the [Fire TV / Android section](SETUP_ADVANCED.md#fire-tv--android-transcoding)).
+Some Channels DVR clients — such as Apple TV and the web player — automatically detect and display captions from `.srt` files placed alongside recordings. Others, such as Fire TV and Android clients, require captions to be embedded in the recording file itself. The default `EMBED_CAPTIONS=auto` mode handles this automatically: it losslessly remuxes a captions track into the recording file, which Fire TV and Android clients recognise. No additional configuration is needed. See the [Caption Embedding Modes section](SETUP_ADVANCED.md#caption-embedding-modes-embed_captions) for the full set of options.
 
 ## Requirements
 
@@ -43,7 +43,7 @@ Some Channels DVR clients — such as Apple TV and the web player — automatica
 
 > **CPU-only operation** is possible but significantly slower (~10 min SRT-only, ~10–20 min with Fire TV transcoding, per 1-hour recording).
 
-Timings below are for the default **SRT-only** mode. `TRANSCODE_FOR_FIRETV=true` adds encoding time (see [GPU Configuration](SETUP_ADVANCED.md#gpu-configuration)).
+Timings below are for the default **`auto`** mode (lossless remux, ~10–20 s ffmpeg per recording after Whisper finishes). `EMBED_CAPTIONS=h264` adds full re-encoding time (see [GPU Configuration](SETUP_ADVANCED.md#gpu-configuration)).
 
 | Hardware | 1-hr OTA Recording | 1-hr TVE (Streaming) | Daily Capacity |
 |----------|-------------------|---------------------|----------------|
@@ -116,7 +116,7 @@ Occasionally a particular problem would get bogged down, and a side conversation
 
 ## Known Limitations
 
-- **Playback interruption during transcoding** — When `TRANSCODE_FOR_FIRETV` is enabled, the processed `.mpg` file replaces the original while keeping a `.cc4chan.orig` backup. If a recording is actively being watched when the replacement happens, the Channels client may freeze. The workaround is to return to the recordings menu and resume playback — it will recover immediately. There is no way to avoid this; the file replacement is already atomic (`os.rename`), but the client detects the change underneath it.
+- **Playback interruption during file replacement** — When `EMBED_CAPTIONS` is set to `remux`, `h264`, or `auto` (the default), the processed file replaces the original while keeping a `.cc4chan.orig` backup. If a recording is actively being watched when the replacement happens, the Channels client may freeze. The workaround is to return to the recordings menu and resume playback — it will recover immediately. There is no way to avoid this; the file replacement is already atomic (`os.rename`), but the client detects the change underneath it.
 
 ## License
 

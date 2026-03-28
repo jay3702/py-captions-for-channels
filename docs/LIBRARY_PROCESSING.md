@@ -130,7 +130,7 @@ Changes take effect immediately — no restart required.
 
 ## Restore original files
 
-If you processed a file with `TRANSCODE_FOR_FIRETV=true`, the original was replaced and a `.cc4chan.orig` backup was created. The **Restore** action in the Library tab moves the original back and removes the transcoded copy.
+If you processed a file with `EMBED_CAPTIONS=remux`, `h264`, or `auto` (the default), the original was replaced and a `.cc4chan.orig` backup was created. The **Restore** action in the Library tab moves the original back and removes the processed copy.
 
 ---
 

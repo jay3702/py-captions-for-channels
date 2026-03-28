@@ -43,6 +43,7 @@ from .config import (
     PROCESSING_ENABLED,
     WHITELIST_REQUIRED,
     TRANSCODE_FOR_FIRETV,
+    EMBED_CAPTIONS,
 )
 from .state import StateBackend
 from .execution_tracker import build_manual_process_job_id, get_tracker
@@ -947,6 +948,7 @@ async def get_settings(db: Session = Depends(get_db)) -> dict:
         result = load_settings(db)
         # Expose read-only config values used by the UI
         result["transcode_for_firetv"] = TRANSCODE_FOR_FIRETV
+        result["embed_captions_mode"] = EMBED_CAPTIONS
         return result
     except Exception as e:
         LOG.error(f"Error loading settings: {e}")

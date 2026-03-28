@@ -712,7 +712,10 @@ async function showManualProcessModal() {
       const generateSrtEl = document.getElementById('manual-process-generate-srt');
       const runTranscodeEl = document.getElementById('manual-process-run-transcode');
       if (generateSrtEl) generateSrtEl.checked = true;
-      if (runTranscodeEl) runTranscodeEl.checked = !!settingsData.transcode_for_firetv;
+      const _embedMode = settingsData.embed_captions_mode || (settingsData.transcode_for_firetv ? 'h264' : 'auto');
+      if (runTranscodeEl) runTranscodeEl.checked = (_embedMode !== 'srt_only');
+      const libRunTranscodeEl = document.getElementById('library-run-transcode');
+      if (libRunTranscodeEl) libRunTranscodeEl.checked = (_embedMode !== 'srt_only');
     }
 
     const res = await fetch('/api/recordings');
@@ -1254,7 +1257,7 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
     const _encTitle = _initEnc === 'auto' ? 'All Encoders' : (_encLabels[_initEnc] || _initEnc.toUpperCase());
     html += `<div class="settings-category" style="margin-bottom: 24px;">`;
     html += `<h3 id="encoder-quality-title" style="margin: 0 0 8px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">Encoder Quality Tuning &mdash; ${_encTitle}</h3>`;
-    html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 16px 0;">Only applies when TRANSCODE_FOR_FIRETV is enabled. Changing GPU or GPU_ENCODER above updates which section is shown.</p>`;
+    html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 16px 0;">Only applies when EMBED_CAPTIONS=h264. Changing GPU or GPU_ENCODER above updates which section is shown.</p>`;
     for (const grp of _encGroups) {
       const _show = _initEnc === 'auto' || _initEnc === grp.id;
       html += `<div id="encoder-section-${grp.id}" style="${_show ? '' : 'display:none;'}">`;
@@ -1686,8 +1689,8 @@ function wizardGoToStep(step) {
     const existingDev = document.querySelector('select[name="WHISPER_DEVICE"]')?.value || '';
     if (devSel && existingDev) devSel.value = existingDev;
     const transcodeChk = document.getElementById('wizard-transcode-firetv');
-    const existingTranscode = document.querySelector('input[name="TRANSCODE_FOR_FIRETV"]');
-    if (transcodeChk && existingTranscode) transcodeChk.checked = existingTranscode.checked;
+    const existingEmbed = document.querySelector('input[name="EMBED_CAPTIONS"], select[name="EMBED_CAPTIONS"]');
+    if (transcodeChk && existingEmbed) transcodeChk.checked = (existingEmbed.value === 'h264');
     const dryRunChk = document.getElementById('wizard-dry-run');
     const existingDryRun = document.querySelector('input[name="DRY_RUN"]');
     if (dryRunChk && existingDryRun) dryRunChk.checked = existingDryRun.checked;
@@ -1842,7 +1845,7 @@ function wizardCollectSettings() {
   // Caption engine settings (step 5)
   s.WHISPER_MODEL = document.getElementById('wizard-whisper-model')?.value || 'medium';
   s.WHISPER_DEVICE = document.getElementById('wizard-whisper-device')?.value || 'auto';
-  s.TRANSCODE_FOR_FIRETV = document.getElementById('wizard-transcode-firetv')?.checked ? 'true' : 'false';
+  s.EMBED_CAPTIONS = document.getElementById('wizard-transcode-firetv')?.checked ? 'h264' : 'auto';
   s.DRY_RUN = document.getElementById('wizard-dry-run')?.checked ? 'true' : 'false';
   return s;
 }
@@ -1884,7 +1887,7 @@ function wizardBuildReview() {
     exp += `<tr><td colspan="3" style="padding:8px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Caption Engine</td></tr>`;
     exp += row('WHISPER_MODEL', s.WHISPER_MODEL, 'Whisper AI model for transcription.');
     exp += row('WHISPER_DEVICE', s.WHISPER_DEVICE, 'Hardware device to run Whisper on.');
-    exp += row('TRANSCODE_FOR_FIRETV', s.TRANSCODE_FOR_FIRETV, 'Re-encode to H.264+AAC for Fire TV / Emby / Kodi compatibility.');
+    exp += row('EMBED_CAPTIONS', s.EMBED_CAPTIONS, s.EMBED_CAPTIONS === 'h264' ? 'Re-encode to H.264 — for VFR content or codec conversion. Not needed for Android/Fire TV (remux handles that).' : 'Auto-select lossless remux or SRT-only based on content type (recommended).');
     exp += row('DRY_RUN', s.DRY_RUN, 'When true, jobs run but no files are written.');
     exp += '</table>';
     expEl.innerHTML = exp;
@@ -1918,7 +1921,7 @@ function wizardBuildReview() {
     '# Caption engine',
     `WHISPER_MODEL=${s.WHISPER_MODEL}`,
     `WHISPER_DEVICE=${s.WHISPER_DEVICE}`,
-    `TRANSCODE_FOR_FIRETV=${s.TRANSCODE_FOR_FIRETV}`,
+    `EMBED_CAPTIONS=${s.EMBED_CAPTIONS}`,
     `DRY_RUN=${s.DRY_RUN}`,
   ];
   el.textContent = lines.join('\n');

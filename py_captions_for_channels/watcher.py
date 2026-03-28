@@ -1073,8 +1073,8 @@ async def main():
     state = StateBackend(STATE_FILE)
 
     # Auto-detect caption command.
-    # Always use embed_captions.py — it handles both SRT-only (default) and
-    # transcode mode (TRANSCODE_FOR_FIRETV=true) via Faster-Whisper.
+    # Always use embed_captions.py — it handles SRT-only, lossless remux, and
+    # H.264 encode modes (EMBED_CAPTIONS=auto/remux/h264/srt_only) via Faster-Whisper.
     # The old whisper CLI and embed_captions.sh no longer exist in the image.
     import sys
 
