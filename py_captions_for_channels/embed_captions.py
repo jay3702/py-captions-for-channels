@@ -2644,6 +2644,15 @@ def main():
 
     # ── Remux path: lossless container rewrite ────────────────────────────────
     if pipeline_mode == "remux":
+        # Probe source duration so we can clamp the SRT to it.  Without this,
+        # a caption_delay shift can push the last subtitle entry past the end
+        # of the video, causing the verification check to fail.
+        end_time = run_step(
+            "probe_av",
+            lambda: probe_av_end(orig_path, log),
+            input_path=orig_path,
+            misc_label="Probing media",
+        )
         if CAPTION_DELAY_MS > 0:
             run_step(
                 "shift_srt",
@@ -2651,6 +2660,12 @@ def main():
                 input_path=srt_path,
                 misc_label="Adjusting captions",
             )
+        run_step(
+            "clamp_srt",
+            lambda: clamp_srt_to_end(srt_path, end_time, log),
+            input_path=srt_path,
+            misc_label="Finalizing captions",
+        )
         run_step(
             "ffmpeg_remux",
             lambda: remux_with_subs(orig_path, srt_path, temp_muxed, log, args.job_id),
