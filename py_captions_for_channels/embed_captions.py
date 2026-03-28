@@ -2681,7 +2681,12 @@ def main():
             misc_label="Verifying output",
         )
         max_av = max(v_dur, a_dur)
-        if s_dur <= max_av + 0.050:
+        # Compare against end_time (the source probe used to clamp the SRT), not
+        # the muxed A/V duration.  Corrupt/dropped frames cause the muxed video
+        # to be shorter than the source, so using max_av produces false failures
+        # when the subtitle was legitimately clamped right up to the source end.
+        # Allow 1 s of slack beyond end_time for rounding and edge cases.
+        if s_dur <= end_time + 1.0:
             run_step(
                 "replace_output",
                 lambda: atomic_replace(temp_muxed, mpg_path, log),
@@ -2695,7 +2700,9 @@ def main():
             pipeline.job_complete(job_id)
             log.error(
                 f"Remux verification failed: subtitle_duration={s_dur:.3f}s > "
-                f"max_av+0.050={max_av + 0.050:.3f}s. Not replacing target file."
+                f"end_time+1.0={end_time + 1.0:.3f}s "
+                f"(muxed av={max_av:.3f}s, source end={end_time:.3f}s). "
+                f"Not replacing target file."
             )
             log.error(f"Temp file kept for inspection: {temp_muxed}")
             sys.exit(1)
