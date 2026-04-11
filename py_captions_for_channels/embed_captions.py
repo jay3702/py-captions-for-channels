@@ -1848,6 +1848,10 @@ def mux_subs(av_path, srt_path, output_path, log, job_id=None):
         "0:a?",
         "-map",
         "1",
+        # Mark our subtitle track as default so the web client prefers it over
+        # embedded broadcast CC carried as side data in the video stream.
+        "-disposition:s:0",
+        "default",
         # Add unique metadata to subtitle track for detection
         "-metadata:s:s:0",
         f"title={SUBTITLE_TRACK_NAME}",
@@ -1948,6 +1952,10 @@ def remux_with_subs(orig_path, srt_path, output_path, log, job_id=None):
             "0:a?",
             "-map",
             "1",
+            # Mark our subtitle track as default so the web client prefers it over
+            # embedded broadcast CC carried as side data in the video stream.
+            "-disposition:s:0",
+            "default",
             "-metadata:s:s:0",
             f"title={SUBTITLE_TRACK_NAME}",
             "-metadata:s:s:0",
