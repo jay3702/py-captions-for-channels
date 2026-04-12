@@ -1127,6 +1127,28 @@ def srt_exists_and_valid(srt_path):
     return os.path.exists(srt_path) and os.path.getsize(srt_path) > 0
 
 
+def wrap_caption_text(text: str, max_chars: int) -> str:
+    """Wrap caption text to at most two lines of max_chars characters each.
+
+    Splits on word boundaries.  If max_chars is 0 (or negative) wrapping is
+    disabled and the original text is returned unchanged.
+    """
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    # Find the best split point at or before max_chars
+    split_at = text.rfind(" ", 0, max_chars + 1)
+    if split_at <= 0:
+        # No space found — hard-break at max_chars
+        split_at = max_chars
+    line1 = text[:split_at].strip()
+    line2 = text[split_at:].strip()
+    # If second line is still too long, truncate with ellipsis rather than
+    # adding a third line (most players only render two lines cleanly).
+    if len(line2) > max_chars:
+        line2 = line2[: max_chars - 1].rsplit(" ", 1)[0] + "…"
+    return f"{line1}\n{line2}"
+
+
 def probe_media_end_time(mpg_path, log):
     """Return max end time (seconds) of video/audio streams using ffprobe."""
     cmd = [
@@ -2187,7 +2209,10 @@ def main():
 
             try:
                 from faster_whisper import WhisperModel
-                from py_captions_for_channels.config import WHISPER_DEVICE
+                from py_captions_for_channels.config import (
+                    WHISPER_DEVICE,
+                    SRT_MAX_LINE_LENGTH,
+                )
 
                 # Determine device based on configuration
                 if WHISPER_DEVICE == "none":
@@ -2536,10 +2561,13 @@ def main():
                     start_time = format_srt_timestamp(segment.start)
                     end_time = format_srt_timestamp(segment.end)
 
-                    # Add segment to SRT
+                    # Add segment to SRT (wrap long lines for readability)
+                    caption_text = wrap_caption_text(
+                        segment.text.strip(), SRT_MAX_LINE_LENGTH
+                    )
                     srt_lines.append(f"{i}\n")
                     srt_lines.append(f"{start_time} --> {end_time}\n")
-                    srt_lines.append(f"{segment.text.strip()}\n")
+                    srt_lines.append(f"{caption_text}\n")
                     srt_lines.append("\n")
 
                     # Update progress based on segment end time
