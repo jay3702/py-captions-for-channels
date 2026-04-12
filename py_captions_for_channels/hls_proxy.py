@@ -34,7 +34,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
-from .config import CHANNELS_DVR_URL, translate_dvr_path
+from .config import CHANNELS_DVR_URL, DVR_RECORDINGS_PATH, translate_dvr_path
 
 LOG = logging.getLogger(__name__)
 
@@ -81,7 +81,13 @@ def _local_srt_for_file_id(file_id: str) -> Path | None:
         LOG.warning("hls_proxy: no 'path' field in DVR metadata for %s", file_id)
         return None
 
-    local_path = Path(translate_dvr_path(api_path))
+    translated = translate_dvr_path(api_path)
+    local_path = Path(translated)
+    # If translate_dvr_path() returned a relative path (DVR_PATH_PREFIX not
+    # configured), anchor it under DVR_RECORDINGS_PATH so we get an absolute
+    # container path (e.g. /recordings/TV/Show/file.mpg).
+    if not local_path.is_absolute():
+        local_path = Path(DVR_RECORDINGS_PATH) / local_path
     srt_path = local_path.with_suffix(".srt")
     if not srt_path.exists():
         LOG.debug("hls_proxy: no .srt file at %s", srt_path)
@@ -105,6 +111,9 @@ async def proxy_debug(file_id: str):
             translated = translate_dvr_path(api_path)
             result["translated_path"] = translated
             local_path = Path(translated)
+            if not local_path.is_absolute():
+                local_path = Path(DVR_RECORDINGS_PATH) / local_path
+            result["anchored_path"] = str(local_path)
             srt_path = local_path.with_suffix(".srt")
             result["srt_path"] = str(srt_path)
             result["srt_exists"] = srt_path.exists()
