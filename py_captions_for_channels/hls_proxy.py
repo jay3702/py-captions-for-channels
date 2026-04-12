@@ -122,16 +122,26 @@ _PLAYER_HTML = """\
                align-items: center; gap: 16px; flex-shrink: 0; }}
     #header a {{ color: #aaa; text-decoration: none; font-size: .9rem; }}
     #header a:hover {{ color: #fff; }}
-    #title {{ font-size: 1rem; flex: 1; }}
-    #video {{ flex: 1; width: 100%; background: #000; }}
+    #title {{ font-size: 1rem; flex: 1; white-space: nowrap;
+              overflow: hidden; text-overflow: ellipsis; }}
+    #cc-btn {{ padding: 4px 10px; border: 1px solid #555; border-radius: 4px;
+               background: #222; color: #aaa; cursor: pointer;
+               font-size: .85rem; white-space: nowrap; flex-shrink: 0; }}
+    #cc-btn.on {{ background: #1a6b1a; border-color: #2a9b2a; color: #fff; }}
+    #cc-btn.unavailable {{ opacity: .35; cursor: default; }}
+    #video {{ flex: 1; width: 100%; background: #000; position: relative; }}
     video {{ width: 100%; height: 100%; display: block; }}
-    ::cue {{ background: rgba(0,0,0,.75); color: #fff; font-size: 1.1em; }}
+    ::cue {{ background: rgba(0,0,0,.8); color: #fff;
+             font-size: 1.15em; font-family: sans-serif; }}
   </style>
 </head>
 <body>
   <div id="header">
     <a href="/">&larr; Dashboard</a>
     <span id="title">{title}</span>
+    <button id="cc-btn" class="unavailable" title="Toggle subtitles">
+      CC
+    </button>
   </div>
   <div id="video">
     <video id="v" controls></video>
@@ -141,20 +151,39 @@ _PLAYER_HTML = """\
   <script>
     const src = {src_json};
     const video = document.getElementById('v');
+    const ccBtn = document.getElementById('cc-btn');
+    let hlsInstance = null;
+    let subsOn = true;
+
+    function setCCState(on) {{
+      subsOn = on;
+      if (hlsInstance) {{
+        hlsInstance.subtitleTrack = on ? 0 : -1;
+      }}
+      ccBtn.textContent = on ? 'CC \u25cf' : 'CC';
+      ccBtn.className = on ? 'on' : '';
+    }}
+
+    ccBtn.addEventListener('click', function () {{
+      if (ccBtn.classList.contains('unavailable')) return;
+      setCCState(!subsOn);
+    }});
 
     if (Hls.isSupported()) {{
       const hls = new Hls({{
-        // Do NOT set enableCEA708Captions — we are serving our own subtitle track
-        // via the HLS manifest.  Leaving CEA-608 on would create duplicate tracks.
         enableCEA708Captions: false,
-        // Standard XHR is fine here — same-origin requests to this py-captions server.
       }});
+      hlsInstance = hls;
       hls.loadSource(src);
       hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, function (_evt, data) {{
-        // Auto-enable the first subtitle track if present.
+      hls.on(Hls.Events.MANIFEST_PARSED, function (_evt, _data) {{
         if (hls.subtitleTracks && hls.subtitleTracks.length > 0) {{
           hls.subtitleTrack = 0;
+          ccBtn.className = 'on';
+          ccBtn.textContent = 'CC \u25cf';
+        }} else {{
+          ccBtn.className = 'unavailable';
+          ccBtn.title = 'No subtitle track available for this recording';
         }}
         video.play().catch(() => {{}});
       }});
