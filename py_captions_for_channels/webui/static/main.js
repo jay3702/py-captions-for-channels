@@ -739,6 +739,7 @@ async function showManualProcessModal() {
               <th style="padding: 8px; width: 140px;">Date</th>
               <th style="padding: 8px; width: 80px; text-align: center;">Processed</th>
               <th style="padding: 8px; width: 80px; text-align: center;">Whitelist</th>
+              <th style="padding: 8px; width: 60px; text-align: center;">Play</th>
             </tr>
           </thead>
           <tbody>
@@ -776,6 +777,10 @@ async function showManualProcessModal() {
         // Disable checkbox if recording is not yet completed
         const checkboxDisabled = !recording.completed ? 'disabled title="Recording in progress"' : '';
         
+        const playBtn = (recording.id && recording.completed)
+          ? `<a href="/player/${encodeURIComponent(recording.id)}" target="_blank" title="Watch with subtitles" style="text-decoration: none; font-size: 18px;">&#9654;</a>`
+          : '';
+
         tableHtml += `
           <tr style="border-bottom: 1px solid var(--border);">
             <td style="padding: 8px 4px;">
@@ -787,6 +792,7 @@ async function showManualProcessModal() {
             <td style="padding: 8px; color: var(--muted); font-size: 0.85em;">${dateStr}</td>
             <td style="padding: 8px; text-align: center;">${processedIcon}</td>
             <td style="padding: 8px; text-align: center;">${whitelistCheckbox}</td>
+            <td style="padding: 8px; text-align: center;">${playBtn}</td>
           </tr>
         `;
       });

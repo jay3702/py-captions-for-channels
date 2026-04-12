@@ -2757,6 +2757,7 @@ async def get_recordings() -> dict:
 
             formatted_recordings.append(
                 {
+                    "id": rec.get("id", ""),
                     "path": path,
                     "title": title,
                     "episode_title": episode_title,
