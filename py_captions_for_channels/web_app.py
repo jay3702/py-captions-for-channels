@@ -4291,3 +4291,79 @@ async def browse_filesystem(path: str = "/") -> dict:
     except Exception as e:
         logger.error(f"browse_filesystem failed: {e}", exc_info=True)
         return {"error": str(e), "dirs": []}
+
+
+# ---------------------------------------------------------------------------
+# Browse API — proxy selected Channels DVR endpoints for the browser UI
+# ---------------------------------------------------------------------------
+
+
+def _dvr_proxy(path: str, params: dict | None = None) -> dict | list:
+    """Fetch from the Channels DVR API and return parsed JSON."""
+    url = f"{CHANNELS_DVR_URL.rstrip('/')}/{path.lstrip('/')}"
+    resp = requests.get(url, params=params, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+@app.get("/api/browse/recent")
+def browse_recent():
+    """Recent recordings (newest first)."""
+    try:
+        return _dvr_proxy(
+            "/api/v1/all",
+            {"sort": "date_added", "order": "desc", "source": "recordings"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/browse/shows")
+def browse_shows():
+    """All TV shows with poster art."""
+    try:
+        return _dvr_proxy("/api/v1/shows")
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/browse/shows/{show_id}/episodes")
+def browse_episodes(show_id: str):
+    """Episodes for a specific TV show."""
+    try:
+        return _dvr_proxy(f"/api/v1/shows/{show_id}/episodes")
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/browse/movies")
+def browse_movies():
+    """All movies with poster art."""
+    try:
+        return _dvr_proxy("/api/v1/movies")
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/browse/library")
+def browse_library():
+    """Personal media library groups."""
+    try:
+        return _dvr_proxy("/api/v1/video_groups")
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/browse/library/{group_id}/videos")
+def browse_library_videos(group_id: str):
+    """Videos in a library group."""
+    try:
+        return _dvr_proxy(f"/api/v1/video_groups/{group_id}/videos")
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/browse", response_class=HTMLResponse)
+async def browse_page(request: Request):
+    """Serve the Browse UI (TV, Movies, Recent, Library)."""
+    return templates.TemplateResponse(request, "browse.html")

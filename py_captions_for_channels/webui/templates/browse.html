@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Browse — Py Captions</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/channels_cc_favicon_big/icon-32.png?v=4">
+  <link rel="icon" type="image/x-icon" href="/static/channels_cc_favicon_big/favicon.ico?v=4">
+  <style>
+    :root {
+      --bg: #0f1729;
+      --panel: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.08);
+      --text: #f6f8ff;
+      --muted: #9fb0d4;
+      --accent: #5ce1e6;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at 20% 20%, rgba(92,225,230,0.07), transparent 30%),
+                  radial-gradient(circle at 80% 10%, rgba(255,179,71,0.07), transparent 30%),
+                  var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", sans-serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── top bar ── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 0 20px;
+      height: 52px;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .topbar-back {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: .85rem;
+      padding: 6px 12px 6px 0;
+      margin-right: 16px;
+      border-right: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .topbar-back:hover { color: var(--text); }
+    .topbar-brand {
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-right: 28px;
+      white-space: nowrap;
+    }
+
+    /* ── tab strip ── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: .9rem;
+      font-family: inherit;
+      padding: 6px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .tab-btn:hover { background: var(--panel); color: var(--text); }
+    .tab-btn.active { background: rgba(92,225,230,0.12); color: var(--accent); font-weight: 600; }
+
+    /* ── search ── */
+    .search-wrap {
+      margin-left: auto;
+    }
+    #search {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: .85rem;
+      padding: 5px 10px;
+      width: 200px;
+      outline: none;
+    }
+    #search:focus { border-color: var(--accent); }
+    #search::placeholder { color: var(--muted); }
+
+    /* ── main content ── */
+    .content {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+    .tab-panel {
+      display: none;
+      height: 100%;
+      overflow-y: auto;
+      padding: 20px 24px;
+    }
+    .tab-panel.active { display: flex; flex-direction: column; }
+
+    /* ── TV split layout ── */
+    #tab-tv {
+      flex-direction: row;
+      gap: 0;
+      padding: 0;
+    }
+    .show-grid-pane {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+      min-width: 0;
+    }
+    .episode-pane {
+      width: 380px;
+      flex-shrink: 0;
+      border-left: 1px solid var(--border);
+      background: rgba(0,0,0,.25);
+      overflow-y: auto;
+      display: none;
+      flex-direction: column;
+    }
+    .episode-pane.open { display: flex; }
+    .ep-pane-header {
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .ep-pane-back {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: .8rem;
+      cursor: pointer;
+      padding: 0 0 8px;
+      display: block;
+      font-family: inherit;
+    }
+    .ep-pane-back:hover { color: var(--text); }
+    .ep-pane-title {
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .ep-pane-meta {
+      font-size: .75rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .ep-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .ep-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      text-decoration: none;
+      color: var(--text);
+      transition: background .12s;
+    }
+    .ep-item:hover { background: var(--panel); }
+    .ep-thumb {
+      width: 96px;
+      height: 54px;
+      object-fit: cover;
+      border-radius: 5px;
+      flex-shrink: 0;
+      background: rgba(255,255,255,.05);
+    }
+    .ep-thumb-placeholder {
+      width: 96px;
+      height: 54px;
+      border-radius: 5px;
+      background: rgba(255,255,255,.05);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+    }
+    .ep-info { min-width: 0; flex: 1; }
+    .ep-label {
+      font-size: .75rem;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .ep-title {
+      font-size: .85rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ep-desc {
+      font-size: .75rem;
+      color: var(--muted);
+      margin-top: 3px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* ── poster grid ── */
+    .poster-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+      gap: 16px;
+    }
+    .poster-card {
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s, border-color .15s;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+    .poster-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+      border-color: rgba(92,225,230,.35);
+    }
+    .poster-img {
+      width: 100%;
+      aspect-ratio: 2/3;
+      object-fit: cover;
+      background: rgba(255,255,255,.04);
+      display: block;
+    }
+    .poster-img-placeholder {
+      width: 100%;
+      aspect-ratio: 2/3;
+      background: rgba(255,255,255,.04);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.5rem;
+    }
+    .poster-info {
+      padding: 8px 10px 10px;
+      flex: 1;
+    }
+    .poster-title {
+      font-size: .8rem;
+      font-weight: 700;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .poster-meta {
+      font-size: .7rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* ── recent grid (wider, 16:9 thumbs) ── */
+    .recent-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .rec-card {
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s, border-color .15s;
+      text-decoration: none;
+      color: var(--text);
+    }
+    .rec-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+      border-color: rgba(92,225,230,.35);
+    }
+    .rec-thumb {
+      width: 100%;
+      aspect-ratio: 16/9;
+      object-fit: cover;
+      background: rgba(255,255,255,.04);
+      display: block;
+    }
+    .rec-thumb-placeholder {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: rgba(255,255,255,.04);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+    }
+    .rec-info {
+      padding: 8px 10px 10px;
+    }
+    .rec-title {
+      font-size: .82rem;
+      font-weight: 700;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .rec-meta {
+      font-size: .7rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* ── loading / empty ── */
+    .state-msg {
+      color: var(--muted);
+      font-size: .9rem;
+      padding: 40px 0;
+      text-align: center;
+      width: 100%;
+    }
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── section heading ── */
+    .section-heading {
+      font-size: .75rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="topbar-back" href="/">← Dashboard</a>
+  <span class="topbar-brand">Browse</span>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="recent">Recent</button>
+    <button class="tab-btn" data-tab="tv">TV Shows</button>
+    <button class="tab-btn" data-tab="movies">Movies</button>
+    <button class="tab-btn" data-tab="library">Library</button>
+  </div>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search…" autocomplete="off" />
+  </div>
+</div>
+
+<div class="content">
+
+  <!-- Recent Recordings -->
+  <div id="tab-recent" class="tab-panel active">
+    <div class="section-heading">Recent Recordings</div>
+    <div id="recent-grid" class="recent-grid">
+      <div class="state-msg"><span class="spinner"></span>Loading…</div>
+    </div>
+  </div>
+
+  <!-- TV Shows -->
+  <div id="tab-tv" class="tab-panel">
+    <div class="show-grid-pane">
+      <div class="section-heading">TV Shows</div>
+      <div id="tv-grid" class="poster-grid">
+        <div class="state-msg"><span class="spinner"></span>Loading…</div>
+      </div>
+    </div>
+    <div id="episode-pane" class="episode-pane">
+      <div class="ep-pane-header">
+        <button class="ep-pane-back" id="ep-back">← All Shows</button>
+        <div class="ep-pane-title" id="ep-show-title"></div>
+        <div class="ep-pane-meta" id="ep-show-meta"></div>
+      </div>
+      <div class="ep-list" id="ep-list"></div>
+    </div>
+  </div>
+
+  <!-- Movies -->
+  <div id="tab-movies" class="tab-panel">
+    <div class="section-heading">Movies</div>
+    <div id="movies-grid" class="poster-grid">
+      <div class="state-msg"><span class="spinner"></span>Loading…</div>
+    </div>
+  </div>
+
+  <!-- Library -->
+  <div id="tab-library" class="tab-panel">
+    <div id="library-heading" class="section-heading">Personal Library</div>
+    <div id="library-grid" class="poster-grid">
+      <div class="state-msg"><span class="spinner"></span>Loading…</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/static/browse.js"></script>
+</body>
+</html>
