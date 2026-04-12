@@ -67,6 +67,11 @@ app = FastAPI(title="Py Captions Web GUI", version=VERSION)
 state_backend = StateBackend(STATE_FILE)
 logger = logging.getLogger(__name__)
 
+# HLS subtitle proxy + player routes
+from .hls_proxy import router as hls_proxy_router  # noqa: E402
+
+app.include_router(hls_proxy_router)
+
 # Global orphan cleanup scheduler
 orphan_cleanup_scheduler = None
 cleanup_task = None
@@ -253,7 +258,7 @@ LOG = logging.getLogger(__name__)
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     """Serve the main dashboard UI (index.html) at the root URL."""
-    response = templates.TemplateResponse("index.html", {"request": request})
+    response = templates.TemplateResponse(request, "index.html")
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"

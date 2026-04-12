@@ -8,6 +8,7 @@ numpy<2
 # NOTE: PyTorch installed separately in Dockerfile with CUDA support
 faster-whisper
 fastapi
+starlette>=0.41.0
 uvicorn[standard]
 jinja2
 # System monitoring
