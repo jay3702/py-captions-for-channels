@@ -34,7 +34,13 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
-from .config import CHANNELS_DVR_URL, DVR_RECORDINGS_PATH, translate_dvr_path
+from .config import (
+    CHANNELS_DVR_URL,
+    DVR_PATH_PREFIX,
+    DVR_RECORDINGS_PATH,
+    LOCAL_PATH_PREFIX,
+    translate_dvr_path,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -81,19 +87,66 @@ def _local_srt_for_file_id(file_id: str) -> Path | None:
         LOG.warning("hls_proxy: no 'path' field in DVR metadata for %s", file_id)
         return None
 
-    translated = translate_dvr_path(api_path)
-    local_path = Path(translated)
-    # If translate_dvr_path() returned a relative path (DVR_PATH_PREFIX not
-    # configured), anchor it under DVR_RECORDINGS_PATH so we get an absolute
-    # container path (e.g. /recordings/TV/Show/file.mpg).
-    if not local_path.is_absolute():
-        local_path = Path(DVR_RECORDINGS_PATH) / local_path
+    local_path = _dvr_api_path_to_container_path(api_path)
+    if local_path is None:
+        LOG.warning(
+            "hls_proxy: cannot resolve container path for %s (no prefix configured)",
+            file_id,
+        )
+        return None
     srt_path = local_path.with_suffix(".srt")
     if not srt_path.exists():
         LOG.debug("hls_proxy: no .srt file at %s", srt_path)
         return None
 
     return srt_path
+
+
+def _dvr_api_path_to_container_path(api_path: str) -> Path | None:
+    """Translate a Channels DVR API file path to a path accessible inside the container.
+
+    Handles all deployment topologies:
+
+    * **Single-host** (DVR + captions on same machine): DVR typically returns
+      a path relative to its media root, e.g. ``TV/Show/file.mpg``.  That
+      relative path is anchored under the container media mount.
+
+    * **Separate DVR server (Linux)**: DVR returns an absolute path including
+      its own storage root prefix, e.g. ``/tank/AllMedia/Channels/TV/...``.
+      ``translate_dvr_path()`` swaps ``DVR_PATH_PREFIX`` for
+      ``LOCAL_PATH_PREFIX`` (= ``DVR_MEDIA_MOUNT``) to produce the
+      container-side absolute path.
+
+    * **Three-server (NAS + separate GPU host)**: same as above; the captions
+      container mounts the NAS share at ``DVR_MEDIA_MOUNT`` and declares
+      that as ``LOCAL_PATH_PREFIX``.
+
+    Anchor precedence for relative paths:
+      1. ``LOCAL_PATH_PREFIX`` (= ``DVR_MEDIA_MOUNT``, the container mount
+         point for DVR media — managed by the Settings UI)
+      2. ``DVR_RECORDINGS_PATH`` (legacy fallback)
+
+    Returns ``None`` only when the path is still relative after translation
+    and no anchor prefix is configured at all.
+    """
+    # translate_dvr_path() handles the DVR_PATH_PREFIX → LOCAL_PATH_PREFIX
+    # swap for absolute DVR paths.  Normalise backslashes (Windows DVR).
+    translated = translate_dvr_path(api_path).replace("\\", "/")
+    local_path = Path(translated)
+
+    if local_path.is_absolute():
+        # translate_dvr_path produced a container-accessible absolute path.
+        return local_path
+
+    # Path is still relative — the DVR returned a bare relative path (common
+    # with Windows/Mac DVR servers that omit the media-root prefix).
+    # Anchor it under the container-side mount point for the DVR media root.
+    #   LOCAL_PATH_PREFIX = DVR_MEDIA_MOUNT (managed by Settings UI)
+    #   DVR_RECORDINGS_PATH = older fallback variable
+    anchor = LOCAL_PATH_PREFIX or DVR_RECORDINGS_PATH
+    if not anchor:
+        return None
+    return Path(anchor) / local_path
 
 
 @router.get("/proxy/hls/{file_id}/debug")
@@ -107,23 +160,27 @@ async def proxy_debug(file_id: str):
         result["dvr_meta_keys"] = list(meta.keys())
         api_path = meta.get("path") or meta.get("Path") or ""
         result["api_path"] = api_path
+        # Show all prefix config so any setup can be diagnosed
+        result["config"] = {
+            "DVR_PATH_PREFIX": str(DVR_PATH_PREFIX),
+            "LOCAL_PATH_PREFIX": str(LOCAL_PATH_PREFIX),
+            "DVR_RECORDINGS_PATH": str(DVR_RECORDINGS_PATH),
+        }
         if api_path:
             translated = translate_dvr_path(api_path)
             result["translated_path"] = translated
-            local_path = Path(translated)
-            if not local_path.is_absolute():
-                local_path = Path(DVR_RECORDINGS_PATH) / local_path
-            result["anchored_path"] = str(local_path)
-            srt_path = local_path.with_suffix(".srt")
-            result["srt_path"] = str(srt_path)
-            result["srt_exists"] = srt_path.exists()
-            result["mpg_exists"] = local_path.exists()
-            # List the parent directory so we can see what's actually there
-            parent = srt_path.parent
-            result["parent_dir"] = str(parent)
-            result["parent_exists"] = parent.exists()
-            if parent.exists():
-                result["parent_contents"] = sorted(p.name for p in parent.iterdir())
+            local_path = _dvr_api_path_to_container_path(api_path)
+            result["anchored_path"] = str(local_path) if local_path else None
+            if local_path:
+                srt_path = local_path.with_suffix(".srt")
+                result["srt_path"] = str(srt_path)
+                result["srt_exists"] = srt_path.exists()
+                result["mpg_exists"] = local_path.exists()
+                parent = srt_path.parent
+                result["parent_dir"] = str(parent)
+                result["parent_exists"] = parent.exists()
+                if parent.exists():
+                    result["parent_contents"] = sorted(p.name for p in parent.iterdir())
     except Exception as exc:
         result["error"] = str(exc)
     return result
