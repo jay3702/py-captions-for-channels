@@ -90,6 +90,36 @@ def _local_srt_for_file_id(file_id: str) -> Path | None:
     return srt_path
 
 
+@router.get("/proxy/hls/{file_id}/debug")
+async def proxy_debug(file_id: str):
+    """Diagnostic endpoint — shows path resolution for a recording."""
+    result: dict = {"file_id": file_id, "dvr_base": _DVR_BASE}
+    try:
+        resp = httpx.get(f"{_DVR_BASE}/dvr/files/{file_id}", timeout=10)
+        resp.raise_for_status()
+        meta = resp.json()
+        result["dvr_meta_keys"] = list(meta.keys())
+        api_path = meta.get("path") or meta.get("Path") or ""
+        result["api_path"] = api_path
+        if api_path:
+            translated = translate_dvr_path(api_path)
+            result["translated_path"] = translated
+            local_path = Path(translated)
+            srt_path = local_path.with_suffix(".srt")
+            result["srt_path"] = str(srt_path)
+            result["srt_exists"] = srt_path.exists()
+            result["mpg_exists"] = local_path.exists()
+            # List the parent directory so we can see what's actually there
+            parent = srt_path.parent
+            result["parent_dir"] = str(parent)
+            result["parent_exists"] = parent.exists()
+            if parent.exists():
+                result["parent_contents"] = sorted(p.name for p in parent.iterdir())
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
+
+
 async def _dvr_duration(file_id: str) -> float:
     """Return the recording duration in seconds from DVR metadata (default 7200)."""
     try:
