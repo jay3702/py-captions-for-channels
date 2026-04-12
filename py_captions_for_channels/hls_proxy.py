@@ -273,15 +273,17 @@ _PLAYER_HTML = """\
       hls.loadSource(src);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, function (_evt, _data) {{
-        if (hls.subtitleTracks && hls.subtitleTracks.length > 0) {{
+        video.play().catch(() => {{}});
+      }});
+      // SUBTITLE_TRACKS_UPDATED fires when hls.js has resolved the subtitle
+      // group from EXT-X-MEDIA — may be after MANIFEST_PARSED in hls.js 1.x.
+      hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, function (_evt, data) {{
+        if (data && data.subtitleTracks && data.subtitleTracks.length > 0) {{
           hls.subtitleTrack = 0;
           ccBtn.className = 'on';
           ccBtn.textContent = 'CC \u25cf';
-        }} else {{
-          ccBtn.className = 'unavailable';
-          ccBtn.title = 'No subtitle track available for this recording';
+          ccBtn.title = 'Toggle subtitles';
         }}
-        video.play().catch(() => {{}});
       }});
     }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
       video.src = src;
