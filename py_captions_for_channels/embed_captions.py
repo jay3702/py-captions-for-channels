@@ -1142,10 +1142,6 @@ def wrap_caption_text(text: str, max_chars: int) -> str:
         split_at = max_chars
     line1 = text[:split_at].strip()
     line2 = text[split_at:].strip()
-    # If second line is still too long, truncate with ellipsis rather than
-    # adding a third line (most players only render two lines cleanly).
-    if len(line2) > max_chars:
-        line2 = line2[: max_chars - 1].rsplit(" ", 1)[0] + "…"
     return f"{line1}\n{line2}"
 
 
@@ -1844,6 +1840,156 @@ def shift_srt_timestamps(srt_path, delay_ms, log):
     with open(srt_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
     log.info(f"Shifted SRT timestamps forward by {delay_ms}ms ({delay_sec:.3f}s)")
+
+
+def detect_audio_pts_gaps(path, log, min_gap_sec=0.5):
+    """Scan the audio stream for forward PTS jumps indicating dropped content.
+
+    When a recording discontinuity occurs (e.g., stream briefly switches to
+    another source), the replacement source often has an independent lower PTS
+    counter. ffmpeg drops those out-of-order packets, leaving a gap in the
+    audio data that Whisper cannot see — causing captions to lead audio by the
+    gap duration after each discontinuity.
+
+    Returns a list of (position_sec, gap_sec) tuples in real-time coordinates.
+    A gap is reported when consecutive audio packet timestamps jump forward by
+    more than min_gap_sec (default 0.5s, far above the normal ~32ms frame spacing).
+    """
+    cmd = [
+        "ffprobe",
+        "-v",
+        "quiet",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "packet=pts_time,dts_time",
+        "-of",
+        "csv=p=0",
+        path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        log.warning("Audio PTS gap detection timed out (skipping discontinuity check)")
+        return []
+
+    if result.returncode != 0:
+        log.debug(f"PTS gap detection unavailable: {result.stderr[:100]}")
+        return []
+
+    gaps = []
+    prev_pts = None
+    normal_delta_samples = []
+    normal_delta = None
+
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        # Each line: "pts_time,dts_time" — prefer pts, fall back to dts
+        parts = line.split(",")
+        pts = None
+        for part in parts:
+            part = part.strip()
+            if part and part.lower() != "n/a":
+                try:
+                    pts = float(part)
+                    break
+                except ValueError:
+                    continue
+        if pts is None:
+            continue
+
+        if prev_pts is not None:
+            delta = pts - prev_pts
+            if 0.001 < delta < 0.1:
+                normal_delta_samples.append(delta)
+                if len(normal_delta_samples) == 20:
+                    normal_delta = sum(normal_delta_samples) / len(normal_delta_samples)
+            elif normal_delta is not None and delta >= min_gap_sec:
+                gap_dur = delta - normal_delta
+                gaps.append((prev_pts, gap_dur))
+                log.info(
+                    f"Recording discontinuity at {prev_pts:.3f}s: "
+                    f"audio gap {gap_dur * 1000:.0f}ms"
+                )
+
+        prev_pts = pts
+
+    return gaps
+
+
+def correct_srt_for_audio_gaps(srt_path, gaps, log):
+    """Shift SRT timestamps to compensate for audio PTS gaps from discontinuities.
+
+    Whisper assigns timestamps by sample position (not PTS), so a D-second gap
+    in the audio data causes all post-gap captions to appear D seconds too early.
+    This function corrects that cumulative shift.
+
+    gaps: list of (position_sec, gap_sec) in real-time audio PTS coordinates,
+          as returned by detect_audio_pts_gaps().
+    """
+    import re
+
+    if not gaps:
+        return
+
+    timepat = re.compile(
+        r"(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})"
+    )
+
+    def to_sec(h, m, s, ms):
+        return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+    def to_srt_time(sec):
+        sec = max(0.0, sec)
+        h = int(sec // 3600)
+        m = int((sec % 3600) // 60)
+        s = int(sec % 60)
+        ms = round((sec - int(sec)) * 1000)
+        if ms >= 1000:
+            s += 1
+            ms = 0
+        return f"{h:02}:{m:02}:{s:02},{ms:03}"
+
+    # Convert gap positions from real-time (audio PTS) to Whisper sample-time.
+    # Each previous gap shifts the coordinate system by its duration, so the
+    # Whisper threshold for applying gap N is: audio_pts_N - sum(D_1..D_{N-1}).
+    sorted_gaps = sorted(gaps, key=lambda x: x[0])
+    corrections = []  # (whisper_threshold, cumulative_correction)
+    cumulative = 0.0
+    for audio_pts, gap_dur in sorted_gaps:
+        whisper_threshold = audio_pts - cumulative
+        cumulative += gap_dur
+        corrections.append((whisper_threshold, cumulative))
+
+    def apply_correction(w_sec):
+        corr = 0.0
+        for threshold, total_corr in corrections:
+            if w_sec >= threshold:
+                corr = total_corr
+            else:
+                break
+        return w_sec + corr
+
+    lines = []
+    with open(srt_path, encoding="utf-8") as f:
+        for line in f:
+            m = timepat.match(line.strip())
+            if m:
+                start = apply_correction(to_sec(*m.groups()[:4]))
+                end = apply_correction(to_sec(*m.groups()[4:]))
+                lines.append(f"{to_srt_time(start)} --> {to_srt_time(end)}\n")
+            else:
+                lines.append(line)
+
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+    total_ms = int(corrections[-1][1] * 1000) if corrections else 0
+    log.info(
+        f"Corrected SRT for {len(gaps)} discontinuities " f"(total shift: {total_ms}ms)"
+    )
 
 
 def mux_subs(av_path, srt_path, output_path, log, job_id=None):
@@ -2645,6 +2791,19 @@ def main():
         except Exception:
             step_tracker.finish("whisper", status="failed")
             raise
+
+    # ── Correct SRT for recording discontinuities ────────────────────────────
+    # Detect forward PTS gaps in the audio stream (caused when the DVR briefly
+    # switches sources). Whisper timestamps based on sample position, so dropped
+    # audio packets cause post-gap captions to lead audio cumulatively.
+    audio_gaps = detect_audio_pts_gaps(input_source, log)
+    if audio_gaps:
+        run_step(
+            "fix_discontinuities",
+            lambda: correct_srt_for_audio_gaps(srt_path, audio_gaps, log),
+            input_path=srt_path,
+            misc_label="Correcting discontinuities",
+        )
 
     # ── Determine how to embed captions ──────────────────────────────────────
     # --skip-transcode is a legacy override meaning "srt_only for this job"
