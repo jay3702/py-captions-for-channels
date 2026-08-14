@@ -239,8 +239,19 @@ def transcribe_via_groq(
         with tempfile.TemporaryDirectory(prefix="groq_transcribe_") as tmp:
             tmp_path = Path(tmp)
             full_audio = str(tmp_path / "full.flac")
+            max_audio_seconds = (
+                config.GROQ_MAX_AUDIO_MINUTES * 60
+                if config.GROQ_MAX_AUDIO_MINUTES > 0
+                else None
+            )
+            if max_audio_seconds:
+                log.info(
+                    f"Capping audio sent to Groq at the first "
+                    f"{config.GROQ_MAX_AUDIO_MINUTES} minute(s) "
+                    f"(GROQ_MAX_AUDIO_MINUTES)"
+                )
             log.debug("Extracting audio for Groq transcription")
-            _extract_audio(input_path, full_audio)
+            _extract_audio(input_path, full_audio, duration=max_audio_seconds)
 
             duration_cmd = [
                 "ffprobe", "-v", "error", "-show_entries", "format=duration",

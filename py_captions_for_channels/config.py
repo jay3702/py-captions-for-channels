@@ -281,6 +281,16 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 # than "whisper-large-v3" with only a marginal quality difference.
 GROQ_MODEL = os.getenv("GROQ_MODEL", "whisper-large-v3-turbo")
 
+# Cap how much audio (from the start of the recording) gets sent to Groq per
+# job. 0 = no cap, send the whole recording. Only affects the Groq request —
+# local fallback still transcribes the full file regardless of this setting.
+# Useful for fitting recordings that run a bit long into a predictable quota
+# budget: e.g. two 61-minute recordings sum to 7320s, just over the free
+# tier's 7200s/hour (ASH) limit, so the second one falls back to local. Set
+# this to 60 and two 61-minute recordings sum to exactly 7200s of Groq usage,
+# fitting the hourly window precisely.
+GROQ_MAX_AUDIO_MINUTES = get_env_int("GROQ_MAX_AUDIO_MINUTES", 0)
+
 # Which Groq account tier to enforce quota limits for.
 # "free" - Groq's published, verified free-tier limits (defaults below).
 # "dev"  - Paid tier. Groq does not publish fixed numbers for this tier (they
