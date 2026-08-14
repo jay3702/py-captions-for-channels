@@ -2349,6 +2349,7 @@ def main():
                 from py_captions_for_channels.config import (
                     WHISPER_DEVICE,
                     WHISPER_ENGINE,
+                    WHISPER_LOCAL_ENGINE,
                     SRT_MAX_LINE_LENGTH,
                 )
 
@@ -2360,6 +2361,12 @@ def main():
                 # must exist regardless of which engine actually transcribed.
                 engine_segments = None
                 wav_path = None
+                # Which engine actually produced engine_segments, for the
+                # completion log line below - not simply derivable from
+                # WHISPER_ENGINE/WHISPER_LOCAL_ENGINE alone since Groq
+                # falling back to a local engine still counts as that local
+                # engine succeeding, not Groq.
+                succeeded_engine_label = None
                 if WHISPER_ENGINE == "groq":
                     from py_captions_for_channels.config import GROQ_MODEL
                     from py_captions_for_channels.groq_transcribe import (
@@ -2382,26 +2389,32 @@ def main():
                             f"Groq transcription succeeded: "
                             f"{len(engine_segments)} segments"
                         )
-                elif WHISPER_ENGINE == "parakeet":
+                        succeeded_engine_label = "Groq"
+                # Reached whenever local transcription is needed: either
+                # WHISPER_ENGINE=local directly, or WHISPER_ENGINE=groq just
+                # failed above and is falling back through the configured
+                # local engine.
+                if engine_segments is None and WHISPER_LOCAL_ENGINE == "parakeet":
                     from py_captions_for_channels.parakeet_transcribe import (
                         transcribe_via_parakeet,
                     )
 
                     log.debug(
-                        "WHISPER_ENGINE=parakeet - attempting local "
+                        "WHISPER_LOCAL_ENGINE=parakeet - attempting local "
                         "transcription via Parakeet"
                     )
                     engine_segments = transcribe_via_parakeet(input_source)
                     if engine_segments is None:
                         log.warning(
                             "Parakeet transcription unavailable - "
-                            "falling back to local Whisper transcription"
+                            "falling back to Faster-Whisper transcription"
                         )
                     else:
                         log.info(
                             f"Parakeet transcription succeeded: "
                             f"{len(engine_segments)} segments"
                         )
+                        succeeded_engine_label = "Parakeet"
 
                 if engine_segments is None:
                     from faster_whisper import WhisperModel
@@ -2808,10 +2821,7 @@ def main():
                     f.writelines(srt_lines)
                 os.replace(srt_tmp, srt_path)
 
-                if engine_segments is not None:
-                    engine_label = WHISPER_ENGINE.capitalize()
-                else:
-                    engine_label = "Faster-Whisper"
+                engine_label = succeeded_engine_label or "Faster-Whisper"
                 log.info(
                     f"{engine_label} completed successfully, generated: {srt_path}"
                 )

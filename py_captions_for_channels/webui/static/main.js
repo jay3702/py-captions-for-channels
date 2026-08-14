@@ -1119,7 +1119,8 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
     'WHISPER_MODEL': ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en', 'medium', 'medium.en', 'large-v2', 'large-v3', 'large-v3-turbo', 'distil-large-v3', 'distil-large-v2'],
     'OPTIMIZATION_MODE': ['standard', 'automatic'],
     'WHISPER_DEVICE': ['auto', 'nvidia', 'amd', 'intel', 'none'],
-    'WHISPER_ENGINE': ['local', 'groq', 'parakeet'],
+    'WHISPER_ENGINE': ['local', 'groq'],
+    'WHISPER_LOCAL_ENGINE': ['faster-whisper', 'parakeet'],
     'GROQ_TIER': ['free', 'dev'],
     'PARAKEET_DEVICE': ['cpu'],
     'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -1128,7 +1129,8 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
   // Custom display names for settings (overrides environment variable name)
   const displayNames = {
     'WHISPER_DEVICE': 'GPU',
-    'WHISPER_ENGINE': 'Transcription Engine',
+    'WHISPER_ENGINE': 'Transcription Source (Local / Cloud)',
+    'WHISPER_LOCAL_ENGINE': 'Local Transcription Engine',
     'DVR_PATH_PREFIX': 'DVR Media Folder Path',
     'DVR_MEDIA_MOUNT': 'Container Mount Path',
     'LIBRARY_HOST_PATH': 'Library Host Path (host machine)',
