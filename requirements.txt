@@ -7,6 +7,8 @@ numpy<2
 # Faster-Whisper for automatic speech recognition (4-5x faster than openai-whisper)
 # NOTE: PyTorch installed separately in Dockerfile with CUDA support
 faster-whisper
+# Groq's hosted Whisper API is OpenAI-compatible (WHISPER_DEVICE=groq)
+openai
 fastapi
 starlette>=0.41.0
 uvicorn[standard]

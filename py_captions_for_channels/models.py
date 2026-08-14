@@ -370,3 +370,29 @@ class LearnedProfile(Base):
             f"profile='{self.profile_name}', "
             f"variant='{self.variant_name}')>"
         )
+
+
+class GroqUsage(Base):
+    """Record of a single Groq transcription API request.
+
+    One row per request (a chunked job produces multiple rows). Used to
+    enforce Groq's rolling-window rate limits (RPM/RPD/ASH/ASD) by summing
+    recent rows before each new request — Groq doesn't expose usage via API,
+    so this is the only way to know how close to the limit we are.
+    """
+
+    __tablename__ = "groq_usage"
+    __table_args__ = (Index("idx_groq_usage_created_at", "created_at"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    audio_seconds = Column(Float, nullable=False)
+    model = Column(String(100), nullable=False)
+
+    def __repr__(self):
+        return (
+            f"<GroqUsage(id={self.id}, created_at={self.created_at}, "
+            f"audio_seconds={self.audio_seconds:.1f})>"
+        )

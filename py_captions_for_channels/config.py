@@ -260,7 +260,45 @@ OPTIMIZATION_MODE = os.getenv(
 # "auto" - Automatically detect and use GPU if available, fallback to CPU
 # "cuda" - Force GPU usage (will fail if GPU not available)
 # "cpu" - Force CPU-only processing (useful for testing or when GPU is busy)
+# "groq" - Use Groq's hosted Whisper API for transcription. Falls back to the
+#          best local device (same logic as "auto") whenever Groq's quota
+#          would be exceeded or a request fails for any reason — a recording
+#          is never left uncaptioned just because the cloud call didn't work.
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto").lower()
+
+# ── Groq cloud transcription (used when WHISPER_DEVICE=groq) ────────────────
+# Get an API key at https://console.groq.com
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+
+# Groq model to use. "whisper-large-v3-turbo" is ~2.8x cheaper and faster
+# than "whisper-large-v3" with only a marginal quality difference.
+GROQ_MODEL = os.getenv("GROQ_MODEL", "whisper-large-v3-turbo")
+
+# Which Groq account tier to enforce quota limits for.
+# "free" - Groq's published, verified free-tier limits (defaults below).
+# "dev"  - Paid tier. Groq does not publish fixed numbers for this tier (they
+#          scale per-account) — check console.groq.com account settings and
+#          override GROQ_DEV_* below with your actual limits. Until you do,
+#          the GROQ_DEV_* defaults of 0 mean "don't enforce" for that
+#          dimension, since guessing a wrong cap is worse than not capping.
+GROQ_TIER = os.getenv("GROQ_TIER", "free").lower()
+
+# Free tier limits (verified against Groq's docs; applies to both
+# whisper-large-v3 and whisper-large-v3-turbo).
+GROQ_FREE_MAX_FILE_MB = get_env_int("GROQ_FREE_MAX_FILE_MB", 25)
+GROQ_FREE_RPM = get_env_int("GROQ_FREE_RPM", 20)  # requests/minute
+GROQ_FREE_RPD = get_env_int("GROQ_FREE_RPD", 2000)  # requests/day
+GROQ_FREE_ASH = get_env_int("GROQ_FREE_ASH", 7200)  # audio-seconds/hour
+GROQ_FREE_ASD = get_env_int("GROQ_FREE_ASD", 28800)  # audio-seconds/day
+
+# Dev/paid tier limits. 0 = unknown/not enforced for that dimension — see
+# GROQ_TIER note above. Max file size (100MB) is the one Groq-documented
+# number for this tier, so it has a real default.
+GROQ_DEV_MAX_FILE_MB = get_env_int("GROQ_DEV_MAX_FILE_MB", 100)
+GROQ_DEV_RPM = get_env_int("GROQ_DEV_RPM", 0)
+GROQ_DEV_RPD = get_env_int("GROQ_DEV_RPD", 0)
+GROQ_DEV_ASH = get_env_int("GROQ_DEV_ASH", 0)
+GROQ_DEV_ASD = get_env_int("GROQ_DEV_ASD", 0)
 
 # Language selection for audio/subtitle processing
 # PRIMARY FEATURE: Only process audio and subtitle tracks in the specified language
