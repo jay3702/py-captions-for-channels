@@ -266,12 +266,28 @@ OPTIMIZATION_MODE = os.getenv(
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto").lower()
 
 # Which engine actually performs transcription.
-# "local" - Use faster-whisper on the device selected by WHISPER_DEVICE above.
-# "groq"  - Use Groq's hosted Whisper API. Falls back to local transcription
-#           (same WHISPER_DEVICE logic as "local") whenever Groq's quota would
-#           be exceeded or a request fails for any reason — a recording is
-#           never left uncaptioned just because the cloud call didn't work.
+# "local"    - Use faster-whisper on the device selected by WHISPER_DEVICE
+#              above.
+# "groq"     - Use Groq's hosted Whisper API. Falls back to local
+#              transcription (same WHISPER_DEVICE logic as "local") whenever
+#              Groq's quota would be exceeded or a request fails for any
+#              reason — a recording is never left uncaptioned just because
+#              the cloud call didn't work.
+# "parakeet" - Use a local whisper.cpp/ggml build of NVIDIA's Parakeet TDT.
+#              CPU-only for now (see PARAKEET_DEVICE below); falls back to
+#              local faster-whisper transcription on any failure, same as
+#              "groq" does.
 WHISPER_ENGINE = os.getenv("WHISPER_ENGINE", "local").lower()
+
+# ── Parakeet local transcription (used when WHISPER_ENGINE=parakeet) ────────
+# Which device runs Parakeet. Only "cpu" is implemented right now — GPU
+# support (Vulkan/SYCL) crashed reliably in testing (device-lost on an Intel
+# iGPU, out-of-VRAM on a 4GB discrete GPU) and is stubbed out for later, once
+# whisper.cpp's GPU backend for this model matures upstream. Setting this to
+# anything other than "cpu" currently just falls back to local Whisper, with
+# a warning logged, rather than attempting an unsupported device.
+# Default: cpu
+PARAKEET_DEVICE = os.getenv("PARAKEET_DEVICE", "cpu").lower()
 
 # ── Groq cloud transcription (used when WHISPER_ENGINE=groq) ────────────────
 # Get an API key at https://console.groq.com

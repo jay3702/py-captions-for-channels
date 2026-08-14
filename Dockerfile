@@ -85,6 +85,32 @@ RUN echo "FFmpeg build: version=${FFMPEG_VERSION}, bust=${FFMPEG_CACHE_BUST}" &&
     --enable-shared \
     && make -j$(nproc) && make install
 
+# --- Build stage: Compile whisper.cpp's Parakeet CLI, CPU-only ---
+# Separate lightweight (non-CUDA) stage since this build is deliberately
+# CPU-only for now — see py_captions_for_channels/parakeet_transcribe.py for
+# why (the GPU/Vulkan backend crashed reliably in testing). GGML_NATIVE=OFF
+# targets a portable AVX2/SSE4.2/BMI2/FMA baseline instead of -march=native,
+# since the machine that builds this image is never the machine that runs
+# it — that baseline covers any x86_64 CPU from roughly 2013 onward,
+# including low-power targets like an Intel N100/N95.
+FROM ubuntu:22.04 AS parakeet-build
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Bump PARAKEET_CACHE_BUST to force a rebuild (invalidates GHA layer cache)
+ARG PARAKEET_CACHE_BUST=2026-08-14
+
+RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git /whisper.cpp && \
+    cd /whisper.cpp && \
+    cmake -B build -DGGML_NATIVE=OFF && \
+    cmake --build build -j$(nproc) --target parakeet-cli
+
 # --- Runtime stage ---
 FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
 
@@ -116,6 +142,7 @@ RUN apt-get update && apt-get install -y \
     libncurses5-dev \
     libdrm-dev \
     libudev-dev \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Build and install NVTOP
@@ -146,7 +173,13 @@ COPY --from=ffmpeg-build /ffmpeg_build/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-build /ffmpeg_build/bin/ffprobe /usr/local/bin/ffprobe
 COPY --from=ffmpeg-build /ffmpeg_build/lib/ /usr/local/lib/
 
-# Update library cache so FFmpeg libraries are found
+# Copy Parakeet CLI (CPU-only) and its shared libs from build stage.
+# Path matches PARAKEET_CLI_PATH in py_captions_for_channels/parakeet_transcribe.py.
+COPY --from=parakeet-build /whisper.cpp/build/bin/parakeet-cli /usr/local/bin/parakeet-cli
+COPY --from=parakeet-build /whisper.cpp/build/bin/libparakeet.so* /usr/local/lib/
+COPY --from=parakeet-build /whisper.cpp/build/bin/libggml*.so* /usr/local/lib/
+
+# Update library cache so FFmpeg/Parakeet libraries are found
 RUN ldconfig
 
 # Install remaining requirements (modern versions have pre-built wheels)

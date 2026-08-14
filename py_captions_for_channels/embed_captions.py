@@ -2352,10 +2352,13 @@ def main():
                     SRT_MAX_LINE_LENGTH,
                 )
 
-                groq_segments = None
-                # Only ever set inside the local-transcription branch below, but
-                # referenced unconditionally in cleanup at the end of this
-                # function — must exist regardless of which engine transcribed.
+                # Segments from a non-local engine (Groq or Parakeet), if one
+                # is configured and succeeds. Only ever set to non-None by the
+                # branches immediately below; wav_path is only ever set inside
+                # the local-transcription branch further down, but referenced
+                # unconditionally in cleanup at the end of this function — both
+                # must exist regardless of which engine actually transcribed.
+                engine_segments = None
                 wav_path = None
                 if WHISPER_ENGINE == "groq":
                     from py_captions_for_channels.config import GROQ_MODEL
@@ -2366,10 +2369,10 @@ def main():
                     log.debug(
                         "WHISPER_ENGINE=groq - attempting cloud transcription via Groq"
                     )
-                    groq_segments = transcribe_via_groq(
+                    engine_segments = transcribe_via_groq(
                         input_source, GROQ_MODEL, selected_language
                     )
-                    if groq_segments is None:
+                    if engine_segments is None:
                         log.warning(
                             "Groq transcription unavailable - "
                             "falling back to local transcription"
@@ -2377,10 +2380,30 @@ def main():
                     else:
                         log.info(
                             f"Groq transcription succeeded: "
-                            f"{len(groq_segments)} segments"
+                            f"{len(engine_segments)} segments"
+                        )
+                elif WHISPER_ENGINE == "parakeet":
+                    from py_captions_for_channels.parakeet_transcribe import (
+                        transcribe_via_parakeet,
+                    )
+
+                    log.debug(
+                        "WHISPER_ENGINE=parakeet - attempting local "
+                        "transcription via Parakeet"
+                    )
+                    engine_segments = transcribe_via_parakeet(input_source)
+                    if engine_segments is None:
+                        log.warning(
+                            "Parakeet transcription unavailable - "
+                            "falling back to local Whisper transcription"
+                        )
+                    else:
+                        log.info(
+                            f"Parakeet transcription succeeded: "
+                            f"{len(engine_segments)} segments"
                         )
 
-                if groq_segments is None:
+                if engine_segments is None:
                     from faster_whisper import WhisperModel
 
                     # Determine device based on configuration
@@ -2488,7 +2511,7 @@ def main():
                     f"Video duration: {video_duration:.1f}s for progress tracking"
                 )
 
-                if groq_segments is None:
+                if engine_segments is None:
                     # Determine Whisper parameters based on OPTIMIZATION_MODE
                     channel_number = extract_channel_number(mpg_path)
                     print(
@@ -2603,7 +2626,7 @@ def main():
                 if args.job_id:
                     update_whisper_progress(args.job_id, 0, "Transcription starting...")
 
-                if groq_segments is None:
+                if engine_segments is None:
                     # Try GPU transcription first, fall back to CPU if libraries fail
                     transcription_successful = False
                     try:
@@ -2731,7 +2754,7 @@ def main():
                         f"(probability: {info.language_probability:.2f})"
                     )
                 else:
-                    segments_generator = groq_segments
+                    segments_generator = engine_segments
 
                 # Write SRT file with real-time progress tracking
                 srt_lines = []
@@ -2785,7 +2808,10 @@ def main():
                     f.writelines(srt_lines)
                 os.replace(srt_tmp, srt_path)
 
-                engine_label = "Groq" if groq_segments is not None else "Faster-Whisper"
+                if engine_segments is not None:
+                    engine_label = WHISPER_ENGINE.capitalize()
+                else:
+                    engine_label = "Faster-Whisper"
                 log.info(
                     f"{engine_label} completed successfully, generated: {srt_path}"
                 )
@@ -2801,8 +2827,8 @@ def main():
                 # Explicitly free the model to reclaim ~1.5GB RAM before ffmpeg steps.
                 # Without this, ctranslate2 deallocation during Python interpreter
                 # shutdown causes a SIGKILL (exit 137) after all work is complete.
-                # No local model was ever loaded when Groq handled transcription.
-                if groq_segments is None:
+                # No local model was ever loaded when Groq/Parakeet handled it.
+                if engine_segments is None:
                     del model
                     gc.collect()
                     log.debug("Whisper model freed from memory")

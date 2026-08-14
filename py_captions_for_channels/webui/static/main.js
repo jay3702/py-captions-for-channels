@@ -1119,8 +1119,9 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
     'WHISPER_MODEL': ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en', 'medium', 'medium.en', 'large-v2', 'large-v3', 'large-v3-turbo', 'distil-large-v3', 'distil-large-v2'],
     'OPTIMIZATION_MODE': ['standard', 'automatic'],
     'WHISPER_DEVICE': ['auto', 'nvidia', 'amd', 'intel', 'none'],
-    'WHISPER_ENGINE': ['local', 'groq'],
+    'WHISPER_ENGINE': ['local', 'groq', 'parakeet'],
     'GROQ_TIER': ['free', 'dev'],
+    'PARAKEET_DEVICE': ['cpu'],
     'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
   };
   
