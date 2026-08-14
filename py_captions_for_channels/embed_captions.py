@@ -2410,7 +2410,7 @@ def main():
                         )
                         log.info("Faster-Whisper model loaded with NVIDIA GPU (forced)")
                     elif WHISPER_DEVICE in ["amd", "intel"]:
-                        # AMD/Intel GPU support - try GPU first, fallback to auto behavior
+                        # AMD/Intel GPU support - try GPU first, fall back to auto
                         device = "cuda"
                         compute_type = "float16"
                         log.debug(
@@ -2439,22 +2439,20 @@ def main():
                                 model = WhisperModel(
                                     args.model, device=device, compute_type=compute_type
                                 )
-                                log.info(
-                                    "Faster-Whisper model loaded with GPU (auto-detected)"
-                                )
+                                log.info("Faster-Whisper loaded on GPU (auto-detected)")
                             except Exception:
                                 device = "cpu"
                                 compute_type = "int8"
                                 model = WhisperModel(
                                     args.model, device=device, compute_type=compute_type
                                 )
-                                log.info(
-                                    "Faster-Whisper model loaded with CPU (GPU fallback)"
-                                )
+                                log.info("Faster-Whisper loaded on CPU (GPU fallback)")
                     else:  # auto mode
                         # Initialize model with GPU if available, fallback to CPU
                         device = "cuda"
-                        compute_type = "float16"  # Use float16 for better GPU performance
+                        compute_type = (
+                            "float16"  # Use float16 for better GPU performance
+                        )
 
                         log.debug(
                             f"Loading Faster-Whisper model: {args.model} "
@@ -2466,10 +2464,13 @@ def main():
                             model = WhisperModel(
                                 args.model, device=device, compute_type=compute_type
                             )
-                            log.debug("Faster-Whisper model loaded successfully with GPU")
+                            log.debug(
+                                "Faster-Whisper model loaded successfully with GPU"
+                            )
                         except Exception as e:
                             log.warning(
-                                f"Failed to load model with GPU: {e}, falling back to CPU"
+                                f"Failed to load model with GPU: {e}, "
+                                f"falling back to CPU"
                             )
                             device = "cpu"
                             compute_type = "int8"  # Use int8 for CPU efficiency
@@ -2490,7 +2491,9 @@ def main():
                 if groq_segments is None:
                     # Determine Whisper parameters based on OPTIMIZATION_MODE
                     channel_number = extract_channel_number(mpg_path)
-                    print(f"[OPTIMIZATION] Channel detected: {channel_number}", flush=True)
+                    print(
+                        f"[OPTIMIZATION] Channel detected: {channel_number}", flush=True
+                    )
                     if OPTIMIZATION_MODE == "automatic":
                         whisper_params = get_whisper_parameters(
                             input_source, channel_number
@@ -2520,7 +2523,8 @@ def main():
                         }
                         log.info(
                             f"Using standard Whisper parameters "
-                            f"(OPTIMIZATION_MODE=standard, language={selected_language})"
+                            f"(OPTIMIZATION_MODE=standard, "
+                            f"language={selected_language})"
                         )
 
                     # Check if file can be safely decoded - if not, extract audio first
@@ -2535,8 +2539,9 @@ def main():
                         wav_path = f"{mpg_path}.cc4chan.temp.wav"
                         try:
                             # Map specific audio stream for language-aware processing
-                            # Use absolute stream index (0:N), not audio-relative (0:a:N),
-                            # because selected_audio_index is the global ffprobe index.
+                            # Use absolute stream index (0:N), not audio-relative
+                            # (0:a:N), because selected_audio_index is the global
+                            # ffprobe index.
                             audio_map = (
                                 ["-map", f"0:{selected_audio_index}"]
                                 if selected_audio_index is not None
@@ -2576,7 +2581,8 @@ def main():
                                 use_wav_path = wav_path  # Use WAV for transcription
                             else:
                                 log.error(
-                                    f"Audio extraction failed (exit {result.returncode}): "
+                                    f"Audio extraction failed "
+                                    f"(exit {result.returncode}): "
                                     f"{result.stderr[:500]}"
                                 )
                                 raise Exception("Proactive WAV extraction failed")
@@ -2598,7 +2604,7 @@ def main():
                     update_whisper_progress(args.job_id, 0, "Transcription starting...")
 
                 if groq_segments is None:
-                    # Try GPU transcription first, fall back to CPU if GPU libraries fail
+                    # Try GPU transcription first, fall back to CPU if libraries fail
                     transcription_successful = False
                     try:
                         segments_generator, info = model.transcribe(
@@ -2690,7 +2696,9 @@ def main():
                                                 wav_path, **whisper_params
                                             )
                                             transcription_successful = True
-                                            log.info("Transcription successful using WAV")
+                                            log.info(
+                                                "Transcription successful using WAV"
+                                            )
 
                                         except Exception as wav_error:
                                             log.error(
@@ -2699,7 +2707,9 @@ def main():
                                             )
                                             # Clean up partial WAV if it exists
                                             try:
-                                                if wav_path and os.path.exists(wav_path):
+                                                if wav_path and os.path.exists(
+                                                    wav_path
+                                                ):
                                                     os.remove(wav_path)
                                                     wav_path = None
                                             except Exception:
@@ -2895,7 +2905,12 @@ def main():
         run_step(
             "ffmpeg_remux",
             lambda: remux_with_subs(
-                orig_path, srt_path, temp_muxed, log, duration=end_time, job_id=args.job_id
+                orig_path,
+                srt_path,
+                temp_muxed,
+                log,
+                duration=end_time,
+                job_id=args.job_id,
             ),
             input_path=orig_path,
             output_path=temp_muxed,

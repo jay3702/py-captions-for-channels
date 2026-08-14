@@ -122,9 +122,13 @@ def transcribe_chunk_with_groq(client, audio_path: str, model: str, language) ->
         except Exception as e:
             last_error = e
             wait = 2**attempt
-            print(f"  Groq request failed (attempt {attempt}): {e} - retrying in {wait}s")
+            print(
+                f"  Groq request failed (attempt {attempt}): {e} - retrying in {wait}s"
+            )
             time.sleep(wait)
-    raise RuntimeError(f"Groq transcription failed after {GROQ_MAX_RETRIES} attempts") from last_error
+    raise RuntimeError(
+        f"Groq transcription failed after {GROQ_MAX_RETRIES} attempts"
+    ) from last_error
 
 
 def transcribe_with_groq(input_path: str, model: str, language, tier: str) -> tuple:
@@ -154,7 +158,9 @@ def transcribe_with_groq(input_path: str, model: str, language, tier: str) -> tu
         all_segments = []
         if size <= safe_max_bytes:
             print("Sending as a single request...")
-            all_segments = transcribe_chunk_with_groq(client, full_audio, model, language)
+            all_segments = transcribe_chunk_with_groq(
+                client, full_audio, model, language
+            )
         else:
             print(
                 f"Audio exceeds {safe_max_bytes / 1024 / 1024:.0f}MB safe limit "
@@ -182,7 +188,10 @@ def transcribe_with_groq(input_path: str, model: str, language, tier: str) -> tu
 
 
 def transcribe_with_local_whisper(input_path: str, model_size: str) -> tuple:
-    """Run the same audio through local faster-whisper. Returns (segments, wall_seconds)."""
+    """Run the same audio through local faster-whisper.
+
+    Returns (segments, wall_seconds).
+    """
     from faster_whisper import WhisperModel
 
     try:
@@ -195,7 +204,9 @@ def transcribe_with_local_whisper(input_path: str, model_size: str) -> tuple:
 
     t0 = time.time()
     segments_gen, info = model.transcribe(
-        input_path, beam_size=5, vad_filter=True,
+        input_path,
+        beam_size=5,
+        vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 500},
     )
     segments = [
@@ -218,9 +229,9 @@ def write_srt(segments: list, out_path: str) -> None:
     lines = []
     for i, seg in enumerate(segments, start=1):
         lines.append(f"{i}\n")
-        lines.append(
-            f"{format_srt_timestamp(seg['start'])} --> {format_srt_timestamp(seg['end'])}\n"
-        )
+        start_ts = format_srt_timestamp(seg["start"])
+        end_ts = format_srt_timestamp(seg["end"])
+        lines.append(f"{start_ts} --> {end_ts}\n")
         lines.append(f"{seg['text']}\n\n")
     Path(out_path).write_text("".join(lines), encoding="utf-8")
 
@@ -246,7 +257,9 @@ def main():
     parser.add_argument(
         "--compare-local", action="store_true", help="Also run local faster-whisper"
     )
-    parser.add_argument("--local-model", default="medium", help="faster-whisper model size")
+    parser.add_argument(
+        "--local-model", default="medium", help="faster-whisper model size"
+    )
     args = parser.parse_args()
 
     input_path = args.input
@@ -285,12 +298,20 @@ def main():
         local_text = " ".join(s["text"] for s in local_segments)
         similarity = difflib.SequenceMatcher(None, groq_text, local_text).ratio()
 
+        groq_rtf = duration / max(groq_elapsed, 0.01)
+        local_rtf = duration / max(local_elapsed, 0.01)
         print("\n--- Comparison ---")
-        print(f"Groq wall time:        {groq_elapsed:.1f}s  ({duration / max(groq_elapsed, 0.01):.1f}x real-time)")
-        print(f"Local wall time:       {local_elapsed:.1f}s  ({duration / max(local_elapsed, 0.01):.1f}x real-time)")
+        print(
+            f"Groq wall time:        {groq_elapsed:.1f}s  ({groq_rtf:.1f}x real-time)"
+        )
+        print(
+            f"Local wall time:       {local_elapsed:.1f}s  ({local_rtf:.1f}x real-time)"
+        )
         print(f"Groq word count:       {len(groq_text.split())}")
         print(f"Local word count:      {len(local_text.split())}")
-        print(f"Rough text similarity: {similarity:.1%}  (character-level, not true WER)")
+        print(
+            f"Rough text similarity: {similarity:.1%}  (character-level, not true WER)"
+        )
         print(f"Local SRT written to:  {local_srt}")
         print("\nInspect both .srt files by eye for real accuracy differences -")
         print("similarity ratio is only a rough sanity check, not a quality score.")

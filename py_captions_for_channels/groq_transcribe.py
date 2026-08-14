@@ -1,7 +1,7 @@
 """
 Cloud transcription via Groq's hosted Whisper API.
 
-Used when WHISPER_DEVICE=groq. Handles the parts local transcription doesn't
+Used when WHISPER_ENGINE=groq. Handles the parts local transcription doesn't
 need: chunking audio to stay under Groq's per-tier file-size limit, checking
 local usage records against Groq's rate limits before spending a request,
 and recording usage afterward so later jobs know how much quota is left.
@@ -65,7 +65,9 @@ def _get_tier_limits(tier: str) -> dict:
     }
 
 
-def _check_quota(num_requests: int, total_audio_seconds: float, limits: dict) -> Optional[str]:
+def _check_quota(
+    num_requests: int, total_audio_seconds: float, limits: dict
+) -> Optional[str]:
     """Pre-flight check of this job's request/audio budget against recent usage.
 
     Checked at job granularity (not per-chunk) to avoid ever splitting a
@@ -91,8 +93,9 @@ def _check_quota(num_requests: int, total_audio_seconds: float, limits: dict) ->
             )
             if recent_requests + num_requests > limits["rpm"]:
                 return (
-                    f"would exceed free-tier RPM limit "
-                    f"({recent_requests} used + {num_requests} needed > {limits['rpm']})"
+                    f"would exceed RPM limit "
+                    f"({recent_requests} used + {num_requests} needed "
+                    f"> {limits['rpm']})"
                 )
 
         if limits["rpd"] > 0:
@@ -161,8 +164,14 @@ def _record_usage(audio_seconds: float, model: str) -> None:
 
 def _probe_duration(path: str) -> float:
     cmd = [
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", path,
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        path,
     ]
     return float(subprocess.check_output(cmd, text=True).strip())
 
@@ -196,7 +205,9 @@ def _build_chunks(
     return chunks
 
 
-def _transcribe_chunk(client, audio_path: str, model: str, language: Optional[str]) -> List[GroqSegment]:
+def _transcribe_chunk(
+    client, audio_path: str, model: str, language: Optional[str]
+) -> List[GroqSegment]:
     kwargs = dict(
         model=model,
         response_format="verbose_json",
@@ -218,7 +229,9 @@ def _transcribe_chunk(client, audio_path: str, model: str, language: Optional[st
             last_error = e
             if attempt < GROQ_MAX_RETRIES:
                 time.sleep(2**attempt)
-    raise RuntimeError(f"Groq request failed after {GROQ_MAX_RETRIES} attempts") from last_error
+    raise RuntimeError(
+        f"Groq request failed after {GROQ_MAX_RETRIES} attempts"
+    ) from last_error
 
 
 def transcribe_via_groq(
@@ -231,7 +244,9 @@ def transcribe_via_groq(
     from py_captions_for_channels import config
 
     if not config.GROQ_API_KEY:
-        log.warning("WHISPER_ENGINE=groq but GROQ_API_KEY is not set — falling back to local")
+        log.warning(
+            "WHISPER_ENGINE=groq but GROQ_API_KEY is not set — falling back to local"
+        )
         return None
 
     try:
@@ -289,7 +304,9 @@ def transcribe_via_groq(
                 chunk_seconds = min(
                     CHUNK_TARGET_SECONDS, (max_bytes * 0.8) / bytes_per_second
                 )
-                chunk_paths = _build_chunks(input_path, tmp_path, duration, chunk_seconds)
+                chunk_paths = _build_chunks(
+                    input_path, tmp_path, duration, chunk_seconds
+                )
                 log.info(
                     f"Groq: audio exceeds {limits['max_file_mb']}MB {tier}-tier limit, "
                     f"split into {len(chunk_paths)} chunks"
