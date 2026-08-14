@@ -1142,7 +1142,7 @@ function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
   
   const numericFields = ['POLL_INTERVAL_SECONDS', 'POLL_LIMIT', 'WEBHOOK_PORT',
                          'PIPELINE_TIMEOUT', 'STALE_EXECUTION_SECONDS', 'API_TIMEOUT', 'CAPTION_DELAY_MS',
-                         'GROQ_MAX_AUDIO_MINUTES'];
+                         'GROQ_MAX_AUDIO_MINUTES', 'GROQ_MAX_OVERRUN_MINUTES'];
   
   // Get discovery mode to conditionally show/hide sections
   const discoveryMode = settings.event_source?.DISCOVERY_MODE?.value || 'webhook';

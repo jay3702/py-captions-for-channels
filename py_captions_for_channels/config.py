@@ -289,7 +289,26 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "whisper-large-v3-turbo")
 # tier's 7200s/hour (ASH) limit, so the second one falls back to local. Set
 # this to 60 and two 61-minute recordings sum to exactly 7200s of Groq usage,
 # fitting the hourly window precisely.
+#
+# This truncates rather than skips — only safe for recordings you expect to
+# just barely exceed the cap (e.g. a minute of dead air after the show
+# ends). GROQ_MAX_OVERRUN_MINUTES below draws the line between "truncate a
+# few throwaway minutes" and "this is genuinely longer content, don't
+# truncate it" — captions are never silently dropped from real content.
 GROQ_MAX_AUDIO_MINUTES = get_env_int("GROQ_MAX_AUDIO_MINUTES", 0)
+
+# How far a recording may exceed GROQ_MAX_AUDIO_MINUTES and still be
+# truncated-and-sent-to-Groq. Beyond this, the recording is treated as
+# genuinely longer content rather than "the cap plus some throwaway
+# padding" — Groq is skipped entirely for that job and the *whole*
+# recording falls back to local transcription instead of losing the tail.
+# Only relevant when GROQ_MAX_AUDIO_MINUTES > 0.
+# Example: MAX_AUDIO_MINUTES=60, OVERRUN_MINUTES=5 — a 61-minute recording
+# gets truncated to 60 min and sent to Groq (1 min over, within tolerance),
+# but a 90-minute recording skips Groq and goes fully local (25 min over,
+# clearly real content, not padding).
+# Default: 0 (strict — any overage defers the whole job to local)
+GROQ_MAX_OVERRUN_MINUTES = get_env_int("GROQ_MAX_OVERRUN_MINUTES", 0)
 
 # Which Groq account tier to enforce quota limits for.
 # "free" - Groq's published, verified free-tier limits (defaults below).

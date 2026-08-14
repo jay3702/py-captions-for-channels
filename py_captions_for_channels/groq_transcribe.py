@@ -159,6 +159,14 @@ def _record_usage(audio_seconds: float, model: str) -> None:
         db.close()
 
 
+def _probe_duration(path: str) -> float:
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", path,
+    ]
+    return float(subprocess.check_output(cmd, text=True).strip())
+
+
 def _extract_audio(
     input_path: str, out_path: str, start: float = None, duration: float = None
 ) -> None:
@@ -223,7 +231,7 @@ def transcribe_via_groq(
     from py_captions_for_channels import config
 
     if not config.GROQ_API_KEY:
-        log.warning("WHISPER_DEVICE=groq but GROQ_API_KEY is not set — falling back to local")
+        log.warning("WHISPER_ENGINE=groq but GROQ_API_KEY is not set — falling back to local")
         return None
 
     try:
@@ -244,20 +252,33 @@ def transcribe_via_groq(
                 if config.GROQ_MAX_AUDIO_MINUTES > 0
                 else None
             )
+
             if max_audio_seconds:
-                log.info(
-                    f"Capping audio sent to Groq at the first "
-                    f"{config.GROQ_MAX_AUDIO_MINUTES} minute(s) "
-                    f"(GROQ_MAX_AUDIO_MINUTES)"
-                )
+                source_duration = _probe_duration(input_path)
+                overrun_seconds = max(0, source_duration - max_audio_seconds)
+                tolerance_seconds = config.GROQ_MAX_OVERRUN_MINUTES * 60
+                if overrun_seconds > tolerance_seconds:
+                    log.warning(
+                        f"Recording is {source_duration / 60:.1f} min, exceeding "
+                        f"GROQ_MAX_AUDIO_MINUTES ({config.GROQ_MAX_AUDIO_MINUTES} min) "
+                        f"by more than the {config.GROQ_MAX_OVERRUN_MINUTES}-minute "
+                        f"tolerance - this looks like real content, not throwaway "
+                        f"padding. Skipping Groq entirely for this job rather than "
+                        f"truncating it; falling back to local for the full recording."
+                    )
+                    return None
+                if overrun_seconds > 0:
+                    log.info(
+                        f"Capping audio sent to Groq at the first "
+                        f"{config.GROQ_MAX_AUDIO_MINUTES} minute(s) "
+                        f"(GROQ_MAX_AUDIO_MINUTES; recording overran by "
+                        f"{overrun_seconds / 60:.1f} min, within tolerance)"
+                    )
+
             log.debug("Extracting audio for Groq transcription")
             _extract_audio(input_path, full_audio, duration=max_audio_seconds)
 
-            duration_cmd = [
-                "ffprobe", "-v", "error", "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1", full_audio,
-            ]
-            duration = float(subprocess.check_output(duration_cmd, text=True).strip())
+            duration = _probe_duration(full_audio)
             size = os.path.getsize(full_audio)
             max_bytes = limits["max_file_mb"] * 1024 * 1024
 
@@ -282,13 +303,7 @@ def transcribe_via_groq(
             client = OpenAI(api_key=config.GROQ_API_KEY, base_url=GROQ_BASE_URL)
             all_segments: List[GroqSegment] = []
             for chunk_path, offset in chunk_paths:
-                chunk_duration_cmd = [
-                    "ffprobe", "-v", "error", "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1", chunk_path,
-                ]
-                chunk_duration = float(
-                    subprocess.check_output(chunk_duration_cmd, text=True).strip()
-                )
+                chunk_duration = _probe_duration(chunk_path)
                 segments = _transcribe_chunk(client, chunk_path, model, language)
                 for seg in segments:
                     seg.start += offset
