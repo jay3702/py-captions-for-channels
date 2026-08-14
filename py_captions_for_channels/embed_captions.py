@@ -2376,13 +2376,14 @@ def main():
                     log.debug(
                         "WHISPER_ENGINE=groq - attempting cloud transcription via Groq"
                     )
-                    engine_segments = transcribe_via_groq(
+                    engine_segments, groq_failure_reason = transcribe_via_groq(
                         input_source, GROQ_MODEL, selected_language
                     )
                     if engine_segments is None:
                         log.warning(
-                            "Groq transcription unavailable - "
-                            "falling back to local transcription"
+                            f"Groq transcription unavailable "
+                            f"({groq_failure_reason}) - falling back to "
+                            f"local transcription"
                         )
                     else:
                         log.info(
@@ -2403,11 +2404,14 @@ def main():
                         "WHISPER_LOCAL_ENGINE=parakeet - attempting local "
                         "transcription via Parakeet"
                     )
-                    engine_segments = transcribe_via_parakeet(input_source)
+                    engine_segments, parakeet_failure_reason = transcribe_via_parakeet(
+                        input_source
+                    )
                     if engine_segments is None:
                         log.warning(
-                            "Parakeet transcription unavailable - "
-                            "falling back to Faster-Whisper transcription"
+                            f"Parakeet transcription unavailable "
+                            f"({parakeet_failure_reason}) - falling back to "
+                            f"Faster-Whisper transcription"
                         )
                     else:
                         log.info(

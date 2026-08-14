@@ -24,11 +24,12 @@ Two real correctness issues found during testing, both handled here:
    Segment summary line at all — it parses individual token lines and
    reconstructs both the text and the caption timing from those directly.
 
-Like groq_transcribe.py, every failure mode here returns None rather than
-raising, so the caller falls back to local faster-whisper transcription
-uniformly. A job is never left uncaptioned just because Parakeet didn't
-work — and a chunk that comes back with suspiciously little token coverage
-for its length is treated as a failure too, not a false "success".
+Like groq_transcribe.py, every failure mode here returns (None, reason)
+rather than raising, so the caller falls back to local faster-whisper
+transcription uniformly while still logging why. A job is never left
+uncaptioned just because Parakeet didn't work — and a chunk that comes back
+with suspiciously little token coverage for its length is treated as a
+failure too, not a false "success".
 """
 
 import os
@@ -37,7 +38,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import requests
 
@@ -287,30 +288,33 @@ def _transcribe_chunk(model_path: str, audio_path: str) -> List[ParakeetSegment]
     return _tokens_to_segments(tokens)
 
 
-def transcribe_via_parakeet(input_path: str) -> Optional[List[ParakeetSegment]]:
+def transcribe_via_parakeet(
+    input_path: str,
+) -> Tuple[Optional[List[ParakeetSegment]], Optional[str]]:
     """Attempt local transcription via Parakeet (CPU-only for now). Returns
-    None on any failure — binary missing, model download failed, crash,
-    silent under-coverage — so the caller falls back to faster-whisper.
+    (segments, None) on success, or (None, reason) on any failure — binary
+    missing, model download failed, crash, silent under-coverage — so the
+    caller falls back to faster-whisper while still being able to log why.
     Never raises.
     """
     from py_captions_for_channels import config
 
     if config.PARAKEET_DEVICE != "cpu":
-        log.warning(
+        reason = (
             f"PARAKEET_DEVICE={config.PARAKEET_DEVICE} is not supported yet "
-            f"(GPU backend crashed reliably in testing) - falling back to local"
+            f"(GPU backend crashed reliably in testing)"
         )
-        return None
+        log.warning(f"{reason} - falling back to local")
+        return None, reason
 
     if not os.path.exists(PARAKEET_CLI_PATH):
-        log.warning(
-            f"parakeet-cli not found at {PARAKEET_CLI_PATH} - falling back to local"
-        )
-        return None
+        reason = f"parakeet-cli not found at {PARAKEET_CLI_PATH}"
+        log.warning(f"{reason} - falling back to local")
+        return None, reason
 
     model_path = _ensure_model()
     if model_path is None:
-        return None
+        return None, "Parakeet model download failed"
 
     try:
         duration = _probe_duration(input_path)
@@ -343,7 +347,8 @@ def transcribe_via_parakeet(input_path: str) -> Optional[List[ParakeetSegment]]:
                 f"Parakeet transcription succeeded: {len(all_segments)} segments, "
                 f"{duration / 60:.1f} min of audio, {len(chunks)} chunk(s)"
             )
-            return all_segments
+            return all_segments, None
     except Exception as e:
-        log.warning(f"Parakeet transcription failed, falling back to local: {e}")
-        return None
+        reason = str(e)
+        log.warning(f"Parakeet transcription failed, falling back to local: {reason}")
+        return None, reason

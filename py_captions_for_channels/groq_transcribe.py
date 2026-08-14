@@ -13,9 +13,9 @@ the only signal available and errs conservative (a live 429 still triggers
 the same fallback as a failed pre-flight check).
 
 Every failure mode here — no API key, quota exceeded, network error, API
-error — results in returning None rather than raising, so the caller can
-fall back to local transcription uniformly. A job is never left uncaptioned
-just because Groq didn't work.
+error — results in returning (None, reason) rather than raising, so the
+caller can fall back to local transcription uniformly while still logging
+why. A job is never left uncaptioned just because Groq didn't work.
 """
 
 import os
@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from py_captions_for_channels.logging.structured_logger import get_logger
 
@@ -236,24 +236,25 @@ def _transcribe_chunk(
 
 def transcribe_via_groq(
     input_path: str, model: str, language: Optional[str]
-) -> Optional[List[GroqSegment]]:
-    """Attempt cloud transcription via Groq. Returns None on any failure —
-    quota exceeded, no API key, network/API error — so the caller falls back
-    to local transcription. Never raises.
+) -> Tuple[Optional[List[GroqSegment]], Optional[str]]:
+    """Attempt cloud transcription via Groq. Returns (segments, None) on
+    success, or (None, reason) on any failure — quota exceeded, no API key,
+    network/API error — so the caller falls back to local transcription
+    while still being able to log why. Never raises.
     """
     from py_captions_for_channels import config
 
     if not config.GROQ_API_KEY:
-        log.warning(
-            "WHISPER_ENGINE=groq but GROQ_API_KEY is not set — falling back to local"
-        )
-        return None
+        reason = "GROQ_API_KEY is not set"
+        log.warning(f"WHISPER_ENGINE=groq but {reason} — falling back to local")
+        return None, reason
 
     try:
         from openai import OpenAI
     except ImportError:
-        log.warning("openai package not installed — falling back to local")
-        return None
+        reason = "openai package not installed"
+        log.warning(f"{reason} — falling back to local")
+        return None, reason
 
     tier = config.GROQ_TIER if config.GROQ_TIER in ("free", "dev") else "free"
     limits = _get_tier_limits(tier)
@@ -273,15 +274,18 @@ def transcribe_via_groq(
                 overrun_seconds = max(0, source_duration - max_audio_seconds)
                 tolerance_seconds = config.GROQ_MAX_OVERRUN_MINUTES * 60
                 if overrun_seconds > tolerance_seconds:
-                    log.warning(
-                        f"Recording is {source_duration / 60:.1f} min, exceeding "
+                    reason = (
+                        f"recording is {source_duration / 60:.1f} min, exceeding "
                         f"GROQ_MAX_AUDIO_MINUTES ({config.GROQ_MAX_AUDIO_MINUTES} min) "
                         f"by more than the {config.GROQ_MAX_OVERRUN_MINUTES}-minute "
-                        f"tolerance - this looks like real content, not throwaway "
+                        f"tolerance"
+                    )
+                    log.warning(
+                        f"{reason} - this looks like real content, not throwaway "
                         f"padding. Skipping Groq entirely for this job rather than "
                         f"truncating it; falling back to local for the full recording."
                     )
-                    return None
+                    return None, reason
                 if overrun_seconds > 0:
                     log.info(
                         f"Capping audio sent to Groq at the first "
@@ -315,7 +319,7 @@ def transcribe_via_groq(
             reason = _check_quota(len(chunk_paths), duration, limits)
             if reason:
                 log.warning(f"Groq quota check failed, falling back to local: {reason}")
-                return None
+                return None, reason
 
             client = OpenAI(api_key=config.GROQ_API_KEY, base_url=GROQ_BASE_URL)
             all_segments: List[GroqSegment] = []
@@ -332,8 +336,9 @@ def transcribe_via_groq(
                 f"Groq transcription succeeded: {len(all_segments)} segments, "
                 f"{duration / 60:.1f} min of audio, {len(chunk_paths)} request(s)"
             )
-            return all_segments
+            return all_segments, None
 
     except Exception as e:
-        log.warning(f"Groq transcription failed, falling back to local: {e}")
-        return None
+        reason = str(e)
+        log.warning(f"Groq transcription failed, falling back to local: {reason}")
+        return None, reason
