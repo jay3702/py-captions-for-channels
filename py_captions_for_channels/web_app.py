@@ -1150,7 +1150,7 @@ async def status() -> dict:
 
         # Add process indicators
         services["whisper"] = {
-            "name": "Whisper",
+            "name": "Transcription",
             "url": None,
             "healthy": whisper_running,
             "status": "Running" if whisper_running else "Idle",

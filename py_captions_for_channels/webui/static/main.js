@@ -1896,7 +1896,7 @@ function wizardBuildReview() {
     exp += row('SERVER_TZ', s.SERVER_TZ || '(System Default)', 'Timezone of the Channels DVR server.');
     exp += `<tr><td colspan="3" style="padding:8px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Caption Engine</td></tr>`;
     exp += row('WHISPER_MODEL', s.WHISPER_MODEL, 'Whisper AI model for transcription.');
-    exp += row('WHISPER_DEVICE', s.WHISPER_DEVICE, 'Hardware device to run Whisper on.');
+    exp += row('WHISPER_DEVICE', s.WHISPER_DEVICE, 'GPU for local transcription and ffmpeg encoding.');
     exp += row('EMBED_CAPTIONS', s.EMBED_CAPTIONS, s.EMBED_CAPTIONS === 'h264' ? 'Re-encode to H.264 — for VFR content or codec conversion. Not needed for Android/Fire TV (remux handles that).' : 'Auto-select lossless remux or SRT-only based on content type (recommended).');
     exp += row('DRY_RUN', s.DRY_RUN, 'When true, jobs run but no files are written.');
     exp += '</table>';
@@ -2723,13 +2723,14 @@ function appendChartData(chart, timestamp, values) {
 // Pipeline stage definitions with metadata
 const PIPELINE_STAGES = {
   'file_stability': { display: 'File Stability', group: 'validation', weight: 5, description: 'Waiting for recording to complete' },
-  'whisper': { display: 'Transcription', group: 'whisper', weight: 25, description: 'Faster-Whisper AI transcription to SRT' },
+  'whisper': { display: 'Transcription', group: 'whisper', weight: 25, description: 'AI transcription to SRT (local or cloud, per WHISPER_ENGINE)' },
   'file_copy': { display: 'Backup', group: 'encoding', weight: 5, description: 'Preserving original as .orig' },
   'ffmpeg_encode': { display: 'A/V Encode', group: 'encoding', weight: 45, description: 'Encoding audio/video streams to temp file' },
   'probe_av': { display: 'Probe', group: 'verification', weight: 3, description: 'Probing encoded media duration' },
   'shift_srt': { display: 'Caption Delay', group: 'verification', weight: 3, description: 'Shifting caption timestamps (accessibility delay)' },
   'clamp_srt': { display: 'Clamp SRT', group: 'verification', weight: 3, description: 'Clamping subtitle timestamps to media duration' },
   'ffmpeg_mux': { display: 'Mux Captions', group: 'encoding', weight: 4, description: 'Muxing subtitles into video container' },
+  'ffmpeg_remux': { display: 'Remux Captions', group: 'encoding', weight: 15, description: 'Lossless container rewrite: stream-copy video/audio, mux in subtitles' },
   'verify_mux': { display: 'Verify', group: 'verification', weight: 3, description: 'Verifying output compatibility' },
   'replace_output': { display: 'Finalize', group: 'finalization', weight: 3, description: 'Replacing original with captioned version' },
   'cleanup': { display: 'Cleanup', group: 'finalization', weight: 3, description: 'Removing temporary files' }
@@ -2737,7 +2738,7 @@ const PIPELINE_STAGES = {
 
 const STAGE_GROUPS = {
   'validation': { label: 'Validation', color: 'stage-validation' },
-  'whisper': { label: 'Whisper AI', color: 'stage-whisper' },
+  'whisper': { label: 'Transcription', color: 'stage-whisper' },
   'encoding': { label: 'Encoding', color: 'stage-encoding' },
   'verification': { label: 'Verification', color: 'stage-verification' },
   'finalization': { label: 'Finalization', color: 'stage-finalization' }

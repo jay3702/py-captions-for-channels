@@ -401,7 +401,7 @@
              <p class="muted">Browse recordings from Channels DVR and select items to process:</p>
              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin: 15px 0;">
                <div class="settings-group">
-                 <label for="manual-process-generate-srt">Generate SRT (Whisper)</label>
+                 <label for="manual-process-generate-srt">Generate SRT (Transcription)</label>
                  <input type="checkbox" id="manual-process-generate-srt" name="generate_srt" checked>
                </div>
                <div class="settings-group">
@@ -458,7 +458,7 @@
           <!-- Process-mode controls -->
           <div id="library-process-controls" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
             <div class="settings-group">
-              <label for="library-generate-srt">Generate SRT (Whisper)</label>
+              <label for="library-generate-srt">Generate SRT (Transcription)</label>
               <input type="checkbox" id="library-generate-srt" checked>
             </div>
             <div class="settings-group">
@@ -721,7 +721,7 @@
           <!-- Step 5: Caption Engine -->
           <div id="wizard-step-5" style="display:none;">
             <h3 style="margin:0 0 6px 0;">Caption Engine</h3>
-            <p style="color:var(--muted);font-size:13px;margin:0 0 20px 0;">Configure the Whisper AI transcription model and how output files are processed.</p>
+            <p style="color:var(--muted);font-size:13px;margin:0 0 20px 0;">Configure the transcription model and how output files are processed.</p>
             <div class="settings-group">
               <label for="wizard-whisper-model" style="font-weight:600;display:block;margin-bottom:4px;">Whisper Model</label>
               <select id="wizard-whisper-model" style="width:100%;">
@@ -831,6 +831,6 @@
     </div>
 
   <script src="/static/vendor/uplot.min.js"></script>
-  <script src="/static/main.js?v=1786679830"></script>
+  <script src="/static/main.js?v=1786681021"></script>
 </body>
 </html>

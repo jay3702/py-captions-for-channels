@@ -1992,14 +1992,13 @@ def correct_srt_for_audio_gaps(srt_path, gaps, log):
     )
 
 
-def mux_subs(av_path, srt_path, output_path, log, job_id=None):
+def mux_subs(av_path, srt_path, output_path, log, duration=0, job_id=None):
     """Step 4: Mux subtitles into MP4 with mov_text, +faststart."""
-    if job_id:
-        update_ffmpeg_progress(job_id, 0, "Muxing subtitles...")
-
     cmd = [
         "ffmpeg",
         "-y",
+        "-progress",
+        "pipe:2",
         "-i",
         av_path,
         "-i",
@@ -2031,15 +2030,13 @@ def mux_subs(av_path, srt_path, output_path, log, job_id=None):
     ]
     log.info(f"Muxing subs: {' '.join(cmd)}")
     try:
-        subprocess.check_call(cmd)
-        if job_id:
-            update_ffmpeg_progress(job_id, 100, "Muxing complete")
-    except subprocess.CalledProcessError as e:
+        _run_ffmpeg_with_progress(cmd, duration, "Muxing subtitles", log, job_id)
+    except (subprocess.CalledProcessError, FfmpegNoProgressError) as e:
         log.error(f"ffmpeg mux failed: {e}")
         sys.exit(1)
 
 
-def remux_with_subs(orig_path, srt_path, output_path, log, job_id=None):
+def remux_with_subs(orig_path, srt_path, output_path, log, duration=0, job_id=None):
     """Lossless container rewrite: stream-copy video + audio, add mov_text subs.
 
     This is the fast path for CFR content (OTA, H.264, MPEG2 broadcast).
@@ -2050,9 +2047,6 @@ def remux_with_subs(orig_path, srt_path, output_path, log, job_id=None):
     the same pipeline hangs that affect the transcode path on corrupt frames.
     """
     from py_captions_for_channels.config import AUDIO_CODEC
-
-    if job_id:
-        update_ffmpeg_progress(job_id, 0, "Remuxing with captions...")
 
     input_codec = _probe_input_codec(orig_path, log)
 
@@ -2100,7 +2094,7 @@ def remux_with_subs(orig_path, srt_path, output_path, log, job_id=None):
             )
 
     cmd = (
-        ["ffmpeg", "-y"]
+        ["ffmpeg", "-y", "-progress", "pipe:2"]
         + pre_flags
         + [
             "-i",
@@ -2135,10 +2129,8 @@ def remux_with_subs(orig_path, srt_path, output_path, log, job_id=None):
     )
     log.info(f"Remuxing: {' '.join(cmd)}")
     try:
-        subprocess.check_call(cmd)
-        if job_id:
-            update_ffmpeg_progress(job_id, 100, "Remux complete")
-    except subprocess.CalledProcessError as e:
+        _run_ffmpeg_with_progress(cmd, duration, "Remuxing with captions", log, job_id)
+    except (subprocess.CalledProcessError, FfmpegNoProgressError) as e:
         log.error(f"ffmpeg remux failed: {e}")
         sys.exit(1)
 
@@ -2902,7 +2894,9 @@ def main():
         )
         run_step(
             "ffmpeg_remux",
-            lambda: remux_with_subs(orig_path, srt_path, temp_muxed, log, args.job_id),
+            lambda: remux_with_subs(
+                orig_path, srt_path, temp_muxed, log, duration=end_time, job_id=args.job_id
+            ),
             input_path=orig_path,
             output_path=temp_muxed,
         )
@@ -2982,7 +2976,9 @@ def main():
     # Step 5: Mux subtitles into encoded A/V
     run_step(
         "ffmpeg_mux",
-        lambda: mux_subs(temp_av, srt_path, temp_muxed, log, args.job_id),
+        lambda: mux_subs(
+            temp_av, srt_path, temp_muxed, log, duration=end_time, job_id=args.job_id
+        ),
         input_path=temp_av,
         output_path=temp_muxed,
     )
