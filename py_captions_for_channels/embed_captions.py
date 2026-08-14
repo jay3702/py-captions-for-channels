@@ -2356,19 +2356,19 @@ def main():
             try:
                 from py_captions_for_channels.config import (
                     WHISPER_DEVICE,
+                    WHISPER_ENGINE,
                     SRT_MAX_LINE_LENGTH,
                 )
 
                 groq_segments = None
-                effective_device = WHISPER_DEVICE
-                if WHISPER_DEVICE == "groq":
+                if WHISPER_ENGINE == "groq":
                     from py_captions_for_channels.config import GROQ_MODEL
                     from py_captions_for_channels.groq_transcribe import (
                         transcribe_via_groq,
                     )
 
                     log.debug(
-                        "WHISPER_DEVICE=groq - attempting cloud transcription via Groq"
+                        "WHISPER_ENGINE=groq - attempting cloud transcription via Groq"
                     )
                     groq_segments = transcribe_via_groq(
                         input_source, GROQ_MODEL, selected_language
@@ -2376,9 +2376,8 @@ def main():
                     if groq_segments is None:
                         log.warning(
                             "Groq transcription unavailable - "
-                            "falling back to best local device"
+                            "falling back to local transcription"
                         )
-                        effective_device = "auto"
                     else:
                         log.info(
                             f"Groq transcription succeeded: "
@@ -2389,7 +2388,7 @@ def main():
                     from faster_whisper import WhisperModel
 
                     # Determine device based on configuration
-                    if effective_device == "none":
+                    if WHISPER_DEVICE == "none":
                         device = "cpu"
                         compute_type = "int8"  # Use int8 for CPU efficiency
                         log.debug(
@@ -2401,7 +2400,7 @@ def main():
                             args.model, device=device, compute_type=compute_type
                         )
                         log.info("Faster-Whisper model loaded with CPU (GPU disabled)")
-                    elif effective_device == "nvidia":
+                    elif WHISPER_DEVICE == "nvidia":
                         # Force NVIDIA GPU even if detection fails
                         device = "cuda"
                         compute_type = "float16"
@@ -2414,14 +2413,14 @@ def main():
                             args.model, device=device, compute_type=compute_type
                         )
                         log.info("Faster-Whisper model loaded with NVIDIA GPU (forced)")
-                    elif effective_device in ["amd", "intel"]:
+                    elif WHISPER_DEVICE in ["amd", "intel"]:
                         # AMD/Intel GPU support - try GPU first, fallback to auto behavior
                         device = "cuda"
                         compute_type = "float16"
                         log.debug(
                             f"Loading Faster-Whisper model: {args.model} "
                             f"(device={device}, compute_type={compute_type}) - "
-                            f"{effective_device.upper()} GPU requested "
+                            f"{WHISPER_DEVICE.upper()} GPU requested "
                             f"(using CUDA, ROCm/OpenVINO support coming soon)"
                         )
                         try:
@@ -2429,13 +2428,13 @@ def main():
                                 args.model, device=device, compute_type=compute_type
                             )
                             log.info(
-                                f"{effective_device.upper()} GPU mode activated "
+                                f"{WHISPER_DEVICE.upper()} GPU mode activated "
                                 f"(CUDA fallback)"
                             )
                         except Exception as e:
                             # If GPU fails, fall back to auto detection
                             log.warning(
-                                f"{effective_device.upper()} GPU not supported, "
+                                f"{WHISPER_DEVICE.upper()} GPU not supported, "
                                 f"falling back to auto detection: {e}"
                             )
                             device = "cuda"

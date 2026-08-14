@@ -260,13 +260,20 @@ OPTIMIZATION_MODE = os.getenv(
 # "auto" - Automatically detect and use GPU if available, fallback to CPU
 # "cuda" - Force GPU usage (will fail if GPU not available)
 # "cpu" - Force CPU-only processing (useful for testing or when GPU is busy)
-# "groq" - Use Groq's hosted Whisper API for transcription. Falls back to the
-#          best local device (same logic as "auto") whenever Groq's quota
-#          would be exceeded or a request fails for any reason — a recording
-#          is never left uncaptioned just because the cloud call didn't work.
+# Note: this is a hardware selector only. It's still used to pick a GPU for
+# ffmpeg encoding (GPU_ENCODER=auto) even when WHISPER_ENGINE=groq offloads
+# transcription itself to the cloud — an actual GPU may still be needed.
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto").lower()
 
-# ── Groq cloud transcription (used when WHISPER_DEVICE=groq) ────────────────
+# Which engine actually performs transcription.
+# "local" - Use faster-whisper on the device selected by WHISPER_DEVICE above.
+# "groq"  - Use Groq's hosted Whisper API. Falls back to local transcription
+#           (same WHISPER_DEVICE logic as "local") whenever Groq's quota would
+#           be exceeded or a request fails for any reason — a recording is
+#           never left uncaptioned just because the cloud call didn't work.
+WHISPER_ENGINE = os.getenv("WHISPER_ENGINE", "local").lower()
+
+# ── Groq cloud transcription (used when WHISPER_ENGINE=groq) ────────────────
 # Get an API key at https://console.groq.com
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
