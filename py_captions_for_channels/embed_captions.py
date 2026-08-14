@@ -2361,6 +2361,10 @@ def main():
                 )
 
                 groq_segments = None
+                # Only ever set inside the local-transcription branch below, but
+                # referenced unconditionally in cleanup at the end of this
+                # function — must exist regardless of which engine transcribed.
+                wav_path = None
                 if WHISPER_ENGINE == "groq":
                     from py_captions_for_channels.config import GROQ_MODEL
                     from py_captions_for_channels.groq_transcribe import (
@@ -2779,8 +2783,9 @@ def main():
                     f.writelines(srt_lines)
                 os.replace(srt_tmp, srt_path)
 
+                engine_label = "Groq" if groq_segments is not None else "Faster-Whisper"
                 log.info(
-                    f"Faster-Whisper completed successfully, generated: {srt_path}"
+                    f"{engine_label} completed successfully, generated: {srt_path}"
                 )
 
                 # Clean up temporary WAV file if it was created
@@ -2794,9 +2799,11 @@ def main():
                 # Explicitly free the model to reclaim ~1.5GB RAM before ffmpeg steps.
                 # Without this, ctranslate2 deallocation during Python interpreter
                 # shutdown causes a SIGKILL (exit 137) after all work is complete.
-                del model
-                gc.collect()
-                log.debug("Whisper model freed from memory")
+                # No local model was ever loaded when Groq handled transcription.
+                if groq_segments is None:
+                    del model
+                    gc.collect()
+                    log.debug("Whisper model freed from memory")
 
                 # End pipeline stage after successful transcription
                 pipeline.stage_end("whisper", job_id)
