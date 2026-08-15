@@ -25,6 +25,12 @@ from .whitelist import Whitelist
 
 LOG = logging.getLogger(__name__)
 
+# Backoff between re-checks of an already-pending job that hasn't started
+# running yet (see the "Resuming pending execution" branch below). Short
+# enough to resume promptly once the processor catches up, long enough to
+# never busy-loop.
+RESUME_PENDING_RETRY_SECONDS = 5
+
 
 @dataclass
 class PartialProcessingEvent:
@@ -343,7 +349,20 @@ class ChannelsPollingSource:
                                 "Resuming pending execution: %s",
                                 exec.get("title", "Unknown"),
                             )
-                        # Only resume one pending job per cycle
+                        # Only resume one pending job per cycle. Back off
+                        # before retrying rather than looping straight back
+                        # to the top - without this, a pending job that
+                        # isn't immediately consumed by the processor queue
+                        # (e.g. still catching up on a backlog) makes this
+                        # spin as a tight, sleep-free loop: same job
+                        # re-yielded as fast as the DB query round-trip
+                        # allows, pegging a CPU core and starving the
+                        # asyncio event loop that also serves the web UI.
+                        if await self._shutdown_aware_sleep(
+                            RESUME_PENDING_RETRY_SECONDS
+                        ):
+                            LOG.info("Shutdown requested during poll wait — exiting")
+                            return
                         continue
 
                     # Only promote if we have NO pending jobs (bootstrap case)
