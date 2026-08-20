@@ -65,7 +65,47 @@ The script downloads the required installer files, then runs `setup-wsl.ps1`, wh
 
 ---
 
-### After Install — Both Platforms
+### Docker / Portainer
+
+For Portainer (or any GUI stack manager), skip the "Web editor"/"Upload" stack types — they run the compose file from Portainer's own internal working directory, not a path on your host, so relative bind mounts like `./data` and `./.env` silently resolve to empty/missing paths instead of your actual config. Two mounts need real, absolute host paths instead:
+
+1. **Create a real folder on the Docker host** (SSH in, or use the host's terminal) and drop a starter `.env` in it:
+   ```bash
+   sudo mkdir -p /opt/py-captions-for-channels/data
+   cd /opt/py-captions-for-channels
+   sudo curl -fsSL https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main/.env.example.nvidia -o .env
+   # or .env.example.cpu / .env.example.intel / .env.example.amd — pick the one matching your hardware
+   sudo nano .env   # at minimum, set CHANNELS_DVR_URL
+   ```
+
+2. **In Portainer:** Stacks → Add stack → name it → build method **Web editor** → paste the contents of [docker-compose.yml](docker-compose.yml) unmodified.
+
+3. **Set stack environment variables** (Portainer's "Environment variables" section on the same page — not the container's `.env`) so the compose file's bind mounts point at the folder from step 1:
+   ```
+   HOST_DATA_DIR=/opt/py-captions-for-channels/data
+   HOST_ENV_FILE=/opt/py-captions-for-channels/.env
+   ```
+   Add `DOCKER_RUNTIME=nvidia` and `NVIDIA_VISIBLE_DEVICES=all` here too if this is a GPU host (see [NVIDIA Container Toolkit](#prerequisites) under Manual Install — it must already be installed and registered with Docker before Portainer can use it).
+
+   **Also set the `DVR_MEDIA_*` variables here**, not just in `.env`. Most settings (`CHANNELS_DVR_URL`, etc.) reach the app through the `.env` file at runtime, so `HOST_ENV_FILE` alone covers them. The recordings volume is different: Docker creates it from `DVR_MEDIA_TYPE`/`DVR_MEDIA_DEVICE`/`DVR_MEDIA_MOUNT` *before* the container starts, so it never sees the mounted `.env` file — these must be real stack environment variables or the deploy fails outright with a volume-mount error. For a same-host bind mount:
+   ```
+   DVR_MEDIA_TYPE=none
+   DVR_MEDIA_DEVICE=/path/to/your/recordings
+   DVR_MEDIA_MOUNT=/recordings
+   ```
+   (matching whatever you set `DVR_PATH_PREFIX`/`LOCAL_PATH_PREFIX` to in `.env` — see [Recordings Path](#recordings-path) under Manual Install for the NAS/remote variant.)
+
+   If Portainer's own web UI is already using host port 9000 (its default), also set `WEBHOOK_PORT=9001` (or any free port) here — the compose file's default collides with it.
+
+4. **Deploy the stack.** If it fails before the container even starts with a "failed to mount local volume" error, a `DVR_MEDIA_*` variable is missing or points at a path that doesn't exist on the host. If the container starts but crashes immediately with an import error, `HOST_ENV_FILE` or `HOST_DATA_DIR` is still pointing at an empty/auto-created path rather than the folder from step 1.
+
+5. Continue at [After Install](#after-install--all-platforms).
+
+**Updating:** edit `.env` directly on the host at any time (takes effect without a restart — the app watches it live). To pick up a new image, use Portainer's **Pull and redeploy** on the stack.
+
+---
+
+### After Install — All Platforms
 
 1. **Open the dashboard** at `http://YOUR_SERVER_IP:8000` (Windows: `http://localhost:8000`). See [docs/WEB_UI.md](docs/WEB_UI.md) for a full reference of every tab and button.
 2. **Setup Wizard** — click the ⚙ gear icon → **Setup Wizard** to verify the recordings mount. The wizard connects to your DVR, auto-detects the media folder path, and writes the Docker volume configuration.
@@ -138,7 +178,7 @@ docker compose up -d
 docker compose logs -f     # watch startup
 ```
 
-Open the dashboard at `http://YOUR_HOST_IP:8000` and follow the [post-install steps](#after-install--both-platforms) above.
+Open the dashboard at `http://YOUR_HOST_IP:8000` and follow the [post-install steps](#after-install--all-platforms) above.
 
 ---
 

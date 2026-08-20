@@ -54,8 +54,12 @@ services:
       # Change the left side to point to a volume with ample disk space.
       # Example: /mnt/data/py-captions:/app/data
       - ${HOST_DATA_DIR:-./data}:/app/data
-      - ./.env:/app/.env
-      - ./py_captions_for_channels:/app/py_captions_for_channels
+      # HOST_ENV_FILE: override to an absolute path when the compose project's
+      # working directory isn't a real checkout of this repo (e.g. Portainer
+      # stacks deployed via "Web editor"/"Upload", where relative paths
+      # resolve against Portainer's own internal stack directory, not a host
+      # path you control).
+      - ${HOST_ENV_FILE:-./.env}:/app/.env
       # Mount one level above Channels so quarantine dir can sit alongside
       # it on the same filesystem (enables instant os.rename moves).
       # DVR_MEDIA_HOST_PATH: set this on Windows to bypass the CIFS named volume driver.
