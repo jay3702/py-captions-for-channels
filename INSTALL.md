@@ -69,35 +69,37 @@ The script downloads the required installer files, then runs `setup-wsl.ps1`, wh
 
 Portainer's "Web editor"/"Upload" stack types run the compose file from Portainer's own internal working directory, not a path on your host — so relative paths in `docker-compose.yml` (`./data`, `./.env`) don't resolve to anything you control. Worse, the recordings volume (`channels_media`) is a *named volume* with `driver_opts`, not a plain bind mount — Docker resolves and creates that volume from `DVR_MEDIA_TYPE`/`DVR_MEDIA_DEVICE`/`DVR_MEDIA_MOUNT` **before the container exists and before it ever reads `.env`**, and unlike a plain bind mount, Docker does **not** auto-create that path if it's missing. Get any of that wrong (or leave it unset) and the stack fails immediately with a low-level `failed to mount local volume: ... no such file or directory` error — not an app-level message telling you what's actually wrong.
 
-Rather than hand-typing those variables into Portainer's UI with no validation, run the pre-flight script on the Docker host. It asks the same questions the Linux quick-install wizard does, actually validates them (Channels DVR reachability, recordings share/path — creating or mounting it as needed, exactly like the [Linux Quick Install](#linux)), and writes one `.env` file that's ready to go:
+Rather than hand-typing those variables into Portainer's UI with no validation, run the pre-flight script on the Docker host. It asks the same questions the Linux quick-install wizard does, actually validates them (Channels DVR reachability, recordings share/path — creating or mounting it as needed, exactly like the [Linux Quick Install](#linux)), and writes one `py-captions-for-channels.env` file that's ready to go:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main/scripts/setup-portainer-env.sh)
 ```
 
-That single generated file does double duty — it's both the app's live-reloadable runtime config (`HOST_ENV_FILE`, mounted at `/app/.env`) *and* the source for the compose-level variables Docker needs before the container exists (`DVR_MEDIA_*`, `HOST_DATA_DIR`), because it also writes those into itself. That's the whole point: one file, no separate manual entry.
+That single generated file does double duty — it's both the app's live-reloadable runtime config (`HOST_ENV_FILE`, mounted into the container at the fixed path `/app/.env` regardless of the host-side filename) *and* the source for the compose-level variables Docker needs before the container exists (`DVR_MEDIA_*`, `HOST_DATA_DIR`), because it also writes those into itself. That's the whole point: one file, no separate manual entry. It's deliberately *not* named `.env` on the host — if you're deploying from a different machine than the Docker host (e.g. managing Portainer on borgpad from your own laptop), you'll need to copy this file over before uploading it, and a literal `.env` is a hidden dotfile that most browser file pickers won't even show you, `.env`-in-the-search-box included.
 
-1. **Run the script above** on the Docker host (SSH in, or use its terminal). It prompts for the DVR URL (validated live, with a retry loop if unreachable), hardware profile, and recordings location — for a NAS share it discovers and mounts NFS/SMB shares the same way `setup-linux.sh` does (including systemd persistence across reboots); for a local path it creates the directory if missing. It also checks whether port 9000 is already taken (likely by Portainer itself) and picks a different `WEBHOOK_PORT` automatically. It prints the path to the `.env` file it wrote when done.
+1. **Run the script above** on the Docker host (SSH in, or use its terminal). It prompts for the DVR URL (validated live, with a retry loop if unreachable), hardware profile, and recordings location — for a NAS share it discovers and mounts NFS/SMB shares the same way `setup-linux.sh` does (including systemd persistence across reboots); for a local path it creates the directory if missing. It also checks whether port 9000 is already taken (likely by Portainer itself) and picks a different `WEBHOOK_PORT` automatically. It prints the path to the file it wrote when done.
+
+   If you're driving Portainer's UI from a different machine than the Docker host, copy that file over first — e.g. `scp user@dockerhost:/path/to/py-captions-for-channels.env ~/`.
 
 2. **In Portainer:** Stacks → Add stack → name it → build method **Web editor** → paste the contents of [docker-compose.yml](docker-compose.yml) unmodified.
 
-3. **Under Environment variables, click "Load variables from .env file"** and upload the file the script just wrote. This populates every variable the compose file needs — nothing left to type by hand.
+3. **Under Environment variables, click "Load variables from .env file"** and upload `py-captions-for-channels.env` from step 1 — despite the button's name, any filename works; it's just Portainer's label for "a file of KEY=VALUE lines." This populates every variable the compose file needs — nothing left to type by hand.
 
-4. **Deploy the stack.** Because the pre-flight script already validated and created the recordings path, the volume-mount step Docker does before the container starts should never fail on a first deploy. If it still does — especially if the error mentions `/mnt/media` (the compose file's *default* fallback, not your real path) — see the stale-volume note below; it's almost always that, not a bad `.env`.
+4. **Deploy the stack.** Because the pre-flight script already validated and created the recordings path, the volume-mount step Docker does before the container starts should never fail on a first deploy. If it still does — especially if the error mentions `/mnt/media` (the compose file's *default* fallback, not your real path) — see the stale-volume note below; it's almost always that, not a bad config file.
 
-   > **Redeploying after an earlier failed attempt?** Docker named volumes are created once and then immutable — if `py-captions_channels_media` (or `<your-stack-name>_channels_media`) already exists from a previous deploy that predates a working `.env`, Compose silently reuses that volume as-is on every redeploy, ignoring whatever `DVR_MEDIA_*` values are in your new `.env`. Delete it first: Portainer → Volumes → find that volume → Remove (removing the stopped container first, if it complains the volume is in use) — then redeploy.
+   > **Redeploying after an earlier failed attempt?** Docker named volumes are created once and then immutable — if `py-captions_channels_media` (or `<your-stack-name>_channels_media`) already exists from a previous deploy that predates a working config, Compose silently reuses that volume as-is on every redeploy, ignoring whatever `DVR_MEDIA_*` values are in your new file. Delete it first: Portainer → Volumes → find that volume → Remove (removing the stopped container first, if it complains the volume is in use) — then redeploy.
 
 5. Continue at [After Install](#after-install--all-platforms).
 
-**Updating:** edit the generated `.env` directly on the host at any time — the app watches it live and picks up most changes without a restart. Re-run `setup-portainer-env.sh` if the recordings location or DVR address changes (it's idempotent — re-mounts are skipped if already mounted). To pick up a new image, use Portainer's **Pull and redeploy** on the stack.
+**Updating:** edit the generated `py-captions-for-channels.env` directly on the host at any time — the app watches it live and picks up most changes without a restart. Re-run `setup-portainer-env.sh` if the recordings location or DVR address changes (it's idempotent — re-mounts are skipped if already mounted). To pick up a new image, use Portainer's **Pull and redeploy** on the stack.
 
 <details>
 <summary>Doing it by hand instead (not recommended)</summary>
 
 If you'd rather not run the script, the same two requirements still apply — nothing here is optional, the script just automates it:
 
-- Create the recordings directory (or mount the NAS share) on the Docker host **before** deploying — Docker will not create it for you. Then set `DVR_MEDIA_TYPE=none`, `DVR_MEDIA_DEVICE=<that path>`, `DVR_MEDIA_MOUNT=<that path>` as literal Portainer stack environment variables (not just in `.env` — see above for why).
-- Create a real `.env` file somewhere on the host (`cp .env.example.nvidia .env`, etc. — see [Manual Install](#1-clone-and-configure)) and set `HOST_DATA_DIR`/`HOST_ENV_FILE` as stack environment variables pointing at it and its sibling `data/` folder.
+- Create the recordings directory (or mount the NAS share) on the Docker host **before** deploying — Docker will not create it for you. Then set `DVR_MEDIA_TYPE=none`, `DVR_MEDIA_DEVICE=<that path>`, `DVR_MEDIA_MOUNT=<that path>` as literal Portainer stack environment variables (not just in your env file — see above for why).
+- Create a real env file somewhere on the host (`cp .env.example.nvidia .env`, etc. — see [Manual Install](#1-clone-and-configure)) and set `HOST_DATA_DIR`/`HOST_ENV_FILE` as stack environment variables pointing at it and its sibling `data/` folder.
 
 </details>
 

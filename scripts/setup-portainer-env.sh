@@ -70,7 +70,14 @@ echo "Package manager: $PKG_MGR"
 read -rp "Where should the config live? [$DEFAULT_DEPLOY_DIR]: " DEPLOY_DIR
 DEPLOY_DIR="${DEPLOY_DIR:-$DEFAULT_DEPLOY_DIR}"
 mkdir -p "$DEPLOY_DIR/data"
-ENV_FILE="$DEPLOY_DIR/.env"
+# Named without a leading dot on purpose: this file gets uploaded through a
+# browser file picker (Portainer's "Load variables from .env file" button),
+# and most OS file pickers hide dotfiles by default — a literal ".env" here
+# is invisible in that dialog even when searched for by name. The container
+# always sees it as /app/.env regardless of this host-side filename (see
+# docker-compose.yml's HOST_ENV_FILE mount and config.py's fixed read path),
+# so the rename is free.
+ENV_FILE="$DEPLOY_DIR/py-captions-for-channels.env"
 
 # ── LAN IP hint ───────────────────────────────────────────────────────────────
 LAN_IP=$(_detect_lan_ip || true)
