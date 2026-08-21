@@ -219,19 +219,34 @@ Then re-run this installer." 16 || true
     exit 1
 fi
 
-# ── Ports 8000 / 9000 already in use ─────────────────────────────────────────
-_busy_ports=()
-for _p in 8000 9000; do
-    if ss -tlnH "sport = :${_p}" 2>/dev/null | grep -q ":${_p}"; then
-        _busy_ports+=("$_p")
-    fi
-done
-[[ ${#_busy_ports[@]} -gt 0 ]] && _PREFLIGHT_WARN+=("Port(s) ${_busy_ports[*]} are already in use.")
+# ── Ports 8000 / 9000 already in use — pick free alternates, don't just warn ──
+# A passive warning here isn't enough: docker compose would still try to bind
+# the busy port later and fail outright (or, worse, sit in a silent
+# restart-loop under restart:unless-stopped). Most common cause on a Docker
+# host: Portainer's own web UI already owns 9000.
+_find_free_port() {
+    local p="$1"
+    while ss -tlnH "sport = :${p}" 2>/dev/null | grep -q ":${p}"; do
+        p=$((p + 1))
+    done
+    echo "$p"
+}
+
+WEBHOOK_PORT=9000
+if ss -tlnH "sport = :9000" 2>/dev/null | grep -q ":9000"; then
+    WEBHOOK_PORT=$(_find_free_port 9001)
+    _PREFLIGHT_WARN+=("Port 9000 already in use (often Portainer) — using ${WEBHOOK_PORT} for the webhook port instead.")
+fi
+WEB_UI_PORT=8000
+if ss -tlnH "sport = :8000" 2>/dev/null | grep -q ":8000"; then
+    WEB_UI_PORT=$(_find_free_port 8001)
+    _PREFLIGHT_WARN+=("Port 8000 already in use — using ${WEB_UI_PORT} for the web UI instead.")
+fi
 
 # ── Firewall — ufw (Ubuntu/Debian) or firewalld (RHEL/Fedora) ────────────────
 if command -v ufw &>/dev/null && sudo ufw status 2>/dev/null | grep -q "Status: active"; then
     _ufw_missing=()
-    for _p in 8000 9000; do
+    for _p in "$WEB_UI_PORT" "$WEBHOOK_PORT"; do
         sudo ufw status 2>/dev/null | grep -qE "^${_p}[/ ]" || _ufw_missing+=("$_p")
     done
     if [[ ${#_ufw_missing[@]} -gt 0 ]]; then
@@ -250,7 +265,7 @@ Allow these ports now?" 12; then
     fi
 elif command -v firewall-cmd &>/dev/null && sudo firewall-cmd --state 2>/dev/null | grep -q "running"; then
     _fwd_missing=()
-    for _p in 8000 9000; do
+    for _p in "$WEB_UI_PORT" "$WEBHOOK_PORT"; do
         sudo firewall-cmd --query-port="${_p}/tcp" 2>/dev/null | grep -q "yes" || _fwd_missing+=("$_p")
     done
     if [[ ${#_fwd_missing[@]} -gt 0 ]]; then
@@ -915,9 +930,11 @@ wt_yesno "Confirm Settings" \
   DVR URL       : $CHANNELS_DVR_URL
   Storage       : ${_STORAGE_SUMMARY}
   Event source  : ${_EVENT_SUMMARY}
+  Web UI port   : ${WEB_UI_PORT}$([[ "$WEB_UI_PORT" != "8000" ]] && echo " (8000 was busy)")
+  Webhook port  : ${WEBHOOK_PORT}$([[ "$WEBHOOK_PORT" != "9000" ]] && echo " (9000 was busy)")
   Distro        : ${DISTRO_ID} ${DISTRO_VER}
 
-Proceed with installation?" 18 || cancelled
+Proceed with installation?" 19 || cancelled
 
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 1 — Docker Engine
@@ -1308,6 +1325,13 @@ set_env() {
 }
 
 set_env "CHANNELS_DVR_URL" "$CHANNELS_DVR_URL"
+
+# WEBHOOK_PORT/WEB_UI_PORT were resolved during pre-flight (falling back to a
+# free port if 9000/8000 were already taken, e.g. by Portainer) — must be
+# written explicitly here or docker compose falls back to the compose file's
+# hardcoded 9000/8000 defaults regardless of what pre-flight found free.
+set_env "WEBHOOK_PORT" "$WEBHOOK_PORT"
+set_env "WEB_UI_PORT"  "$WEB_UI_PORT"
 
 if [[ "$GPU_OK" == true ]]; then
     set_env "DOCKER_RUNTIME"         "nvidia"
