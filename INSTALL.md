@@ -67,41 +67,37 @@ The script downloads the required installer files, then runs `setup-wsl.ps1`, wh
 
 ### Docker / Portainer
 
-For Portainer (or any GUI stack manager), skip the "Web editor"/"Upload" stack types — they run the compose file from Portainer's own internal working directory, not a path on your host, so relative bind mounts like `./data` and `./.env` silently resolve to empty/missing paths instead of your actual config. Two mounts need real, absolute host paths instead:
+Portainer's "Web editor"/"Upload" stack types run the compose file from Portainer's own internal working directory, not a path on your host — so relative paths in `docker-compose.yml` (`./data`, `./.env`) don't resolve to anything you control. Worse, the recordings volume (`channels_media`) is a *named volume* with `driver_opts`, not a plain bind mount — Docker resolves and creates that volume from `DVR_MEDIA_TYPE`/`DVR_MEDIA_DEVICE`/`DVR_MEDIA_MOUNT` **before the container exists and before it ever reads `.env`**, and unlike a plain bind mount, Docker does **not** auto-create that path if it's missing. Get any of that wrong (or leave it unset) and the stack fails immediately with a low-level `failed to mount local volume: ... no such file or directory` error — not an app-level message telling you what's actually wrong.
 
-1. **Create a real folder on the Docker host** (SSH in, or use the host's terminal) and drop a starter `.env` in it:
-   ```bash
-   sudo mkdir -p /opt/py-captions-for-channels/data
-   cd /opt/py-captions-for-channels
-   sudo curl -fsSL https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main/.env.example.nvidia -o .env
-   # or .env.example.cpu / .env.example.intel / .env.example.amd — pick the one matching your hardware
-   sudo nano .env   # at minimum, set CHANNELS_DVR_URL
-   ```
+Rather than hand-typing those variables into Portainer's UI with no validation, run the pre-flight script on the Docker host. It asks the same questions the Linux quick-install wizard does, actually validates them (Channels DVR reachability, recordings share/path — creating or mounting it as needed, exactly like the [Linux Quick Install](#linux)), and writes one `.env` file that's ready to go:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main/scripts/setup-portainer-env.sh)
+```
+
+That single generated file does double duty — it's both the app's live-reloadable runtime config (`HOST_ENV_FILE`, mounted at `/app/.env`) *and* the source for the compose-level variables Docker needs before the container exists (`DVR_MEDIA_*`, `HOST_DATA_DIR`), because it also writes those into itself. That's the whole point: one file, no separate manual entry.
+
+1. **Run the script above** on the Docker host (SSH in, or use its terminal). It prompts for the DVR URL (validated live, with a retry loop if unreachable), hardware profile, and recordings location — for a NAS share it discovers and mounts NFS/SMB shares the same way `setup-linux.sh` does (including systemd persistence across reboots); for a local path it creates the directory if missing. It also checks whether port 9000 is already taken (likely by Portainer itself) and picks a different `WEBHOOK_PORT` automatically. It prints the path to the `.env` file it wrote when done.
 
 2. **In Portainer:** Stacks → Add stack → name it → build method **Web editor** → paste the contents of [docker-compose.yml](docker-compose.yml) unmodified.
 
-3. **Set stack environment variables** (Portainer's "Environment variables" section on the same page — not the container's `.env`) so the compose file's bind mounts point at the folder from step 1:
-   ```
-   HOST_DATA_DIR=/opt/py-captions-for-channels/data
-   HOST_ENV_FILE=/opt/py-captions-for-channels/.env
-   ```
-   Add `DOCKER_RUNTIME=nvidia` and `NVIDIA_VISIBLE_DEVICES=all` here too if this is a GPU host (see [NVIDIA Container Toolkit](#prerequisites) under Manual Install — it must already be installed and registered with Docker before Portainer can use it).
+3. **Under Environment variables, click "Load variables from .env file"** and upload the file the script just wrote. This populates every variable the compose file needs — nothing left to type by hand.
 
-   **Also set the `DVR_MEDIA_*` variables here**, not just in `.env`. Most settings (`CHANNELS_DVR_URL`, etc.) reach the app through the `.env` file at runtime, so `HOST_ENV_FILE` alone covers them. The recordings volume is different: Docker creates it from `DVR_MEDIA_TYPE`/`DVR_MEDIA_DEVICE`/`DVR_MEDIA_MOUNT` *before* the container starts, so it never sees the mounted `.env` file — these must be real stack environment variables or the deploy fails outright with a volume-mount error. For a same-host bind mount:
-   ```
-   DVR_MEDIA_TYPE=none
-   DVR_MEDIA_DEVICE=/path/to/your/recordings
-   DVR_MEDIA_MOUNT=/recordings
-   ```
-   (matching whatever you set `DVR_PATH_PREFIX`/`LOCAL_PATH_PREFIX` to in `.env` — see [Recordings Path](#recordings-path) under Manual Install for the NAS/remote variant.)
-
-   If Portainer's own web UI is already using host port 9000 (its default), also set `WEBHOOK_PORT=9001` (or any free port) here — the compose file's default collides with it.
-
-4. **Deploy the stack.** If it fails before the container even starts with a "failed to mount local volume" error, a `DVR_MEDIA_*` variable is missing or points at a path that doesn't exist on the host. If the container starts but crashes immediately with an import error, `HOST_ENV_FILE` or `HOST_DATA_DIR` is still pointing at an empty/auto-created path rather than the folder from step 1.
+4. **Deploy the stack.** Because the pre-flight script already validated and created the recordings path, the volume-mount step Docker does before the container starts should never fail. If it still does, the `.env` file was edited after the fact and a `DVR_MEDIA_DEVICE`/`DVR_MEDIA_MOUNT` path no longer exists on the host — rerun the script.
 
 5. Continue at [After Install](#after-install--all-platforms).
 
-**Updating:** edit `.env` directly on the host at any time (takes effect without a restart — the app watches it live). To pick up a new image, use Portainer's **Pull and redeploy** on the stack.
+**Updating:** edit the generated `.env` directly on the host at any time — the app watches it live and picks up most changes without a restart. Re-run `setup-portainer-env.sh` if the recordings location or DVR address changes (it's idempotent — re-mounts are skipped if already mounted). To pick up a new image, use Portainer's **Pull and redeploy** on the stack.
+
+<details>
+<summary>Doing it by hand instead (not recommended)</summary>
+
+If you'd rather not run the script, the same two requirements still apply — nothing here is optional, the script just automates it:
+
+- Create the recordings directory (or mount the NAS share) on the Docker host **before** deploying — Docker will not create it for you. Then set `DVR_MEDIA_TYPE=none`, `DVR_MEDIA_DEVICE=<that path>`, `DVR_MEDIA_MOUNT=<that path>` as literal Portainer stack environment variables (not just in `.env` — see above for why).
+- Create a real `.env` file somewhere on the host (`cp .env.example.nvidia .env`, etc. — see [Manual Install](#1-clone-and-configure)) and set `HOST_DATA_DIR`/`HOST_ENV_FILE` as stack environment variables pointing at it and its sibling `data/` folder.
+
+</details>
 
 ---
 

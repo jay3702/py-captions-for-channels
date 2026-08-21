@@ -102,14 +102,11 @@ if [[ ${#_prereq_missing[@]} -gt 0 ]]; then
     esac
 fi
 
-# ── detect LAN IP defaults for prompts ───────────────────────────────────────
-_detect_lan_ip() {
-    hostname -I 2>/dev/null | tr ' ' '\n' \
-        | grep -Ev '^(127\.|169\.|::1$)' \
-        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
-        | head -1
-}
+# ── shared DVR/recordings-mount logic (also used by setup-portainer-env.sh) ──
+# shellcheck source=lib/dvr-discovery.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/dvr-discovery.sh"
 
+# ── detect LAN IP defaults for prompts ───────────────────────────────────────
 LAN_IP=$(_detect_lan_ip || true)
 if [[ -n "${LAN_IP:-}" ]]; then
     LAN_PREFIX="${LAN_IP%.*}."
@@ -118,79 +115,9 @@ else
 fi
 LAN_HINT="${LAN_PREFIX}xxx"
 
-# ── storage autodiscovery helpers (best-effort) ──────────────────────────────
-_ensure_probe_cmd() {
-    local cmd="$1"
-    if command -v "$cmd" &>/dev/null; then
-        return 0
-    fi
-
-    case "$cmd" in
-        showmount)
-            wt_info "NFS Discovery" "Installing NFS tools for export discovery..."
-            case "$PKG_MGR" in
-                apt)    sudo apt-get install -y -qq nfs-common >> "$LOG" 2>&1 || true ;;
-                dnf)    sudo dnf install -y -q nfs-utils >> "$LOG" 2>&1 || true ;;
-                zypper) sudo zypper install -y nfs-client >> "$LOG" 2>&1 || true ;;
-            esac
-            ;;
-        smbclient)
-            wt_info "SMB Discovery" "Installing smbclient for share discovery..."
-            case "$PKG_MGR" in
-                apt)    sudo apt-get install -y -qq smbclient >> "$LOG" 2>&1 || true ;;
-                dnf)    sudo dnf install -y -q samba-client >> "$LOG" 2>&1 || true ;;
-                zypper) sudo zypper install -y samba-client >> "$LOG" 2>&1 || true ;;
-            esac
-            ;;
-    esac
-
-    command -v "$cmd" &>/dev/null
-}
-
-_discover_nfs_exports() {
-    local server="$1"
-    command -v showmount &>/dev/null || return 1
-    showmount -e "$server" 2>/dev/null \
-        | awk 'NR>1 && $1 ~ /^\// { print $1 }' \
-        | sort -u
-}
-
-_best_nfs_export_from_list() {
-    awk '
-    BEGIN { IGNORECASE=1 }
-    {
-        score=0
-        if ($0 ~ /\/allmedia\/channels$/) score=130
-        else if ($0 ~ /\/channels$/)      score=120
-        else if ($0 ~ /channels/)          score=100
-        else if ($0 ~ /recordings|media|dvr/) score=80
-        printf "%04d|%s\n", score, $0
-    }
-    ' | sort -t'|' -k1,1nr -k2,2 | head -1 | cut -d'|' -f2-
-}
-
-_discover_smb_shares() {
-    local server="$1"
-    command -v smbclient &>/dev/null || return 1
-    smbclient -g -N -L "//${server}" 2>/dev/null \
-        | awk -F'|' '$1 == "Disk" { print $2 }' \
-        | grep -Ev '^(IPC\$|print\$)$' \
-        | sort -u
-}
-
-_best_smb_share_from_list() {
-    awk '
-    BEGIN { IGNORECASE=1 }
-    {
-        score=0
-        if ($0 ~ /^channels\$$/)       score=130
-        else if ($0 ~ /^channels$/)     score=125
-        else if ($0 ~ /channels/)       score=100
-        else if ($0 ~ /recordings|media|dvr/) score=80
-        printf "%04d|%s\n", score, $0
-    }
-    ' | sort -t'|' -k1,1nr -k2,2 | head -1 | cut -d'|' -f2-
-}
+# Passed to _ensure_probe_cmd (lib) as its notify callback, so the install
+# notice shows in a whiptail infobox instead of the shared lib's default (none).
+_wt_notify() { wt_info "Discovery" "$1"; }
 
 # ── whiptail dialog helpers ───────────────────────────────────────────────────
 _wt()      { whiptail --backtitle "$BT" "$@" 3>&1 1>&2 2>&3; }
@@ -788,32 +715,21 @@ Tip: open http://localhost:57000 on the DVR machine to find its address." \
         continue
     fi
 
-    # Format check — must include port
-    if ! echo "$CHANNELS_DVR_URL" | grep -qE '^https?://[^/:]+:[0-9]{2,5}(/.*)?$'; then
-        wt_msg "Invalid URL" \
-            "URL must include a port number.\n\nGood:  http://192.168.1.5:8089\nBad:   http://192.168.1.5\n\nPlease re-enter." 12
-        CHANNELS_DVR_URL=""
-        continue
-    fi
-
-    # IPv4 sanity check
-    _host=$(echo "$CHANNELS_DVR_URL" | grep -oE '//[^/:]+' | tr -d '/')
-    if echo "$_host" | grep -qE '^[0-9]+(\.[0-9]+)*$'; then
-        _octets=$(echo "$_host" | tr -cd '.' | wc -c)
-        if [[ "$_octets" -ne 3 ]]; then
+    _dvr_check=$(_validate_dvr_url "$CHANNELS_DVR_URL") || true
+    case "$_dvr_check" in
+        bad_format)
+            wt_msg "Invalid URL" \
+                "URL must include a port number.\n\nGood:  http://192.168.1.5:8089\nBad:   http://192.168.1.5\n\nPlease re-enter." 12
+            CHANNELS_DVR_URL=""
+            ;;
+        bad_ipv4)
+            _host=$(echo "$CHANNELS_DVR_URL" | grep -oE '//[^/:]+' | tr -d '/')
             wt_msg "Invalid IP" \
                 "That IP address doesn't look right:\n  $_host\n\nA valid IPv4 address has four parts separated by dots.\n\nExample:  192.168.1.5" 14
             CHANNELS_DVR_URL=""
-            continue
-        fi
-    fi
-
-    # Reachability test
-    if curl -fsS --max-time 5 "${CHANNELS_DVR_URL%/}/dvr" >/dev/null 2>&1; then
-        wt_info "Channels DVR" "✔ Connected to Channels DVR at\n  $CHANNELS_DVR_URL"
-        sleep 1
-    else
-        if ! wt_yesno "Cannot Reach Server" \
+            ;;
+        unreachable)
+            if ! wt_yesno "Cannot Reach Server" \
 "Could not connect to:
   $CHANNELS_DVR_URL
 
@@ -823,9 +739,14 @@ Common causes:
   • Firewall blocking the connection
 
 Continue with this URL anyway?" 16; then
-            CHANNELS_DVR_URL=""
-        fi
-    fi
+                CHANNELS_DVR_URL=""
+            fi
+            ;;
+        ok)
+            wt_info "Channels DVR" "✔ Connected to Channels DVR at\n  $CHANNELS_DVR_URL"
+            sleep 1
+            ;;
+    esac
 done
 
 # ── Recordings storage location ─────────────────────────────────────────────
@@ -862,8 +783,8 @@ Detected LAN hint: ${LAN_HINT}" \
 
         # ── Try NFS first, then SMB, then fall back to manual ────────────────
         wt_info "Auto-detecting" "Probing ${NAS_SERVER} for NFS exports and SMB shares..."
-        _ensure_probe_cmd showmount || true
-        _ensure_probe_cmd smbclient || true
+        _ensure_probe_cmd showmount _wt_notify || true
+        _ensure_probe_cmd smbclient _wt_notify || true
         _AUTO_NFS=$(_discover_nfs_exports "$NAS_SERVER" || true)
         _AUTO_SMB=$(_discover_smb_shares  "$NAS_SERVER" || true)
 
@@ -1222,106 +1143,76 @@ fi
 CURRENT_STEP="Mount Setup"
 
 if [[ "$USE_CIFS" == true ]]; then
-    # ── Install cifs-utils ────────────────────────────────────────────────────
-    if ! command -v mount.cifs &>/dev/null; then
-        wt_info "CIFS" "Installing cifs-utils..."
-        case "$PKG_MGR" in
-            apt)    sudo apt-get install -y -qq cifs-utils >> "$LOG" 2>&1 ;;
-            dnf)    sudo dnf install -y -q cifs-utils >> "$LOG" 2>&1 ;;
-            zypper) sudo zypper install -y cifs-utils >> "$LOG" 2>&1 ;;
-        esac
-    fi
-    if ! command -v smbclient &>/dev/null; then
-        wt_info "CIFS" "Installing smbclient..."
-        case "$PKG_MGR" in
-            apt)    sudo apt-get install -y -qq smbclient >> "$LOG" 2>&1 ;;
-            dnf)    sudo dnf install -y -q samba-client >> "$LOG" 2>&1 ;;
-            zypper) sudo zypper install -y samba-client >> "$LOG" 2>&1 ;;
-        esac
-    fi
-    sudo mkdir -p "$MOUNT_POINT"
-
     if mountpoint -q "$MOUNT_POINT"; then
         wt_info "CIFS Mount" "${MOUNT_POINT} is already mounted — skipping."
         sleep 1
-    else
-        while true; do
-            NAS_USER=$(wt_input "CIFS Credentials" \
+    fi
+    while ! mountpoint -q "$MOUNT_POINT"; do
+        NAS_USER=$(wt_input "CIFS Credentials" \
 "Username for //${NAS_SERVER}/${NAS_SHARE}
 
 (Leave blank for guest / anonymous access)" \
-                "") || cancelled
+            "") || cancelled
 
-            if [[ -n "$NAS_USER" ]]; then
-                NAS_PASS=$(wt_pass "CIFS Credentials" \
-                    "Password for ${NAS_USER}@${NAS_SERVER}:") || cancelled
-                printf "username=%s\npassword=%s\n" "$NAS_USER" "$NAS_PASS" \
-                    | sudo tee "$CRED_FILE" > /dev/null
-                MOUNT_OPTS="credentials=${CRED_FILE},uid=$(id -u),gid=$(id -g),iocharset=utf8"
-            else
-                printf "username=guest\npassword=\n" | sudo tee "$CRED_FILE" > /dev/null
-                MOUNT_OPTS="guest,uid=$(id -u),gid=$(id -g),iocharset=utf8"
-            fi
-            sudo chmod 600 "$CRED_FILE"
+        if [[ -n "$NAS_USER" ]]; then
+            NAS_PASS=$(wt_pass "CIFS Credentials" \
+                "Password for ${NAS_USER}@${NAS_SERVER}:") || cancelled
+        else
+            NAS_PASS=""
+        fi
 
-            wt_info "CIFS Mount" "Mounting //${NAS_SERVER}/${NAS_SHARE} ..."
-            if sudo mount -t cifs "//${NAS_SERVER}/${NAS_SHARE}" "$MOUNT_POINT" \
-                    -o "$MOUNT_OPTS" 2>/tmp/py_captions_mount_err; then
+        wt_info "CIFS Mount" "Mounting //${NAS_SERVER}/${NAS_SHARE} ..."
+        _cifs_result=$(_mount_cifs_share "$NAS_SERVER" "$NAS_SHARE" "$MOUNT_POINT" "$CRED_FILE" "$NAS_USER" "$NAS_PASS") || true
+        case "$_cifs_result" in
+            already_mounted)
+                wt_info "CIFS Mount" "${MOUNT_POINT} is already mounted — skipping."
+                sleep 1
                 break
-            fi
-            MOUNT_ERR=$(cat /tmp/py_captions_mount_err 2>/dev/null)
-            if echo "$MOUNT_ERR" | grep -qiE "permission denied|NT_STATUS_LOGON_FAILURE|error.13.|invalid credentials"; then
+                ;;
+            ok)
+                ENTRY_COUNT=$(ls "$MOUNT_POINT" 2>/dev/null | wc -l)
+                wt_msg "CIFS Mount" \
+                    "Mounted //${NAS_SERVER}/${NAS_SHARE}\n  at ${MOUNT_POINT}\n  ${ENTRY_COUNT} entries visible." 11
+                break
+                ;;
+            auth_failed)
                 wt_msg "Authentication Failed" \
                     "Wrong username or password for //${NAS_SERVER}/${NAS_SHARE}.\n\nPlease try again." 10
-            elif echo "$MOUNT_ERR" | grep -qiE "no such host|connection refused|error.113.|error.111."; then
+                ;;
+            unreachable)
                 NAS_SERVER=$(wt_input "CIFS Unreachable" \
                     "Cannot reach ${NAS_SERVER}. Check the address.\n\nServer address:" \
                     "$NAS_SERVER") || cancelled
                 NAS_SHARE=$(wt_input "CIFS Share" \
                     "Share name on ${NAS_SERVER}:" "$NAS_SHARE") || cancelled
-            else
+                ;;
+            *)
                 wt_yesno "Mount Error" \
-                    "Mount failed:\n\n${MOUNT_ERR}\n\nRetry?" 14 || cancelled
-            fi
-        done
-
-        sudo mount --make-shared "$MOUNT_POINT"
-        ENTRY_COUNT=$(ls "$MOUNT_POINT" 2>/dev/null | wc -l)
-        wt_msg "CIFS Mount" \
-            "Mounted //${NAS_SERVER}/${NAS_SHARE}\n  at ${MOUNT_POINT}\n  ${ENTRY_COUNT} entries visible." 11
-    fi
+                    "Mount failed:\n\n${_cifs_result#error:}\n\nRetry?" 14 || cancelled
+                ;;
+        esac
+    done
 
 elif [[ "$USE_NFS" == true ]]; then
-    # ── Install nfs client ────────────────────────────────────────────────────
-    if ! command -v mount.nfs &>/dev/null && ! command -v mount.nfs4 &>/dev/null; then
-        wt_info "NFS" "Installing NFS client utilities..."
-        case "$PKG_MGR" in
-            apt)    sudo apt-get install -y -qq nfs-common >> "$LOG" 2>&1 ;;
-            dnf)    sudo dnf install -y -q nfs-utils >> "$LOG" 2>&1 ;;
-            zypper) sudo zypper install -y nfs-client >> "$LOG" 2>&1 ;;
-        esac
-    fi
-    sudo mkdir -p "$MOUNT_POINT"
-
-    if mountpoint -q "$MOUNT_POINT"; then
-        wt_info "NFS Mount" "${MOUNT_POINT} is already mounted — skipping."
-        sleep 1
-    else
-        wt_info "NFS Mount" "Mounting ${NAS_SERVER}:${NAS_EXPORT} ..."
-        if ! sudo mount -t nfs4 "${NAS_SERVER}:${NAS_EXPORT}" "$MOUNT_POINT" \
-                -o "rw,nfsvers=4.1,soft,timeo=60,retrans=3" 2>/tmp/py_captions_mount_err; then
-            MOUNT_ERR=$(cat /tmp/py_captions_mount_err 2>/dev/null)
-            if ! wt_yesno "NFS Mount Error" \
-"Could not mount:\n  ${NAS_SERVER}:${NAS_EXPORT}\n\n${MOUNT_ERR}\n\nContinue anyway? (configure manually later)" 14; then
-                cancelled
-            fi
-        else
-            sudo mount --make-shared "$MOUNT_POINT"
+    wt_info "NFS Mount" "Mounting ${NAS_SERVER}:${NAS_EXPORT} ..."
+    _nfs_result=$(_mount_nfs_export "$NAS_SERVER" "$NAS_EXPORT" "$MOUNT_POINT") || true
+    case "$_nfs_result" in
+        already_mounted)
+            wt_info "NFS Mount" "${MOUNT_POINT} is already mounted — skipping."
+            sleep 1
+            ;;
+        ok)
             ENTRY_COUNT=$(ls "$MOUNT_POINT" 2>/dev/null | wc -l)
             wt_msg "NFS Mount" \
                 "Mounted ${NAS_SERVER}:${NAS_EXPORT}\n  at ${MOUNT_POINT}\n  ${ENTRY_COUNT} entries visible." 11
-        fi
-    fi
+            ;;
+        *)
+            if ! wt_yesno "NFS Mount Error" \
+"Could not mount:\n  ${NAS_SERVER}:${NAS_EXPORT}\n\n${_nfs_result#error:}\n\nContinue anyway? (configure manually later)" 14; then
+                cancelled
+            fi
+            ;;
+    esac
 
 elif [[ "$USE_LOCAL" == true ]]; then
     if [[ -n "$MOUNT_POINT" ]]; then
@@ -1564,63 +1455,10 @@ CURRENT_STEP="Auto-start (systemd)"
 # Ensure docker.service is enabled (idempotent)
 sudo systemctl enable docker >> "$LOG" 2>&1 || true
 
-if [[ "$USE_CIFS" == true || "$USE_NFS" == true ]]; then
-    MOUNT_SCRIPT=/usr/local/bin/py-captions-mount.sh
-    if [[ "$USE_CIFS" == true ]]; then
-        sudo tee "$MOUNT_SCRIPT" > /dev/null << SVC_SCRIPT
-#!/bin/bash
-# Auto-generated by py-captions setup-linux.sh — do not edit manually.
-# Mounts Channels DVR CIFS share and enables bind-mount propagation.
-for _try in 1 2 3; do
-    mountpoint -q "${MOUNT_POINT}" && break
-    /bin/mount -t cifs "//${NAS_SERVER}/${NAS_SHARE}" "${MOUNT_POINT}" \\
-        -o "credentials=${CRED_FILE},uid=$(id -u),gid=$(id -g),iocharset=utf8" 2>&1 && break
-    [ "\$_try" -lt 3 ] && sleep \$(( _try * 3 ))
-done
-/bin/mount --make-shared "${MOUNT_POINT}" 2>/dev/null || true
-SVC_SCRIPT
-    else
-        sudo tee "$MOUNT_SCRIPT" > /dev/null << SVC_SCRIPT
-#!/bin/bash
-# Auto-generated by py-captions setup-linux.sh — do not edit manually.
-# Mounts Channels DVR NFS export and enables bind-mount propagation.
-for _try in 1 2 3; do
-    mountpoint -q "${MOUNT_POINT}" && break
-    /bin/mount -t nfs4 "${NAS_SERVER}:${NAS_EXPORT}" "${MOUNT_POINT}" \\
-        -o "rw,nfsvers=4.1,soft,timeo=60,retrans=3" 2>&1 && break
-    [ "\$_try" -lt 3 ] && sleep \$(( _try * 3 ))
-done
-/bin/mount --make-shared "${MOUNT_POINT}" 2>/dev/null || true
-SVC_SCRIPT
-    fi
-    sudo chmod +x "$MOUNT_SCRIPT"
-
-    sudo tee /etc/systemd/system/py-captions-mount.service > /dev/null << SVC_UNIT
-[Unit]
-Description=Mount recordings share for py-captions-for-channels
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-TimeoutStartSec=60
-ExecStart=${MOUNT_SCRIPT}
-
-[Install]
-WantedBy=multi-user.target
-SVC_UNIT
-
-    # Make docker depend on the mount (Wants = soft dependency; won't block docker if mount fails)
-    sudo mkdir -p /etc/systemd/system/docker.service.d
-    sudo tee /etc/systemd/system/docker.service.d/py-captions-mount.conf > /dev/null << SVC_OVERRIDE
-[Unit]
-After=py-captions-mount.service
-Wants=py-captions-mount.service
-SVC_OVERRIDE
-
-    sudo systemctl daemon-reload >> "$LOG" 2>&1 || true
-    sudo systemctl enable py-captions-mount.service >> "$LOG" 2>&1 || true
+if [[ "$USE_CIFS" == true ]]; then
+    _install_media_mount_service "cifs" "$MOUNT_POINT" "$NAS_SERVER" "$NAS_SHARE" "$CRED_FILE"
+elif [[ "$USE_NFS" == true ]]; then
+    _install_media_mount_service "nfs" "$MOUNT_POINT" "$NAS_SERVER" "$NAS_EXPORT"
 fi
 
 # ── sudoers for passwordless mount commands ───────────────────────────────────
