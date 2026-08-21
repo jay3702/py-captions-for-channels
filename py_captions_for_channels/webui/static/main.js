@@ -262,8 +262,13 @@ async function fetchStatus() {
             // 2. Pass whitelist
             // 3. Plausibly still recording (created_at + duration + 30min buffer > now)
             const notCompleted = !rec.completed;
-            // When whitelist is disabled, all recordings pass; otherwise check the flag
-            const passesWhitelist = !recordingsData.whitelist_enabled || rec.passes_whitelist === true;
+            // rec.passes_whitelist is already required-aware (see Whitelist.is_allowed
+            // in whitelist.py): with WHITELIST_REQUIRED=true (default) an empty
+            // whitelist blocks everything; with it false, an empty whitelist allows
+            // everything. Trust it directly — don't special-case "no rules configured"
+            // here too, that used to bypass the flag entirely and show recordings as
+            // queued/active even when WHITELIST_REQUIRED was correctly blocking them.
+            const passesWhitelist = rec.passes_whitelist === true;
             
             if (!notCompleted || !passesWhitelist) return false;
             
