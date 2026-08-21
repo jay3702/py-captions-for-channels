@@ -328,6 +328,7 @@ fi
 # GPU PRE-CHECK  (before config — user knows GPU state from the start)
 # ════════════════════════════════════════════════════════════════════════════
 GPU_PRECHK_SKIP=false
+INTEL_GPU_FOUND=false
 
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
     # ── Distro-specific MOK key path (needed regardless of SB state) ──────
@@ -567,23 +568,22 @@ else
         fi
 
         if [[ -n "$_INTEL_GPU_NAME" ]]; then
+            INTEL_GPU_FOUND=true
             wt_msg "GPU Check — Intel GPU Detected" \
 "No NVIDIA GPU found, but an Intel GPU was detected:
   ${_INTEL_GPU_NAME}
 
-This installer's automated GPU setup (driver checks, container toolkit)
-only covers NVIDIA — it doesn't configure anything for Intel GPUs.
-Whisper transcription will run on CPU either way; Parakeet
-(⚙ Settings → WHISPER_LOCAL_ENGINE=parakeet after install) is a fast
-CPU-only option worth trying, often faster than GPU-accelerated Whisper
-on an Intel iGPU.
+This installer's driver/container-toolkit checks above only apply to
+NVIDIA — Intel needs none of that. /dev/dri will be passed into the
+container automatically, and video encoding/decoding (EMBED_CAPTIONS=h264)
+will use VA-API hardware acceleration.
 
-Intel Quick Sync (QSV) *video encoding* is supported by the app, but this
-installer does not wire up GPU device passthrough for it — that currently
-needs manual docker-compose.yml editing. See docs/SYSTEM_REQUIREMENTS.md
-and .env.example.intel if you want to set that up by hand.
+Whisper transcription still runs on CPU either way — no Intel GPU backend
+exists for it. Parakeet (⚙ Settings → WHISPER_LOCAL_ENGINE=parakeet after
+install) is a fast CPU-only option worth trying, often faster than
+GPU-accelerated Whisper on an Intel iGPU.
 
-Continuing in CPU mode." 24 || true
+Continuing — GPU video acceleration will be enabled automatically." 22 || true
             GPU_PRECHK_SKIP=true
         elif ! wt_yesno "GPU Check — No GPU Detected" \
 "No NVIDIA or Intel GPU was detected on this machine.
@@ -1337,6 +1337,8 @@ ENV_FILE="$DEPLOY_DIR/.env"
 # Choose starter template based on GPU state
 if [[ "$GPU_OK" == true ]]; then
     [[ ! -f "$ENV_FILE" ]] && cp "$DEPLOY_DIR/.env.example.nvidia" "$ENV_FILE"
+elif [[ "$INTEL_GPU_FOUND" == true ]]; then
+    [[ ! -f "$ENV_FILE" ]] && cp "$DEPLOY_DIR/.env.example.intel" "$ENV_FILE"
 else
     [[ ! -f "$ENV_FILE" ]] && cp "$DEPLOY_DIR/.env.example.cpu" "$ENV_FILE"
 fi
@@ -1365,6 +1367,15 @@ if [[ "$GPU_OK" == true ]]; then
     set_env "DOCKER_RUNTIME"         "nvidia"
     set_env "NVIDIA_VISIBLE_DEVICES" "all"
     set_env "WHISPER_DEVICE"         "auto"
+    set_env "HWACCEL_DECODE"         "auto"
+    set_env "GPU_ENCODER"            "auto"
+elif [[ "$INTEL_GPU_FOUND" == true ]]; then
+    # No DOCKER_RUNTIME/NVIDIA_VISIBLE_DEVICES needed — Intel just needs
+    # /dev/dri, via DRI_DEVICE (docker-compose.yml's devices: mapping).
+    set_env "DOCKER_RUNTIME"         "runc"
+    set_env "NVIDIA_VISIBLE_DEVICES" ""
+    set_env "DRI_DEVICE"             "/dev/dri"
+    set_env "WHISPER_DEVICE"         "cpu"
     set_env "HWACCEL_DECODE"         "auto"
     set_env "GPU_ENCODER"            "auto"
 else

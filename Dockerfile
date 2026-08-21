@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y \
     libxcb-xfixes0-dev \
     libunistring-dev \
     libssl-dev \
+    libva-dev \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
@@ -37,7 +38,7 @@ RUN apt-get update && apt-get install -y \
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 ARG FFMPEG_VERSION=6.1.1
 # Bump FFMPEG_CACHE_BUST to force a full ffmpeg recompile (invalidates GHA layer cache)
-ARG FFMPEG_CACHE_BUST=2026-03-11
+ARG FFMPEG_CACHE_BUST=2026-08-21-vaapi
 
 RUN echo "FFmpeg build: version=${FFMPEG_VERSION}, bust=${FFMPEG_CACHE_BUST}" && \
     git clone https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv-codec-headers && \
@@ -79,6 +80,7 @@ RUN echo "FFmpeg build: version=${FFMPEG_VERSION}, bust=${FFMPEG_CACHE_BUST}" &&
     --enable-libnpp \
     --enable-nvenc \
     --enable-cuda \
+    --enable-vaapi \
     --disable-debug \
     --disable-doc \
     --disable-static \
@@ -143,6 +145,10 @@ RUN apt-get update && apt-get install -y \
     libdrm-dev \
     libudev-dev \
     libgomp1 \
+    libva2 \
+    libva-drm2 \
+    intel-media-va-driver \
+    vainfo \
     && rm -rf /var/lib/apt/lists/*
 
 # Build and install NVTOP

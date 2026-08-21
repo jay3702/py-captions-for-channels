@@ -118,7 +118,7 @@ echo ""
 echo "Hardware profile:"
 echo "  1) NVIDIA GPU"
 echo "  2) CPU only"
-echo "  3) Intel GPU (Quick Sync — video encode only, not transcription; see docs/SYSTEM_REQUIREMENTS.md)"
+echo "  3) Intel GPU (VA-API hardware video encode/decode; not transcription — see docs/SYSTEM_REQUIREMENTS.md)"
 # AMD (AMF/VAAPI) is not offered here — the codebase itself marks that path
 # "stubbed / untested" (see embed_captions.py), so it isn't a real choice yet.
 read -rp "Choose [1-3]: " _hw_choice
