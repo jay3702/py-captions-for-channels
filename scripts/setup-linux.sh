@@ -103,8 +103,21 @@ if [[ ${#_prereq_missing[@]} -gt 0 ]]; then
 fi
 
 # ── shared DVR/recordings-mount logic (also used by setup-portainer-env.sh) ──
-# shellcheck source=lib/dvr-discovery.sh
-source "$(dirname "${BASH_SOURCE[0]}")/lib/dvr-discovery.sh"
+# Quick Install runs this via `bash <(curl ...)` (see INSTALL.md), where
+# BASH_SOURCE[0] is a /dev/fd/N process-substitution path with no real sibling
+# directory — so a plain relative source only works from a real repo checkout.
+# Fall back to fetching the lib straight from GitHub when there's no local copy.
+_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")"
+if [[ -f "$_LIB_DIR/lib/dvr-discovery.sh" ]]; then
+    # shellcheck source=lib/dvr-discovery.sh
+    source "$_LIB_DIR/lib/dvr-discovery.sh"
+else
+    _LIB=$(mktemp)
+    curl -fsSL "https://raw.githubusercontent.com/jay3702/py-captions-for-channels/main/scripts/lib/dvr-discovery.sh" -o "$_LIB"
+    # shellcheck source=/dev/null
+    source "$_LIB"
+    rm -f "$_LIB"
+fi
 
 # ── detect LAN IP defaults for prompts ───────────────────────────────────────
 LAN_IP=$(_detect_lan_ip || true)
