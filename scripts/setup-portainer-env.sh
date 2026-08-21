@@ -289,6 +289,25 @@ set_env "WEBHOOK_PORT" "$WEBHOOK_PORT"
 set_env "HOST_DATA_DIR" "$DEPLOY_DIR/data"
 set_env "HOST_ENV_FILE" "$ENV_FILE"
 
+# ── stale-volume warning ─────────────────────────────────────────────────────
+# Docker named volumes are created once and then immutable: if a prior deploy
+# attempt already created a *_channels_media volume (e.g. before .env had a
+# real DVR_MEDIA_DEVICE), Compose silently reuses it as-is on every redeploy —
+# ignoring the values in this fresh .env — and the container fails to start
+# with a mount error pointing at the *old* device. Flag any candidates now,
+# before that surprises anyone.
+if command -v docker &>/dev/null; then
+    _stale_vols=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E '_channels_media$' || true)
+    if [[ -n "$_stale_vols" ]]; then
+        echo ""
+        echo "NOTE: found existing recordings volume(s) from a previous deploy attempt:"
+        echo "$_stale_vols" | sed 's/^/  - /'
+        echo "If that deploy predates this .env, redeploying now will silently reuse"
+        echo "the OLD volume (and its old path) instead of picking up these settings."
+        echo "Remove it first if so: docker volume rm <name>  (or via Portainer -> Volumes)"
+    fi
+fi
+
 echo ""
 echo "=================================================================="
 echo "Done. Wrote: $ENV_FILE"

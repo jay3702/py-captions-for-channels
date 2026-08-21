@@ -83,7 +83,9 @@ That single generated file does double duty — it's both the app's live-reloada
 
 3. **Under Environment variables, click "Load variables from .env file"** and upload the file the script just wrote. This populates every variable the compose file needs — nothing left to type by hand.
 
-4. **Deploy the stack.** Because the pre-flight script already validated and created the recordings path, the volume-mount step Docker does before the container starts should never fail. If it still does, the `.env` file was edited after the fact and a `DVR_MEDIA_DEVICE`/`DVR_MEDIA_MOUNT` path no longer exists on the host — rerun the script.
+4. **Deploy the stack.** Because the pre-flight script already validated and created the recordings path, the volume-mount step Docker does before the container starts should never fail on a first deploy. If it still does — especially if the error mentions `/mnt/media` (the compose file's *default* fallback, not your real path) — see the stale-volume note below; it's almost always that, not a bad `.env`.
+
+   > **Redeploying after an earlier failed attempt?** Docker named volumes are created once and then immutable — if `py-captions_channels_media` (or `<your-stack-name>_channels_media`) already exists from a previous deploy that predates a working `.env`, Compose silently reuses that volume as-is on every redeploy, ignoring whatever `DVR_MEDIA_*` values are in your new `.env`. Delete it first: Portainer → Volumes → find that volume → Remove (removing the stopped container first, if it complains the volume is in use) — then redeploy.
 
 5. Continue at [After Install](#after-install--all-platforms).
 
