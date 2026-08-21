@@ -87,7 +87,8 @@ while [[ -z "$CHANNELS_DVR_URL" ]]; do
     _dvr_check=$(_validate_dvr_url "$CHANNELS_DVR_URL") || true
     case "$_dvr_check" in
         bad_format)
-            echo "  Invalid: URL must include a port, e.g. http://${LAN_HINT}:8089 (not just http://${LAN_HINT})"
+            echo "  Invalid: must start with http:// (or https://) and include a port, e.g. http://${LAN_HINT}:8089"
+            echo "    Got: $CHANNELS_DVR_URL"
             CHANNELS_DVR_URL=""
             ;;
         bad_ipv4)

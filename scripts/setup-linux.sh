@@ -719,7 +719,7 @@ Tip: open http://localhost:57000 on the DVR machine to find its address." \
     case "$_dvr_check" in
         bad_format)
             wt_msg "Invalid URL" \
-                "URL must include a port number.\n\nGood:  http://192.168.1.5:8089\nBad:   http://192.168.1.5\n\nPlease re-enter." 12
+                "URL must start with http:// (or https://) and include a port number.\n\nGood:  http://192.168.1.5:8089\nBad:   192.168.1.5:8089    (missing http://)\nBad:   http://192.168.1.5  (missing port)\n\nPlease re-enter." 14
             CHANNELS_DVR_URL=""
             ;;
         bad_ipv4)
