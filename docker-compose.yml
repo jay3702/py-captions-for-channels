@@ -87,11 +87,19 @@ services:
       - ${LIBRARY_HOST_PATH_2:-library_slot_2}:${LIBRARY_CONTAINER_PATH_2:-/mnt/library2}
       # Slot 3 — third NAS / server (leave LIBRARY_HOST_PATH_3 unset to skip)
       - ${LIBRARY_HOST_PATH_3:-library_slot_3}:${LIBRARY_CONTAINER_PATH_3:-/mnt/library3}
+    devices:
+      # Intel/AMD GPU passthrough for FFmpeg hardware encode/decode (QSV/VAAPI).
+      # Defaults to /dev/null — a harmless no-op device that exists on every
+      # Linux host — so hosts without a real /dev/dri (headless, NVIDIA-only,
+      # most VMs) aren't broken by this mapping. .env.example.intel sets
+      # DRI_DEVICE=/dev/dri to turn it on; GPU_ENCODER=auto then picks up QSV
+      # automatically once the device is actually reachable.
+      - ${DRI_DEVICE:-/dev/null}:/dev/dri
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
       - "61208:61208"  # Glances web UI (legacy, may be removed)
-    
+
     logging:
       driver: "json-file"
       options:
