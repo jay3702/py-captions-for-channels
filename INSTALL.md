@@ -153,8 +153,9 @@ Copy the starter `.env` for your hardware:
 cp .env.example.nvidia .env   # NVIDIA GPU
 cp .env.example.cpu    .env   # CPU-only
 cp .env.example.intel  .env   # Intel GPU
-cp .env.example.amd    .env   # AMD GPU
 ```
+
+(`.env.example.amd` also exists in the repo, but AMD GPU support — both AMF/VAAPI encoding and ROCm transcription — is marked stubbed/untested in the code itself; not offered as a normal choice here until that's actually verified working.)
 
 Start the container, then open the dashboard at `http://YOUR_HOST_IP:8000` and run the **Setup Wizard** (⚙ gear → Setup Wizard) to configure the DVR URL, recordings path, and event source automatically.
 

@@ -556,9 +556,37 @@ else
     fi
 
     if [[ "$_GPU_HAS_HW" == false ]]; then
-        # No NVIDIA hardware found on the PCI bus.
-        if ! wt_yesno "GPU Check — No GPU Detected" \
-"No NVIDIA GPU was detected on this machine.
+        # No NVIDIA hardware found on the PCI bus — check for Intel, since
+        # "no GPU" advice that's actually NVIDIA-only advice is misleading on
+        # the very common case of an Intel-only laptop/mini-PC.
+        _INTEL_GPU_NAME=""
+        if lspci 2>/dev/null | grep -qiE 'VGA.*Intel|3D controller.*Intel|Display controller.*Intel'; then
+            _INTEL_GPU_NAME=$(lspci 2>/dev/null \
+                | grep -iE 'VGA.*Intel|3D controller.*Intel|Display controller.*Intel' \
+                | head -1 | sed -E 's/^[0-9a-f:.]+ +[^:]+: *//')
+        fi
+
+        if [[ -n "$_INTEL_GPU_NAME" ]]; then
+            wt_msg "GPU Check — Intel GPU Detected" \
+"No NVIDIA GPU found, but an Intel GPU was detected:
+  ${_INTEL_GPU_NAME}
+
+This installer's automated GPU setup (driver checks, container toolkit)
+only covers NVIDIA — it doesn't configure anything for Intel GPUs.
+Whisper transcription will run on CPU either way; Parakeet
+(⚙ Settings → WHISPER_LOCAL_ENGINE=parakeet after install) is a fast
+CPU-only option worth trying, often faster than GPU-accelerated Whisper
+on an Intel iGPU.
+
+Intel Quick Sync (QSV) *video encoding* is supported by the app, but this
+installer does not wire up GPU device passthrough for it — that currently
+needs manual docker-compose.yml editing. See docs/SYSTEM_REQUIREMENTS.md
+and .env.example.intel if you want to set that up by hand.
+
+Continuing in CPU mode." 24 || true
+            GPU_PRECHK_SKIP=true
+        elif ! wt_yesno "GPU Check — No GPU Detected" \
+"No NVIDIA or Intel GPU was detected on this machine.
 
 Whisper and ffmpeg will run in CPU mode (slower but fully functional).
 
