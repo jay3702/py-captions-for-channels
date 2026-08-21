@@ -69,6 +69,19 @@ This system is **well above minimum comfortable** and handles typical DVR worklo
 - RTX 3000+: Can use 8th gen NVENC (same speed, better quality)
 - CPU fallback (libx264): ~3x slower than NVENC
 
+### Intel / AMD GPU (VA-API)
+
+Intel iGPUs (Broadwell/5th-gen Core or newer) and AMD GPUs accelerate **encoding and decoding only** (`EMBED_CAPTIONS=h264`), via VA-API — not Whisper transcription, which has no Intel/AMD backend and always runs on CPU regardless of GPU presence (Parakeet, `WHISPER_LOCAL_ENGINE=parakeet`, is the fast CPU-only option worth using here).
+
+Requirements: the host just needs `/dev/dri` to exist and be readable by your user (`render`/`video` groups) — the VA-API userspace driver itself ships inside the container image, nothing extra to install on the host. Use `.env.example.intel` as a starting point (`DRI_DEVICE=/dev/dri`, `HWACCEL_DECODE=auto`, `GPU_ENCODER=auto` picks VA-API automatically once no NVIDIA GPU is present). Verify it's actually working from inside the running container:
+
+```bash
+docker exec -it py-captions-for-channels vainfo
+docker exec -it py-captions-for-channels ffmpeg -hide_banner -encoders 2>&1 | grep vaapi
+```
+
+Note this is VA-API, not Intel's separate Quick Sync (QSV/oneVPL) API — the two use the same underlying hardware and driver on Linux, but this project's FFmpeg build only has VA-API compiled in.
+
 ### CPU Impact
 
 CPU is **not the bottleneck** for this workload. Modern multi-core CPUs provide minimal additional benefit since:
