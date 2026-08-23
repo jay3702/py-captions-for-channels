@@ -145,6 +145,43 @@ def _ensure_model() -> Optional[str]:
         return None
 
 
+_fallback_model = None  # lazy-loaded, reused across every chunk that needs it
+
+
+def _get_fallback_model():
+    """Lazily load a CPU Faster-Whisper model for per-chunk fallback.
+
+    Loaded once and cached for the rest of this process — a job that hits
+    several bad chunks (see ggml-org/whisper.cpp#3932: the Parakeet TDT
+    decoder's duration argmax can underflow to -inf and silently return
+    duration 0, permanently stalling token advancement for the rest of a
+    chunk) shouldn't reload the model every time. Deliberately CPU-only and
+    without embed_captions.py's NVIDIA/AMD/Intel negotiation dance —
+    WHISPER_LOCAL_ENGINE=parakeet is chosen specifically for CPU-only/
+    low-power hosts, so there's no GPU path worth negotiating here.
+    """
+    global _fallback_model
+    if _fallback_model is None:
+        from faster_whisper import WhisperModel
+
+        model_size = os.getenv("WHISPER_MODEL", "medium")
+        log.info(
+            f"Loading Faster-Whisper ({model_size}, CPU) for per-chunk "
+            f"Parakeet fallback"
+        )
+        _fallback_model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    return _fallback_model
+
+
+def _transcribe_chunk_via_faster_whisper(audio_path: str) -> List[ParakeetSegment]:
+    model = _get_fallback_model()
+    segments, _info = model.transcribe(audio_path)
+    return [
+        ParakeetSegment(start=seg.start, end=seg.end, text=seg.text.strip())
+        for seg in segments
+    ]
+
+
 def _probe_duration(path: str) -> float:
     cmd = [
         "ffprobe",
@@ -307,10 +344,16 @@ def transcribe_via_parakeet(
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Tuple[Optional[List[ParakeetSegment]], Optional[str]]:
     """Attempt local transcription via Parakeet (CPU-only for now). Returns
-    (segments, None) on success, or (None, reason) on any failure — binary
-    missing, model download failed, crash, silent under-coverage — so the
-    caller falls back to faster-whisper while still being able to log why.
-    Never raises.
+    (segments, None) on success, or (None, reason) if transcription can't be
+    attempted at all — binary missing, model download failed — so the caller
+    falls back to Faster-Whisper for the whole file while still being able
+    to log why. Never raises.
+
+    A single bad chunk (crash, or silent under-coverage) does *not* cause an
+    overall failure: that one chunk is individually patched via a per-chunk
+    Faster-Whisper fallback (see _transcribe_chunk_via_faster_whisper) while
+    every other chunk's Parakeet output is kept, rather than discarding an
+    entire multi-chunk transcription over one bad segment.
 
     progress_callback(percent, message), if given, is called once per chunk
     completed — multi-chunk jobs can otherwise sit at 0% for a long time
@@ -354,9 +397,41 @@ def transcribe_via_parakeet(
                 )
 
             all_segments: List[ParakeetSegment] = []
+            fallback_chunks = 0
             for i, (chunk_path, offset) in enumerate(chunks):
                 log.debug(f"Transcribing Parakeet chunk {i + 1}/{len(chunks)}")
-                segments = _transcribe_chunk(model_path, chunk_path)
+                try:
+                    segments = _transcribe_chunk(model_path, chunk_path)
+                except Exception as chunk_err:
+                    if len(chunks) == 1:
+                        # Single-pass (short) recording — no other chunks'
+                        # work to preserve, so let the caller's fuller
+                        # fallback (proper GPU negotiation, optimization-
+                        # profile beam_size/vad tuning) handle the whole
+                        # file rather than this module's simpler CPU-only
+                        # patch-up.
+                        raise
+                    # A bad chunk in a *multi*-chunk job (e.g. the
+                    # ggml-org/whisper.cpp#3932 duration-underflow bug) used
+                    # to discard every other chunk's already-successful
+                    # Parakeet output and redo the *entire* recording via
+                    # Faster-Whisper. Patch just the bad chunk instead — keep
+                    # every chunk that worked.
+                    fallback_chunks += 1
+                    log.warning(
+                        f"Parakeet chunk {i + 1}/{len(chunks)} failed "
+                        f"({chunk_err}) - falling back to Faster-Whisper for "
+                        f"this chunk only"
+                    )
+                    try:
+                        segments = _transcribe_chunk_via_faster_whisper(chunk_path)
+                    except Exception as fw_err:
+                        log.warning(
+                            f"Faster-Whisper fallback also failed for chunk "
+                            f"{i + 1}/{len(chunks)} ({fw_err}) - captions will "
+                            f"have a gap here"
+                        )
+                        segments = []
                 for seg in segments:
                     seg.start += offset
                     seg.end += offset
@@ -372,9 +447,15 @@ def transcribe_via_parakeet(
                     except Exception:
                         pass  # Progress reporting is best-effort, never fatal
 
+            fallback_note = (
+                f", {fallback_chunks} chunk(s) via Faster-Whisper fallback"
+                if fallback_chunks
+                else ""
+            )
             log.info(
                 f"Parakeet transcription succeeded: {len(all_segments)} segments, "
                 f"{duration / 60:.1f} min of audio, {len(chunks)} chunk(s)"
+                f"{fallback_note}"
             )
             return all_segments, None
     except Exception as e:
