@@ -55,7 +55,14 @@ PARAKEET_CLI_PATH = "/usr/local/bin/parakeet-cli"
 
 # NVIDIA's docs cite ~24 minutes as the model's single-pass ceiling; testing
 # found real breakage well under that. Stay well clear of both.
-PARAKEET_CHUNK_SECONDS = 10 * 60
+#
+# This was tuned only against that correctness ceiling, never against peak
+# memory use — the original CPU testing was on a much higher-RAM machine.
+# Configurable so it can be tuned down on memory-constrained hosts without
+# a rebuild; smaller chunks mean less audio buffered/attended over per
+# parakeet-cli invocation, which should (untested prior to this) reduce
+# peak RSS roughly in proportion.
+PARAKEET_CHUNK_SECONDS = int(os.getenv("PARAKEET_CHUNK_SECONDS", str(10 * 60)))
 
 # A chunk whose last recovered token timestamp falls short of this fraction
 # of the chunk's real duration is treated as a failed chunk (silent
