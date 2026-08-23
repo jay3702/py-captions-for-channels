@@ -66,8 +66,13 @@ PARAKEET_CHUNK_SECONDS = int(os.getenv("PARAKEET_CHUNK_SECONDS", str(10 * 60)))
 
 # A chunk whose last recovered token timestamp falls short of this fraction
 # of the chunk's real duration is treated as a failed chunk (silent
-# under-coverage), not a legitimately short transcript.
-MIN_COVERAGE_FRACTION = 0.85
+# under-coverage), not a legitimately short transcript. Chunk boundaries are
+# cut at fixed time intervals with no awareness of content, so a chunk can
+# legitimately end in genuine non-speech audio (a commercial transition,
+# music, silence) — configurable since a real-world narrow miss (e.g. 81%)
+# is hard to distinguish from a deliberately conservative threshold without
+# testing against real content.
+MIN_COVERAGE_FRACTION = float(os.getenv("PARAKEET_MIN_COVERAGE_FRACTION", "0.85"))
 
 # Caption segmentation: split accumulated words into a new segment at
 # sentence-ending punctuation once the segment has run at least this long,
@@ -286,10 +291,12 @@ def _transcribe_chunk(model_path: str, audio_path: str) -> List[ParakeetSegment]
 
     chunk_duration = _probe_duration(audio_path)
     last_t1 = tokens[-1].t1_cs / 100.0
-    if last_t1 < chunk_duration * MIN_COVERAGE_FRACTION:
+    coverage = last_t1 / chunk_duration if chunk_duration else 0.0
+    if coverage < MIN_COVERAGE_FRACTION:
         raise RuntimeError(
             f"parakeet-cli output only covers {last_t1:.0f}s of a "
-            f"{chunk_duration:.0f}s chunk (silent under-coverage)"
+            f"{chunk_duration:.0f}s chunk ({coverage:.0%} < required "
+            f"{MIN_COVERAGE_FRACTION:.0%} — silent under-coverage)"
         )
 
     return _tokens_to_segments(tokens)
