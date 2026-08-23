@@ -38,7 +38,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import requests
 
@@ -297,12 +297,17 @@ def _transcribe_chunk(model_path: str, audio_path: str) -> List[ParakeetSegment]
 
 def transcribe_via_parakeet(
     input_path: str,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Tuple[Optional[List[ParakeetSegment]], Optional[str]]:
     """Attempt local transcription via Parakeet (CPU-only for now). Returns
     (segments, None) on success, or (None, reason) on any failure — binary
     missing, model download failed, crash, silent under-coverage — so the
     caller falls back to faster-whisper while still being able to log why.
     Never raises.
+
+    progress_callback(percent, message), if given, is called once per chunk
+    completed — multi-chunk jobs can otherwise sit at 0% for a long time
+    (each chunk takes real wall-clock minutes on CPU) with no UI feedback.
     """
     from py_captions_for_channels import config
 
@@ -349,6 +354,16 @@ def transcribe_via_parakeet(
                     seg.start += offset
                     seg.end += offset
                 all_segments.extend(segments)
+                if progress_callback:
+                    done = i + 1
+                    percent = 100.0 * done / len(chunks)
+                    try:
+                        progress_callback(
+                            percent,
+                            f"Parakeet: chunk {done}/{len(chunks)}",
+                        )
+                    except Exception:
+                        pass  # Progress reporting is best-effort, never fatal
 
             log.info(
                 f"Parakeet transcription succeeded: {len(all_segments)} segments, "

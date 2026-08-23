@@ -2405,7 +2405,10 @@ def main():
                         "transcription via Parakeet"
                     )
                     engine_segments, parakeet_failure_reason = transcribe_via_parakeet(
-                        input_source
+                        input_source,
+                        progress_callback=lambda percent, message: (
+                            update_whisper_progress(job_id, percent, message)
+                        ),
                     )
                     if engine_segments is None:
                         log.warning(
