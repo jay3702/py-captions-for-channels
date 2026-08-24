@@ -112,13 +112,41 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
-    libvulkan-dev \
-    glslang-tools \
-    spirv-tools \
+    wget \
+    ca-certificates \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
 
+# glslc (the shader compiler GGML's Vulkan backend actually needs, distinct
+# from glslangValidator which Ubuntu's own glslang-tools package provides)
+# isn't packaged for jammy/22.04 at all in the standard repos — confirmed by
+# testing, not assumed. LunarG's official Vulkan SDK apt repo does publish it
+# for jammy; installing just the `shaderc` package (not the full vulkan-sdk
+# metapackage, which pulls in Qt/GTK for GUI tools this build doesn't need)
+# keeps this scoped to what's actually required. Deliberately staying on
+# ubuntu:22.04 throughout rather than bumping to a newer Ubuntu that packages
+# glslc directly — confirmed by testing that a 24.04-built binary fails with
+# GLIBC_2.38/GLIBCXX_3.4.32 "not found" errors against this image's
+# ubuntu22.04-based runtime stage, so building anywhere but 22.04 would
+# produce a binary that can't actually run in the final image.
+#
+# libvulkan-dev must also come from this same LunarG repo, not Ubuntu's own
+# (older) package — confirmed by testing: Ubuntu 22.04's stock Vulkan headers
+# predate the VK_EXT_device_fault extension this whisper.cpp version's Vulkan
+# backend uses, and fail to compile against it. Note LunarG splits the actual
+# headers (vulkan.h etc.) into a separate `vulkan-headers` package — unlike
+# Ubuntu's own libvulkan-dev, LunarG's libvulkan-dev ships only the loader
+# lib/cmake/pkgconfig files, no headers. Confirmed by testing: installing only
+# libvulkan-dev left CMake's find_package(Vulkan) failing with
+# "Vulkan_INCLUDE_DIR" not found even though the package installed cleanly;
+# adding vulkan-headers alongside it fixed the configure step.
+RUN wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key add - && \
+    wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list && \
+    apt-get update && apt-get install -y shaderc spirv-headers libvulkan-dev vulkan-headers && \
+    rm -rf /var/lib/apt/lists/*
+
 # Bump PARAKEET_CACHE_BUST to force a rebuild (invalidates GHA layer cache)
-ARG PARAKEET_CACHE_BUST=2026-08-24-vulkan-experiment
+ARG PARAKEET_CACHE_BUST=2026-08-24-vulkan-experiment-v3
 
 RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git /whisper.cpp && \
     cd /whisper.cpp && \
