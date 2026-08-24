@@ -88,13 +88,22 @@ RUN echo "FFmpeg build: version=${FFMPEG_VERSION}, bust=${FFMPEG_CACHE_BUST}" &&
     && make -j$(nproc) && make install
 
 # --- Build stage: Compile whisper.cpp's Parakeet CLI, CPU-only ---
-# Separate lightweight (non-CUDA) stage since this build is deliberately
-# CPU-only for now — see py_captions_for_channels/parakeet_transcribe.py for
-# why (the GPU/Vulkan backend crashed reliably in testing). GGML_NATIVE=OFF
+# Separate lightweight (non-CUDA) stage since the production binary is
+# deliberately CPU-only — see py_captions_for_channels/parakeet_transcribe.py
+# for why (the GPU/Vulkan backend crashed reliably in *prior* testing, on
+# different hardware than this project has direct access to). GGML_NATIVE=OFF
 # targets a portable AVX2/SSE4.2/BMI2/FMA baseline instead of -march=native,
 # since the machine that builds this image is never the machine that runs
 # it — that baseline covers any x86_64 CPU from roughly 2013 onward,
 # including low-power targets like an Intel N100/N95.
+#
+# Also builds a second, experimental parakeet-cli-vulkan binary from the same
+# source tree, with the Vulkan GGML backend enabled — for testing whether
+# that earlier "crashed reliably" finding holds on specific real hardware
+# (Intel iGPUs in particular). Not used by the app by default; PARAKEET_DEVICE
+# still only accepts "cpu" in parakeet_transcribe.py. Purely available for
+# manual `docker exec` experimentation until/unless a GPU path is verified
+# reliable enough to wire in for real.
 FROM ubuntu:22.04 AS parakeet-build
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -103,15 +112,21 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
+    libvulkan-dev \
+    glslang-tools \
+    spirv-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Bump PARAKEET_CACHE_BUST to force a rebuild (invalidates GHA layer cache)
-ARG PARAKEET_CACHE_BUST=2026-08-14
+ARG PARAKEET_CACHE_BUST=2026-08-24-vulkan-experiment
 
 RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git /whisper.cpp && \
     cd /whisper.cpp && \
     cmake -B build -DGGML_NATIVE=OFF && \
-    cmake --build build -j$(nproc) --target parakeet-cli
+    cmake --build build -j$(nproc) --target parakeet-cli && \
+    cmake -B build-vulkan -DGGML_NATIVE=OFF -DGGML_VULKAN=ON && \
+    cmake --build build-vulkan -j$(nproc) --target parakeet-cli && \
+    cp build-vulkan/bin/parakeet-cli build-vulkan/bin/parakeet-cli-vulkan
 
 # --- Runtime stage ---
 FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
@@ -184,6 +199,26 @@ COPY --from=ffmpeg-build /ffmpeg_build/lib/ /usr/local/lib/
 COPY --from=parakeet-build /whisper.cpp/build/bin/parakeet-cli /usr/local/bin/parakeet-cli
 COPY --from=parakeet-build /whisper.cpp/build/bin/libparakeet.so* /usr/local/lib/
 COPY --from=parakeet-build /whisper.cpp/build/bin/libggml*.so* /usr/local/lib/
+
+# Experimental Vulkan-enabled parakeet-cli-vulkan, for manually testing GPU
+# reliability on real hardware (see Dockerfile comment above the
+# parakeet-build stage). Its libs go in a separate directory, NOT
+# /usr/local/lib — they share filenames with the CPU build's libs above but
+# have different (Vulkan-enabled) content, so mixing them into one directory
+# would silently break whichever binary linked second. Run it with
+# LD_LIBRARY_PATH=/usr/local/lib/parakeet-vulkan explicitly; not on PATH or
+# in the default library search path, and not invoked anywhere by the app.
+COPY --from=parakeet-build /whisper.cpp/build-vulkan/bin/parakeet-cli-vulkan /usr/local/bin/parakeet-cli-vulkan
+COPY --from=parakeet-build /whisper.cpp/build-vulkan/bin/libparakeet.so* /usr/local/lib/parakeet-vulkan/
+COPY --from=parakeet-build /whisper.cpp/build-vulkan/bin/libggml*.so* /usr/local/lib/parakeet-vulkan/
+
+# Vulkan runtime: ICD loader + Mesa's Intel (ANV) and AMD (RADV) drivers,
+# and vulkaninfo for diagnostics. Only used by the experimental binary above.
+RUN apt-get update && apt-get install -y \
+    libvulkan1 \
+    mesa-vulkan-drivers \
+    vulkan-tools \
+    && rm -rf /var/lib/apt/lists/*
 
 # Update library cache so FFmpeg/Parakeet libraries are found
 RUN ldconfig
