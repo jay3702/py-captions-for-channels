@@ -74,6 +74,17 @@ PARAKEET_CHUNK_SECONDS = int(os.getenv("PARAKEET_CHUNK_SECONDS", str(10 * 60)))
 # testing against real content.
 MIN_COVERAGE_FRACTION = float(os.getenv("PARAKEET_MIN_COVERAGE_FRACTION", "0.85"))
 
+# parakeet-cli defaults to 4 threads regardless of physical core count. On a
+# 2-physical-core/4-logical-thread host (hyperthreading), measured directly:
+# 1->2 threads gave a real ~26% speedup, but 2->4 gave only ~2% further —
+# the extra hyperthreaded threads buy almost nothing for this workload, while
+# still being held from the rest of the system (Docker, ffmpeg, the web app)
+# for the duration. Left unset by default (parakeet-cli's own default
+# applies) since forcing a low thread count on a host with many physical
+# cores would be a real regression there — this is a per-host tuning knob,
+# not a new global default.
+PARAKEET_THREADS = os.getenv("PARAKEET_THREADS")
+
 # Caption segmentation: split accumulated words into a new segment at
 # sentence-ending punctuation once the segment has run at least this long,
 # or unconditionally once it hits the max, so a stretch of dialogue with no
@@ -307,6 +318,8 @@ def _transcribe_chunk(model_path: str, audio_path: str) -> List[ParakeetSegment]
         "-ps",
         "-np",
     ]
+    if PARAKEET_THREADS:
+        cmd += ["-t", PARAKEET_THREADS]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
     if result.returncode != 0:
         raise RuntimeError(
