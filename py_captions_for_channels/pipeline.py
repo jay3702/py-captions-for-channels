@@ -20,6 +20,36 @@ from .progress_tracker import get_progress_tracker
 from .execution_tracker import get_tracker
 
 
+def _reap_in_background(proc: subprocess.Popen, log) -> None:
+    """Wait for an already-killed process to exit without blocking the caller.
+
+    A process blocked in uninterruptible sleep (D state) — e.g. on a hung
+    NFS/CIFS read — ignores SIGKILL until the underlying I/O returns, which
+    can be indefinitely. A bare ``proc.wait()`` at that point blocks the
+    executor thread running this pipeline forever, wedging the whole manual
+    or polling queue behind it. Reap it from a daemon thread instead so the
+    pipeline can report failure and move on; the OS process is cleaned up
+    whenever it eventually clears.
+    """
+    log.error(
+        "Subprocess pid %d did not exit after SIGKILL — likely blocked on "
+        "uninterruptible I/O (e.g. a hung network mount). Abandoning it to a "
+        "background reaper instead of blocking the pipeline.",
+        proc.pid,
+    )
+
+    def _wait():
+        try:
+            proc.wait()
+            log.warning(
+                "Previously unkillable subprocess pid %d has finally exited", proc.pid
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_wait, daemon=True, name=f"reap-pid{proc.pid}").start()
+
+
 def _forward_subprocess_log_line(line: str, log) -> None:
     """Parse and forward a JSON structured log line from a subprocess in real-time.
 
@@ -398,7 +428,10 @@ class Pipeline:
                         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                     except ProcessLookupError:
                         pass
-                    proc.wait()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        _reap_in_background(proc, log)
                 break
 
             # Check for timeout
@@ -419,7 +452,10 @@ class Pipeline:
                         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                     except ProcessLookupError:
                         pass
-                    proc.wait()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        _reap_in_background(proc, log)
                 break
 
             time.sleep(0.1)
@@ -934,7 +970,10 @@ class Pipeline:
                         except subprocess.TimeoutExpired:
                             log.warning("Subprocess didn't terminate, killing it")
                             proc.kill()
-                            proc.wait()
+                            try:
+                                proc.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                _reap_in_background(proc, log)
                 except Exception as cleanup_err:
                     log.error("Error cleaning up subprocess: %s", cleanup_err)
 

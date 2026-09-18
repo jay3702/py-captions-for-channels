@@ -537,6 +537,42 @@ MANUAL_PROCESS_POLL_SECONDS = get_env_int("MANUAL_PROCESS_POLL_SECONDS", 10)
 # Backward compatibility - support old env var name
 REPROCESS_POLL_SECONDS = MANUAL_PROCESS_POLL_SECONDS
 
+# Watchdog: detects when the polling/manual-process loops have wedged (e.g. a
+# subprocess stuck in uninterruptible sleep on a hung network mount that
+# SIGKILL cannot clear) and alerts and/or restarts the process so Docker's
+# restart policy can bring it back up cleanly.
+WATCHDOG_ENABLED = get_env_bool("WATCHDOG_ENABLED", True)
+WATCHDOG_CHECK_INTERVAL_SECONDS = get_env_int("WATCHDOG_CHECK_INTERVAL_SECONDS", 60)
+# A loop's heartbeat is considered stale after this long with no beat. Kept
+# well above PIPELINE_TIMEOUT so a normal internally-timed-out job doesn't
+# trip the watchdog before the pipeline's own timeout has a chance to recover.
+WATCHDOG_HEARTBEAT_STALE_SECONDS = get_env_int("WATCHDOG_HEARTBEAT_STALE_SECONDS", 5400)
+# If the active job's progress was updated more recently than this, the loop
+# is treated as busy (not stuck) even if its heartbeat is stale.
+WATCHDOG_PROGRESS_FRESH_SECONDS = get_env_int("WATCHDOG_PROGRESS_FRESH_SECONDS", 120)
+# Minimum time a stuck condition must persist, continuously, before an
+# automatic restart is allowed to fire.
+WATCHDOG_RESTART_AFTER_SECONDS = get_env_int("WATCHDOG_RESTART_AFTER_SECONDS", 10800)
+WATCHDOG_AUTO_RESTART = get_env_bool("WATCHDOG_AUTO_RESTART", True)
+# Restart safety valve: if the underlying cause keeps recurring (e.g. a mount
+# that hangs again immediately), stop restarting and just keep alerting.
+WATCHDOG_MAX_RESTARTS_PER_DAY = get_env_int("WATCHDOG_MAX_RESTARTS_PER_DAY", 3)
+WATCHDOG_MIN_RESTART_INTERVAL_SECONDS = get_env_int(
+    "WATCHDOG_MIN_RESTART_INTERVAL_SECONDS", 1800
+)
+# How often to repeat a CRITICAL alert (log + webhook) while still stuck.
+WATCHDOG_ALERT_REPEAT_SECONDS = get_env_int("WATCHDOG_ALERT_REPEAT_SECONDS", 900)
+# Optional: POST {"text": ..., "level": ..., "timestamp": ...} here on alert.
+# Works as-is with generic webhook receivers / automation tools (e.g. ntfy,
+# Home Assistant, n8n); Discord/Slack need a small adapter since they expect
+# their own payload shape.
+WATCHDOG_ALERT_WEBHOOK_URL = os.getenv("WATCHDOG_ALERT_WEBHOOK_URL", "")
+# Independent, unambiguous check: if the asyncio event loop itself stops
+# responding for this long, nothing in the process can be making progress
+# (not even logging), so this fires immediately regardless of the settings
+# above.
+WATCHDOG_LOOP_FREEZE_SECONDS = get_env_int("WATCHDOG_LOOP_FREEZE_SECONDS", 180)
+
 # Whitelist configuration
 WHITELIST_FILE = os.getenv("WHITELIST_FILE", "./whitelist.txt")
 

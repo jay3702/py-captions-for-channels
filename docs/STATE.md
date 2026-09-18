@@ -8,6 +8,40 @@
 
 ## Completed
 
+- **Settings modal reorganized by function (2026-09-18)** — replaced the old flat,
+  9-category settings UI (grouping inferred by matching hardcoded substrings against
+  `.env.example` section headers, plus five separate hardcoded JS arrays classifying
+  field types by key name) with a declarative schema (`settings_schema.py`): 7
+  functional groups (Event Source, Transcription, Caption Output & Encoding,
+  Processing Rules, Reliability & Watchdog, Storage & Paths, Logging & Diagnostics),
+  each with basic (frequent) and advanced (rare, collapsed by default) tiers. A key
+  missing from the schema now logs a warning and is hidden, instead of silently
+  landing in the wrong category (this is exactly how the new `WATCHDOG_*` settings
+  had been mis-bucketed into "Caption Pipeline" before this fix). Found and fixed two
+  latent parser bugs along the way: an ALL-CAPS section-header heuristic that
+  misclassified commented numeric settings (e.g. `# NVENC_CQ=23`) as headers and
+  silently dropped them, and a long-standing bug where every setting's "default"
+  value was always `None` (the extraction loop searched a list that could never
+  contain the `Default:` line, since it was filtered out before being added). Backend
+  (`web_app.py`) and frontend (`main.js` `renderSettingsUI`) both rewritten; `save`
+  logic was already category-name-agnostic so it needed no changes. 391 tests pass
+  (17 new, covering the schema and the two parser regressions).
+
+- **Watchdog for wedged watcher (2026-09-18)** — new `watchdog.py`: detects when the
+  polling/manual loops stop advancing (heartbeat stale + no fresh job progress),
+  alerts (CRITICAL log + optional `WATCHDOG_ALERT_WEBHOOK_URL`), and — once the
+  condition persists past `WATCHDOG_RESTART_AFTER_SECONDS` — hard-exits the
+  process (`os._exit`) so Docker's `restart: unless-stopped` brings it back,
+  with a daily restart cap/cooldown to avoid crash-looping. A second,
+  independent thread-based canary (`EventLoopFreezeMonitor`) catches a fully
+  frozen asyncio event loop. Exposed via `/api/status` → `watchdog`. Root
+  cause investigated alongside this: `pipeline.py`'s subprocess cleanup called
+  an unbounded `proc.wait()` after SIGKILL, which can block forever if the
+  child is stuck in uninterruptible sleep (hung NFS/CIFS mount) — fixed to
+  reap in a background thread instead so the executor thread (and thus the
+  manual/polling loop) is never wedged by that alone. All 14 new tests +
+  full existing suite (374 total) pass. See `docs/WATCHDOG.md`.
+
 - **Core pipeline** — webhook → DVR API → Whisper → caption embed → state tracking
 - **Web UI** (`web_app.py`, `webui/`) — FastAPI, recordings list, settings modal, queue display
 - **Settings modal** — fixed top panel (status/buttons/restart banner), scrollable form body

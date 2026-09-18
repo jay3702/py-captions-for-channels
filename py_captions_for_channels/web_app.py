@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import asyncio
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -56,6 +57,12 @@ from .services.settings_service import SettingsService
 from .services.heartbeat_service import HeartbeatService
 from .shutdown_control import get_shutdown_controller
 from .system_monitor import get_system_monitor, get_pipeline_timeline
+from .watchdog import get_watchdog_status
+from .settings_schema import (
+    SETTINGS_SCHEMA,
+    GROUPS as SETTINGS_GROUPS,
+    HIDDEN_KEYS as HIDDEN_SETTINGS_KEYS,
+)
 from .orphan_cleanup import OrphanCleanupScheduler, run_cleanup
 
 BASE_DIR = Path(__file__).parent
@@ -423,71 +430,61 @@ def get_env_file_path() -> Path:
     return Path(__file__).parent.parent / ".env"
 
 
+def _is_section_header_comment(desc: str) -> bool:
+    """Heuristic: a comment line that's a section/subsection title rather
+    than descriptive text for whatever setting follows it -- either an
+    ALL-CAPS title ("CHANNELS DVR CONFIGURATION", "--- NVIDIA NVENC ---")
+    or a bare punctuation divider ("----...----")."""
+    if not desc:
+        return False
+    has_letters = any(c.isalpha() for c in desc)
+    if not has_letters:
+        return True  # pure punctuation divider
+    return desc == desc.upper()
+
+
 def _parse_env_file(file_path: Path) -> dict:
-    """Parse an env file into structured settings.
+    """Parse an env file into a flat dict of settings.
+
+    Grouping/tiering for the UI comes from ``settings_schema.py``, not from
+    this parser -- it only extracts what's textually present in the file.
 
     Args:
         file_path: Path to the env file to parse
 
     Returns:
-        Dict with settings grouped by category
+        Flat dict: {KEY: {"value", "description", "default", "optional"}}
     """
-    # Infrastructure path settings: managed via .env only,
-    # hidden from the web Settings UI to avoid accidental changes.
-    _SETTINGS_UI_HIDDEN = frozenset(
-        {
-            "DATA_DIR",
-            "HOST_DATA_DIR",
-            "DB_PATH",
-            "STATE_FILE",
-            "LOG_FILE",
-            "LOG_PATH",
-            "QUARANTINE_DIR",
-        }
-    )
-    settings = {
-        "channels_dvr": {},
-        "channelwatch": {},
-        "event_source": {},
-        "polling": {},
-        "webhook": {},
-        "pipeline": {},
-        "state_logging": {},
-        "advanced": {},
-        "data_storage": {},
-    }
-
-    current_category = None
-    current_description = []
+    settings: dict = {}
+    current_description: list = []
+    current_default: Optional[str] = None
 
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
             line_stripped = line.strip()
-            line_upper = line_stripped.upper()
 
-            # Category headers (case-insensitive)
-            if "CHANNELS DVR CONFIGURATION" in line_upper:
-                current_category = "channels_dvr"
-            elif "CHANNELWATCH CONFIGURATION" in line_upper:
-                current_category = "channelwatch"
-            elif "EVENT SOURCE CONFIGURATION" in line_upper:
-                current_category = "event_source"
-            elif "POLLING SOURCE CONFIGURATION" in line_upper:
-                current_category = "polling"
-            elif "WEBHOOK SERVER CONFIGURATION" in line_upper:
-                current_category = "webhook"
-            elif "CAPTION PIPELINE CONFIGURATION" in line_upper:
-                current_category = "pipeline"
-            elif "STATE AND LOGGING CONFIGURATION" in line_upper:
-                current_category = "state_logging"
-            elif "ADVANCED CONFIGURATION" in line_upper:
-                current_category = "advanced"
-            elif "DATA STORAGE CONFIGURATION" in line_upper:
-                current_category = "data_storage"
+            # Empty line resets description
+            if not line_stripped:
+                current_description = []
+                current_default = None
+                continue
 
-            # Parse setting line (active or commented)
-            # Check this BEFORE comment collection
-            elif "=" in line_stripped and current_category:
+            # ALL-CAPS comment headers (e.g. "# CHANNELS DVR CONFIGURATION" or
+            # "# --- NVIDIA NVENC ---") are titles, not description text.
+            # Guarded on "no =" so a commented setting with an all-caps,
+            # no-lowercase value (e.g. "# NVENC_CQ=23") is never mistaken for
+            # one -- real headers never contain "=". "# ====" divider lines
+            # are all "=" so they never reach here; they're skipped below.
+            if "=" not in line_stripped and _is_section_header_comment(
+                line_stripped.lstrip("#").strip()
+            ):
+                current_description = []
+                current_default = None
+                continue
+
+            # Parse setting line (active or commented) -- check before
+            # generic comment collection.
+            if "=" in line_stripped:
                 # Skip section dividers (lines that are just equal signs)
                 stripped_no_comment = line_stripped.lstrip("#").strip()
                 if stripped_no_comment.replace("=", "") == "":
@@ -501,9 +498,12 @@ def _parse_env_file(file_path: Path) -> dict:
                     key, value = setting_line.split("=", 1)
                     key = key.strip()
                     value = value.strip()
-                    # Strip inline ← annotation comments used in .env.example
+                    # Strip inline annotation comments used in .env.example
                     if "\u2190" in value:
                         value = value.split("\u2190")[0].rstrip()
+                    # Strip a trailing " # ..." inline comment, e.g. the
+                    # example text on "LIBRARY_HOST_PATH=/tank/..  # host path"
+                    value = re.sub(r"\s+#.*$", "", value).strip()
 
                     # Skip if key doesn't look like a valid setting name
                     # (must be uppercase/underscore, not lowercase/sentence)
@@ -511,48 +511,29 @@ def _parse_env_file(file_path: Path) -> dict:
                         # This is a description line with "=", not a setting
                         # Treat it as a comment instead
                         desc = line_stripped.lstrip("# ").strip()
-                        if (
-                            desc
-                            and not desc.startswith("Default:")
-                            and not desc.startswith("Note:")
-                        ):
+                        if desc.startswith("Default:"):
+                            current_default = desc.replace("Default:", "").strip()
+                        elif desc and not desc.startswith("Note:"):
                             current_description.append(desc)
                         continue
 
-                    # Skip infrastructure path settings hidden from UI
-                    if key in _SETTINGS_UI_HIDDEN:
-                        current_description = []
-                        continue
-
-                    # Extract default from description
-                    default_value = None
-                    for desc_line in current_description:
-                        if desc_line.startswith("Default:"):
-                            default_value = desc_line.replace("Default:", "").strip()
-
-                    settings[current_category][key] = {
+                    settings[key] = {
                         "value": value,
                         "description": " ".join(current_description),
-                        "default": default_value,
+                        "default": current_default,
                         "optional": is_commented,
                     }
                     current_description = []
+                    current_default = None
+                continue
 
-            # Collect comment lines as description (after checking for settings)
-            elif line_stripped.startswith("#") and current_category:
-                # Skip section dividers
-                if not line_stripped.startswith("# ===="):
-                    desc = line_stripped.lstrip("# ").strip()
-                    if (
-                        desc
-                        and not desc.startswith("Default:")
-                        and not desc.startswith("Note:")
-                    ):
-                        current_description.append(desc)
-
-            # Empty line resets description
-            elif not line_stripped:
-                current_description = []
+            # Collect comment lines as description
+            if line_stripped.startswith("#"):
+                desc = line_stripped.lstrip("# ").strip()
+                if desc.startswith("Default:"):
+                    current_default = desc.replace("Default:", "").strip()
+                elif desc and not desc.startswith("Note:"):
+                    current_description.append(desc)
 
     return settings
 
@@ -563,16 +544,26 @@ def load_env_settings() -> dict:
     This ensures all available settings appear in the UI, even if not in .env yet.
     Current values come from .env, descriptions/defaults come from .env.example.
 
+    Grouping ("which major function"), tier ("basic"/"advanced"), field type,
+    and any label override come from ``settings_schema.SETTINGS_SCHEMA`` --
+    not from the file structure. A key with no schema entry is dropped from
+    the UI (see ``settings_schema.HIDDEN_KEYS`` for deliberate exclusions);
+    that's a signal to add it to the schema rather than a silent miscategorization.
+
     Returns:
-        Dict with settings grouped by category:
+        Dict with settings grouped by the schema's functional groups:
         {
-            "channels_dvr": {
-                "CHANNELS_API_URL": {
-                    "value": "...",
-                    "description": "..."
-                }
+            "event_source": {
+                "DISCOVERY_MODE": {
+                    "value": "...", "description": "...", "default": "...",
+                    "optional": bool, "tier": "basic"|"advanced",
+                    "type": "text"|"number"|"checkbox"|"select"|...,
+                    "options": [...] | None, "label": "..." | None,
+                    "render": "..." | None,
+                },
+                ...
             },
-            "event_source": {...},
+            "transcription": {...},
             ...
         }
     """
@@ -590,9 +581,7 @@ def load_env_settings() -> dict:
         else:
             LOG.debug(f"Loading template from {env_example_path}")
             template = _parse_env_file(env_example_path)
-            LOG.debug(
-                f"Template loaded: {sum(len(v) for v in template.values())} settings"
-            )
+            LOG.debug(f"Template loaded: {len(template)} settings")
 
         # Load actual values from .env
         if not env_path.exists():
@@ -603,37 +592,24 @@ def load_env_settings() -> dict:
         else:
             LOG.debug(f"Loading actual values from {env_path}")
             actual = _parse_env_file(env_path)
-            LOG.debug(f"Actual loaded: {sum(len(v) for v in actual.values())} settings")
+            LOG.debug(f"Actual loaded: {len(actual)} settings")
 
         # Merge: start with template, override values from actual .env
-        # Get all unique categories from both template and actual
-        all_categories = set(template.keys()) | set(actual.keys())
+        flat: dict = {}
+        for key, config in template.items():
+            flat[key] = config.copy()
+            if key in actual:
+                flat[key]["value"] = actual[key]["value"]
+                # If it's set in actual .env, mark as not optional
+                flat[key]["optional"] = actual[key]["optional"]
+        for key, config in actual.items():
+            if key not in flat:
+                flat[key] = config.copy()
 
-        merged = {}
-        for category in all_categories:
-            merged[category] = {}
-
-            # Add all settings from template for this category
-            for key, config in template.get(category, {}).items():
-                merged[category][key] = config.copy()
-                # Override value if present in actual .env
-                if key in actual.get(category, {}):
-                    merged[category][key]["value"] = actual[category][key]["value"]
-                    # If it's set in actual .env, mark as not optional
-                    merged[category][key]["optional"] = actual[category][key][
-                        "optional"
-                    ]
-
-            # Add any settings from actual .env that aren't in template
-            for key, config in actual.get(category, {}).items():
-                if key not in merged[category]:
-                    merged[category][key] = config.copy()
-
-        # Flat fallback: re-scan the actual .env ignoring category headers.
-        # This catches any key=value pairs whose category header was missing or
-        # not recognised by _parse_env_file (e.g. a hand-crafted .env without
-        # the standard section headers).  Only fills gaps; never overwrites a
-        # value that was already found by the structured parse.
+        # Flat fallback: re-scan the actual .env with a bare KEY=value regex.
+        # This catches any settings the structured parse above missed (e.g. a
+        # hand-crafted .env without the usual comments/section headers).
+        # Only fills gaps; never overwrites a value already found above.
         flat_actual: dict[str, str] = {}
         if env_path.exists():
             try:
@@ -647,16 +623,9 @@ def load_env_settings() -> dict:
                                 flat_actual[_k] = _v.strip()
             except Exception:
                 pass
-        if flat_actual:
-            for category in merged:
-                for key in merged[category]:
-                    if key in flat_actual:
-                        # Always override with the value from the actual .env file.
-                        # flat_actual only contains non-commented lines, so this
-                        # correctly picks up e.g. DRY_RUN=true even when the .env
-                        # uses different section headers than .env.example and the
-                        # structured parse above assigned the wrong default.
-                        merged[category][key]["value"] = flat_actual[key]
+        for key in flat:
+            if key in flat_actual:
+                flat[key]["value"] = flat_actual[key]
 
         # Inject runtime values for settings with placeholders
         # This ensures UI shows actual values being used by the system
@@ -679,30 +648,55 @@ def load_env_settings() -> dict:
             "LOCAL_PATH_PREFIX": os.getenv("LOCAL_PATH_PREFIX", ""),
         }
 
-        # Replace placeholder values with runtime values
-        for category in merged:
-            for key in merged[category]:
-                if key in runtime_values:
-                    value = merged[category][key].get("value", "")
-                    # If value contains placeholder text or is empty, use runtime value
-                    schema_default = merged[category][key].get("default", "")
-                    if (
-                        not value
-                        or "<" in value
-                        or ">" in value
-                        or value.startswith("/path/to/")
-                        or (schema_default and value == schema_default)
-                    ):
-                        # Only update if runtime value differs from default
-                        runtime_val = runtime_values[key]
-                        if runtime_val and runtime_val != merged[category][key].get(
-                            "default", ""
-                        ):
-                            merged[category][key]["value"] = runtime_val
+        for key, entry in flat.items():
+            if key in runtime_values:
+                value = entry.get("value", "")
+                schema_default = entry.get("default", "")
+                # If value contains placeholder text or is empty, use runtime value
+                if (
+                    not value
+                    or "<" in value
+                    or ">" in value
+                    or value.startswith("/path/to/")
+                    or (schema_default and value == schema_default)
+                ):
+                    runtime_val = runtime_values[key]
+                    if runtime_val and runtime_val != entry.get("default", ""):
+                        entry["value"] = runtime_val
+
+        # Regroup by the declarative schema -- the single source of truth for
+        # which functional group and tier (basic/advanced) each setting is in.
+        merged: dict = {key: {} for key, _ in SETTINGS_GROUPS}
+        unschemed = []
+        for key, entry in flat.items():
+            if key in HIDDEN_SETTINGS_KEYS:
+                continue
+            spec = SETTINGS_SCHEMA.get(key)
+            if spec is None:
+                unschemed.append(key)
+                continue
+            merged[spec.group][key] = {
+                **entry,
+                "tier": spec.tier,
+                "type": spec.type,
+                "options": spec.options,
+                "label": spec.label,
+                "render": spec.render,
+                "visible_when_discovery_mode": spec.visible_when_discovery_mode,
+            }
+
+        if unschemed:
+            LOG.warning(
+                "Settings UI: %d key(s) found in .env/.env.example with no "
+                "entry in settings_schema.SETTINGS_SCHEMA (hidden from UI "
+                "until added): %s",
+                len(unschemed),
+                sorted(unschemed),
+            )
 
         LOG.info(
             f"Loaded settings: {sum(len(v) for v in merged.values())} "
-            f"settings across {len(merged)} categories"
+            f"settings across {len(merged)} groups"
         )
         return merged
 
@@ -1192,6 +1186,7 @@ async def status() -> dict:
             "services": services,
             "heartbeat": heartbeat_data,
             "progress": progress_data,
+            "watchdog": get_watchdog_status(),
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:

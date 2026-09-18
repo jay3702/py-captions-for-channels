@@ -1093,238 +1093,211 @@ async function loadSettings() {
 function renderSettingsUI(settings, whitelist, dbOverrides = {}) {
   const container = document.getElementById('settings-container');
   if (!container) return;
-  
-  const categoryTitles = {
-    channels_dvr: 'Channels DVR Configuration',
-    channelwatch: 'ChannelWatch Configuration', 
-    event_source: 'Event Source Configuration',
-    polling: 'Polling Source Configuration',
-    webhook: 'Webhook Server Configuration',
-    pipeline: 'Caption Pipeline Configuration',
-    state_logging: 'State and Logging Configuration',
-    advanced: 'Advanced Configuration',
-    data_storage: 'Storage & Volume Mounts'
+
+  // Order + display title for each functional group. Must match the group
+  // keys produced by settings_schema.GROUPS on the backend.
+  const groupTitles = {
+    event_source: 'Event Source',
+    transcription: 'Transcription',
+    encoding: 'Caption Output & Encoding',
+    processing: 'Processing Rules',
+    watchdog: 'Reliability & Watchdog',
+    storage: 'Storage & Paths',
+    logging: 'Logging & Diagnostics',
   };
-  
-  const booleanFields = ['USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'TRANSCODE_FOR_FIRETV', 
-                         'KEEP_ORIGINAL', 'DRY_RUN'];
-  
-  // Fields to hide (replaced by other settings or not user-configurable)
-  // DVR_RECORDINGS_PATH mirrors DVR_MEDIA_MOUNT (auto-synced on save)
-  // Encoder quality keys are rendered separately in the Encoder Quality section below
-  const hiddenFields = [
-    'USE_MOCK', 'USE_POLLING', 'USE_WEBHOOK', 'CAPTION_COMMAND', 'LOCAL_PATH_PREFIX',
-    'DVR_RECORDINGS_PATH',
-    'NVENC_CQ', 'QSV_PRESET', 'QSV_GLOBAL_QUALITY',
-    'AMF_QUALITY', 'AMF_QP', 'VAAPI_QP', 'VAAPI_DEVICE', 'X264_CRF',
-  ];
-  
-  const dropdownFields = {
-    'DISCOVERY_MODE': ['polling', 'webhook', 'mock'],
-    'WHISPER_MODEL': ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en', 'medium', 'medium.en', 'large-v2', 'large-v3', 'large-v3-turbo', 'distil-large-v3', 'distil-large-v2'],
-    'OPTIMIZATION_MODE': ['standard', 'automatic'],
-    'WHISPER_DEVICE': ['auto', 'nvidia', 'amd', 'intel', 'none'],
-    'WHISPER_ENGINE': ['local', 'groq'],
-    'WHISPER_LOCAL_ENGINE': ['faster-whisper', 'parakeet'],
-    'GROQ_TIER': ['free', 'dev'],
-    'PARAKEET_DEVICE': ['cpu'],
-    'LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
-  };
-  
-  // Custom display names for settings (overrides environment variable name)
-  const displayNames = {
-    'WHISPER_DEVICE': 'GPU',
-    'WHISPER_ENGINE': 'Transcription Source (Local / Cloud)',
-    'WHISPER_LOCAL_ENGINE': 'Local Transcription Engine',
-    'DVR_PATH_PREFIX': 'DVR Media Folder Path',
-    'DVR_MEDIA_MOUNT': 'Container Mount Path',
-    'LIBRARY_HOST_PATH': 'Library Host Path (host machine)',
-    'LIBRARY_CONTAINER_PATH': 'Library Container Mount Path',
-  };
-  
+
   // Common IANA timezones grouped by region (also used by setup wizard)
   const timezones = WIZARD_TIMEZONES;
-  
-  // Get client's local timezone
   const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  
-  const numericFields = ['POLL_INTERVAL_SECONDS', 'POLL_LIMIT', 'WEBHOOK_PORT',
-                         'PIPELINE_TIMEOUT', 'STALE_EXECUTION_SECONDS', 'API_TIMEOUT', 'CAPTION_DELAY_MS',
-                         'GROQ_MAX_AUDIO_MINUTES', 'GROQ_MAX_OVERRUN_MINUTES'];
-  
-  // Get discovery mode to conditionally show/hide sections
+
   const discoveryMode = settings.event_source?.DISCOVERY_MODE?.value || 'webhook';
-  
-  let html = '';
-  
-  for (const [category, items] of Object.entries(settings)) {
-    if (!items || typeof items !== 'object' || Object.keys(items).length === 0) continue;
-    
-    // Hide channelwatch and webhook sections when using polling
-    if (discoveryMode === 'polling' && (category === 'channelwatch' || category === 'webhook')) {
-      continue;
+
+  // Renders one field's label + description + input control. Field type,
+  // options, and label overrides all come from the backend schema now
+  // (settings_schema.py) instead of hardcoded JS lookup tables.
+  function _renderField(key, config, group) {
+    const value = dbOverrides[key] !== undefined ? dbOverrides[key] : (config.value || '');
+    const desc = config.description || '';
+    const defaultVal = config.default || '';
+    const isOptional = config.optional || false;
+    const label = config.label || key;
+
+    let html = `<div class="settings-group" style="margin-bottom: 16px;">`;
+    html += `<label for="env-${key}" style="font-weight: 600; display: block; margin-bottom: 4px;">
+              ${label}${isOptional ? ' <span style="color: var(--muted); font-weight: normal;">(optional)</span>' : ''}
+             </label>`;
+    if (desc) {
+      html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 8px 0;">${desc}</p>`;
     }
-    
-    html += `<div class="settings-category" style="margin-bottom: 24px;">`;
-    html += `<h3 style="margin: 0 0 16px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">
-              ${categoryTitles[category] || category}
-             </h3>`;
-    
-    for (const [key, config] of Object.entries(items)) {
-      // Skip hidden fields (replaced by other settings)
-      if (hiddenFields.includes(key)) continue;
-      
-      const value = dbOverrides[key] !== undefined ? dbOverrides[key] : (config.value || '');
-      const desc = config.description || '';
-      const defaultVal = config.default || '';
-      const isOptional = config.optional || false;
-      
-      html += `<div class="settings-group" style="margin-bottom: 16px;">`;
-      html += `<label for="env-${key}" style="font-weight: 600; display: block; margin-bottom: 4px;">
-                ${displayNames[key] || key}${isOptional ? ' <span style="color: var(--muted); font-weight: normal;">(optional)</span>' : ''}
-               </label>`;
-      
-      if (desc) {
-        html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 8px 0;">${desc}</p>`;
+
+    if (config.type === 'select') {
+      const options = config.options || [];
+      const _onch = (key === 'GPU_ENCODER' || key === 'WHISPER_DEVICE') ? ' onchange="_applyEncoderVisibility()"' : '';
+      html += `<select id="env-${key}" name="${key}" data-category="${group}"${_onch} style="width:100%;">`;
+      for (const option of options) {
+        html += `<option value="${option}" ${value === option ? 'selected' : ''}>${option}</option>`;
       }
-      
-      // Dropdown fields
-      if (dropdownFields[key]) {
-        const _onch = (key === 'GPU_ENCODER' || key === 'WHISPER_DEVICE') ? ' onchange="_applyEncoderVisibility()"' : '';
-        html += `<select id="env-${key}" name="${key}" data-category="${category}"${_onch} style="width:100%;">`;
-        for (const option of dropdownFields[key]) {
-          const selected = value === option ? 'selected' : '';
-          html += `<option value="${option}" ${selected}>${option}</option>`;
+      html += `</select>`;
+    } else if (config.type === 'timezone') {
+      html += `<select id="env-${key}" name="${key}" data-category="${group}" style="width:100%;">`;
+      const effectiveValue = (value && value !== 'System timezone') ? value : clientTimezone;
+      for (const tz of timezones) {
+        if (tz.startsWith('---')) {
+          html += `<option disabled>────────────────</option>`;
+          continue;
         }
-        html += `</select>`;
-      }
-      // SERVER_TZ timezone dropdown with client timezone preselected
-      else if (key === 'SERVER_TZ') {
-        html += `<select id="env-${key}" name="${key}" data-category="${category}" style="width:100%;">`;
-        
-        // Determine which timezone should be selected
-        // If value is empty or default, use client timezone
-        const effectiveValue = (value && value !== 'System timezone') ? value : clientTimezone;
-        
-        for (const tz of timezones) {
-          // Skip section headers (start with ---)
-          if (tz.startsWith('---')) {
-            html += `<option disabled>────────────────</option>`;
-            continue;
-          }
-          
-          // System default option
-          if (tz === '(System Default)') {
-            const selected = (!value || value === 'System timezone') ? 'selected' : '';
-            html += `<option value="" ${selected}>${tz}</option>`;
-            continue;
-          }
-          
-          // Regular timezone
-          const selected = effectiveValue === tz ? 'selected' : '';
-          html += `<option value="${tz}" ${selected}>${tz}</option>`;
+        if (tz === '(System Default)') {
+          const selected = (!value || value === 'System timezone') ? 'selected' : '';
+          html += `<option value="" ${selected}>${tz}</option>`;
+          continue;
         }
-        
-        html += `</select>`;
-        html += `<p style="font-size: 11px; color: var(--muted); margin: 4px 0 0 0;">
-                  Your browser timezone: ${clientTimezone}
-                 </p>`;
+        html += `<option value="${tz}" ${effectiveValue === tz ? 'selected' : ''}>${tz}</option>`;
       }
-      // Boolean fields as checkbox
-      else if (booleanFields.includes(key)) {
-        const checked = value.toLowerCase() === 'true' ? 'checked' : '';
-        html += `<input type="checkbox" id="env-${key}" name="${key}" data-category="${category}" ${checked}>`;
-      }
-      // Numeric fields
-      else if (numericFields.includes(key)) {
-        html += `<input type="number" id="env-${key}" name="${key}" data-category="${category}" value="${value}" placeholder="${defaultVal}" style="width:100%;">`;
-      }
-      // Long text fields as textarea
-      else if (key.includes('COMMAND') || (key.includes('PATH') && value.length > 50)) {
-        html += `<textarea id="env-${key}" name="${key}" data-category="${category}" rows="2" style="width:100%; font-family: monospace; font-size: 12px;">${value}</textarea>`;
-      }
-      // Regular text input
-      else {
-        html += `<input type="text" id="env-${key}" name="${key}" data-category="${category}" value="${value}" placeholder="${defaultVal}" style="width:100%;">`;
-      }
-      
-      html += `</div>`;
+      html += `</select>`;
+      html += `<p style="font-size: 11px; color: var(--muted); margin: 4px 0 0 0;">Your browser timezone: ${clientTimezone}</p>`;
+    } else if (config.type === 'checkbox') {
+      const checked = String(value).toLowerCase() === 'true' ? 'checked' : '';
+      html += `<input type="checkbox" id="env-${key}" name="${key}" data-category="${group}" ${checked}>`;
+    } else if (config.type === 'number') {
+      html += `<input type="number" id="env-${key}" name="${key}" data-category="${group}" value="${value}" placeholder="${defaultVal}" style="width:100%;">`;
+    } else if (config.type === 'password') {
+      html += `<input type="password" id="env-${key}" name="${key}" data-category="${group}" value="${value}" placeholder="${defaultVal}" style="width:100%;" autocomplete="off">`;
+    } else if (key.includes('COMMAND') || (key.includes('PATH') && value.length > 50)) {
+      html += `<textarea id="env-${key}" name="${key}" data-category="${group}" rows="2" style="width:100%; font-family: monospace; font-size: 12px;">${value}</textarea>`;
+    } else {
+      html += `<input type="text" id="env-${key}" name="${key}" data-category="${group}" value="${value}" placeholder="${defaultVal}" style="width:100%;">`;
     }
-    
+
     html += `</div>`;
+    return html;
   }
-  
-  // Encoder Quality Tuning section — shows only the active encoder's settings
-  {
-    const _encGroups = [
+
+  // The per-vendor encoder quality knobs only show the section matching the
+  // active encoder. Rendered as one unit inside the Encoding group's
+  // advanced disclosure instead of the plain per-field loop.
+  function _renderEncoderQualitySection(items) {
+    const encGroups = [
       { id: 'nvenc', label: 'NVIDIA (NVENC)', keys: ['NVENC_CQ'] },
       { id: 'qsv',  label: 'Intel Quick Sync (QSV)', keys: ['QSV_PRESET', 'QSV_GLOBAL_QUALITY'] },
       { id: 'amf',  label: 'AMD (AMF)', keys: ['AMF_QUALITY', 'AMF_QP'] },
       { id: 'vaapi',label: 'VA-API (Intel/AMD Linux)', keys: ['VAAPI_QP', 'VAAPI_DEVICE'] },
       { id: 'cpu',  label: 'CPU / libx264 fallback', keys: ['X264_CRF'] },
     ];
-    const _gpuEnc = settings.pipeline?.GPU_ENCODER?.value || 'auto';
-    const _wDev   = settings.pipeline?.WHISPER_DEVICE?.value || 'auto';
-    const _initEnc = _gpuEnc !== 'auto' ? _gpuEnc
-      : _wDev === 'nvidia' ? 'nvenc'
-      : _wDev === 'intel'  ? 'qsv'
-      : _wDev === 'amd'    ? 'amf'
-      : _wDev === 'none'   ? 'cpu'
+    const gpuEnc = items.GPU_ENCODER?.value || 'auto';
+    const wDev   = settings.transcription?.WHISPER_DEVICE?.value || 'auto';
+    const initEnc = gpuEnc !== 'auto' ? gpuEnc
+      : wDev === 'nvidia' ? 'nvenc'
+      : wDev === 'intel'  ? 'qsv'
+      : wDev === 'amd'    ? 'amf'
+      : wDev === 'none'   ? 'cpu'
       : 'auto';
-    const _encLabels = {nvenc:'NVIDIA NVENC', qsv:'Intel QSV', amf:'AMD AMF', vaapi:'VA-API', cpu:'CPU / libx264'};
-    const _encTitle = _initEnc === 'auto' ? 'All Encoders' : (_encLabels[_initEnc] || _initEnc.toUpperCase());
-    html += `<div class="settings-category" style="margin-bottom: 24px;">`;
-    html += `<h3 id="encoder-quality-title" style="margin: 0 0 8px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">Encoder Quality Tuning &mdash; ${_encTitle}</h3>`;
-    html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 16px 0;">Only applies when EMBED_CAPTIONS=h264. Changing GPU or GPU_ENCODER above updates which section is shown.</p>`;
-    for (const grp of _encGroups) {
-      const _show = _initEnc === 'auto' || _initEnc === grp.id;
-      html += `<div id="encoder-section-${grp.id}" style="${_show ? '' : 'display:none;'}">`;
-      html += `<h4 style="margin: 0 0 10px 0; font-size: 13px; color: var(--muted);">${grp.label}</h4>`;
+    const encLabels = {nvenc:'NVIDIA NVENC', qsv:'Intel QSV', amf:'AMD AMF', vaapi:'VA-API', cpu:'CPU / libx264'};
+    const encTitle = initEnc === 'auto' ? 'All Encoders' : (encLabels[initEnc] || initEnc.toUpperCase());
+
+    let html = `<div style="margin-top:8px; padding-top:12px; border-top: 1px dashed var(--panel-border);">`;
+    html += `<h4 id="encoder-quality-title" style="margin: 0 0 8px 0; font-size: 13px; color: var(--text);">Encoder Quality Tuning &mdash; ${encTitle}</h4>`;
+    html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 16px 0;">Only applies when EMBED_CAPTIONS=h264. Changing GPU or GPU Encoder above updates which section is shown.</p>`;
+    for (const grp of encGroups) {
+      const show = initEnc === 'auto' || initEnc === grp.id;
+      html += `<div id="encoder-section-${grp.id}" style="${show ? '' : 'display:none;'}">`;
+      html += `<h5 style="margin: 0 0 10px 0; font-size: 12px; color: var(--muted);">${grp.label}</h5>`;
       for (const key of grp.keys) {
-        let config = null;
-        for (const cat of Object.values(settings)) {
-          if (cat && typeof cat === 'object' && cat[key]) { config = cat[key]; break; }
-        }
+        const config = items[key];
         if (!config) continue;
-        const eVal = dbOverrides[key] !== undefined ? dbOverrides[key] : (config.value || '');
-        const eDesc = config.description || '';
-        const eDef  = config.default || '';
-        html += `<div class="settings-group" style="margin-bottom: 16px;">`;
-        html += `<label for="env-${key}" style="font-weight: 600; display: block; margin-bottom: 4px;">${key}</label>`;
-        if (eDesc) html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 8px 0;">${eDesc}</p>`;
-        if (numericFields.includes(key)) {
-          html += `<input type="number" id="env-${key}" name="${key}" data-category="pipeline" value="${eVal}" placeholder="${eDef}" style="width:100%;">`;
-        } else {
-          html += `<input type="text" id="env-${key}" name="${key}" data-category="pipeline" value="${eVal}" placeholder="${eDef}" style="width:100%;">`;
-        }
-        html += `</div>`;
+        html += _renderField(key, config, 'encoding');
       }
       html += `</div>`;
     }
     html += `</div>`;
+    return html;
   }
 
-  // Add whitelist editor section after all env categories
-  html += `<div class="settings-category" style="margin-bottom: 24px;">`;
-  html += `<h3 style="margin: 0 0 16px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">
-            Recording Whitelist
-           </h3>`;
-  html += `<div class="settings-group" style="margin-bottom: 16px;">`;
-  html += `<label for="whitelist-editor" style="font-weight: 600; display: block; margin-bottom: 4px;">Whitelist Rules</label>`;
-  html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 8px 0;">One rule per line. Supports wildcards (* and ?) and regex patterns. Empty = process all recordings.</p>`;
-  html += `<textarea id="whitelist-editor" rows="10" style="width:100%; font-family: monospace; font-size: 12px;">${whitelist || ''}</textarea>`;
-  html += `</div>`;
-  html += `</div>`;
+  let groupIndex = 0;
+  let html = '';
+
+  for (const [group, groupTitle] of Object.entries(groupTitles)) {
+    const items = settings[group];
+    if (!items || typeof items !== 'object' || Object.keys(items).length === 0) continue;
+
+    const basicFields = [];
+    const advancedFields = [];
+    const encoderQualityItems = {};
+
+    for (const [key, config] of Object.entries(items)) {
+      if (config.render === 'encoder_quality') {
+        encoderQualityItems[key] = config;
+        continue;
+      }
+      if (config.visible_when_discovery_mode && config.visible_when_discovery_mode !== discoveryMode) {
+        continue;
+      }
+      (config.tier === 'advanced' ? advancedFields : basicFields).push([key, config]);
+    }
+
+    if (basicFields.length === 0 && advancedFields.length === 0 && Object.keys(encoderQualityItems).length === 0) {
+      continue;
+    }
+
+    groupIndex += 1;
+    const advId = `settings-advanced-${group}`;
+    const hasAdvanced = advancedFields.length > 0 || Object.keys(encoderQualityItems).length > 0;
+
+    html += `<div class="settings-category" style="margin-bottom: 28px;">`;
+    html += `<h3 style="margin: 0 0 16px 0; font-size: 16px; color: var(--text); border-bottom: 2px solid var(--panel-border); padding-bottom: 8px;">${groupTitle}</h3>`;
+
+    for (const [key, config] of basicFields) {
+      html += _renderField(key, config, group);
+    }
+
+    // Processing Rules' whitelist editor is a primary, frequently-used
+    // control -- keep it in the basic tier rather than a separate section.
+    if (group === 'processing') {
+      html += `<div class="settings-group" style="margin-bottom: 16px;">`;
+      html += `<label for="whitelist-editor" style="font-weight: 600; display: block; margin-bottom: 4px;">Recording Whitelist</label>`;
+      html += `<p style="font-size: 12px; color: var(--muted); margin: 0 0 8px 0;">One rule per line. Supports wildcards (* and ?) and regex patterns. Empty = process all recordings.</p>`;
+      html += `<textarea id="whitelist-editor" rows="8" style="width:100%; font-family: monospace; font-size: 12px;">${whitelist || ''}</textarea>`;
+      html += `</div>`;
+    }
+
+    if (hasAdvanced) {
+      const count = advancedFields.length + (Object.keys(encoderQualityItems).length > 0 ? 1 : 0);
+      html += `<button type="button" class="btn-small btn-secondary" onclick="_toggleAdvancedSettings('${advId}')" style="margin: 4px 0 12px 0;">
+                 <span id="${advId}-label">Show advanced settings (${count})</span>
+               </button>`;
+      html += `<div id="${advId}" hidden>`;
+      for (const [key, config] of advancedFields) {
+        html += _renderField(key, config, group);
+      }
+      if (Object.keys(encoderQualityItems).length > 0) {
+        html += _renderEncoderQualitySection(encoderQualityItems);
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  }
 
   // Store original whitelist value for change detection
   window._originalWhitelist = whitelist || '';
-  
+
   if (html.length === 0) {
     container.innerHTML = '<p style="color: orange;">No settings found in response.</p>';
   } else {
     container.innerHTML = html;
     _applyEncoderVisibility();
   }
+}
+
+function _toggleAdvancedSettings(id) {
+  const el = document.getElementById(id);
+  const label = document.getElementById(`${id}-label`);
+  if (!el || !label) return;
+  const showing = el.hidden;
+  el.hidden = !showing;
+  label.textContent = label.textContent.replace(
+    showing ? 'Show' : 'Hide',
+    showing ? 'Hide' : 'Show'
+  );
 }
 
 function _applyEncoderVisibility() {

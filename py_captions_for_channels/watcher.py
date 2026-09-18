@@ -738,6 +738,12 @@ async def main():
     LOG.info("=" * 80)
     LOG.info("All health checks passed! Starting event loop...")
 
+    # Start the watchdog: alerts and (optionally) self-restarts if the
+    # polling/manual loops wedge (e.g. a subprocess stuck on a hung mount).
+    from .watchdog import start_watchdog
+
+    start_watchdog(asyncio.get_running_loop())
+
     # Check for interrupted executions from previous run
     tracker = get_tracker()
 
