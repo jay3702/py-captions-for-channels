@@ -89,12 +89,21 @@ services:
       - ${LIBRARY_HOST_PATH_3:-library_slot_3}:${LIBRARY_CONTAINER_PATH_3:-/mnt/library3}
     devices:
       # Intel/AMD GPU passthrough for FFmpeg hardware encode/decode (QSV/VAAPI).
-      # Defaults to /dev/null — a harmless no-op device that exists on every
-      # Linux host — so hosts without a real /dev/dri (headless, NVIDIA-only,
-      # most VMs) aren't broken by this mapping. .env.example.intel sets
-      # DRI_DEVICE=/dev/dri to turn it on; GPU_ENCODER=auto then picks up QSV
-      # automatically once the device is actually reachable.
-      - ${DRI_DEVICE:-/dev/null}:/dev/dri
+      # Defaults to /dev/null:/dev/null — a harmless no-op that never touches
+      # the /dev/dri path at all. .env.example.intel sets DRI_DEVICE=/dev/dri
+      # to turn this on (mapping the host's /dev/dri to the same path in the
+      # container); GPU_ENCODER=auto then picks up QSV automatically once the
+      # device is actually reachable.
+      #
+      # IMPORTANT: the container-side target must stay tied to DRI_DEVICE too
+      # (not hardcoded to /dev/dri) — on an NVIDIA host (DOCKER_RUNTIME=nvidia)
+      # the nvidia-container-runtime injects its own /dev/dri/card*/renderD*
+      # nodes, and if Docker has already claimed /dev/dri as a device file via
+      # this mapping, that injection fails outright at container start
+      # ("mkdir parent of device inode ... not a directory"). Mapping to
+      # /dev/null:/dev/null when DRI_DEVICE is unset avoids the collision
+      # entirely, on every runtime.
+      - ${DRI_DEVICE:-/dev/null}:${DRI_DEVICE:-/dev/null}
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
