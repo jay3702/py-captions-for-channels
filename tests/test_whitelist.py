@@ -4,7 +4,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from py_captions_for_channels.whitelist import Whitelist, WhitelistRule
+from py_captions_for_channels.whitelist import Whitelist, WhitelistRule, literal_rule
 
 
 def test_simple_substring_match():
@@ -199,3 +199,17 @@ def test_whitelist_required_false_is_default():
     """required defaults to False — existing empty-whitelist behaviour unchanged."""
     whitelist = Whitelist()
     assert whitelist.is_allowed("Any Show")
+
+
+def test_literal_rule_matches_title_with_special_characters():
+    """Titles added via the Recordings checkbox must match themselves literally."""
+    for title in [
+        "Guy's Grocery Games",
+        "Mr. Robot",
+        "Law & Order: SVU (2020)",
+        "Who Wants to Be a Millionaire?",
+        "Title; With Semicolon",
+    ]:
+        rule = WhitelistRule(literal_rule(title))
+        assert rule.matches(title), title
+    assert not WhitelistRule(literal_rule("Mr. Robot")).matches("Mrs Robot")

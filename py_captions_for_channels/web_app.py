@@ -51,7 +51,7 @@ from .execution_tracker import build_manual_process_job_id, get_tracker
 from .logging_config import get_verbosity, set_verbosity
 from .version import VERSION, BUILD_NUMBER
 from .progress_tracker import get_progress_tracker
-from .whitelist import Whitelist
+from .whitelist import Whitelist, literal_rule
 from .database import get_db, init_db
 from .services.settings_service import SettingsService
 from .services.heartbeat_service import HeartbeatService
@@ -2814,22 +2814,25 @@ async def toggle_whitelist(request: Request) -> dict:
 
             # Parse existing lines (preserve comments and blanks)
             lines = whitelist_content.split("\n") if whitelist_content else []
+            rule = literal_rule(title)
+            # Older versions stored the raw title; treat both forms as this title
+            forms = {title, rule}
 
             if add:
                 # Check if already present (exact match on non-comment lines)
-                existing = [
+                existing = {
                     ln.strip()
                     for ln in lines
                     if ln.strip() and not ln.strip().startswith("#")
-                ]
-                if title not in existing:
-                    lines.append(title)
-                    LOG.info("Added '%s' to whitelist", title)
+                }
+                if not forms & existing:
+                    lines.append(rule)
+                    LOG.info("Added '%s' to whitelist", rule)
                 else:
                     LOG.info("'%s' already in whitelist", title)
             else:
                 # Remove all exact matches (preserve comments/blanks)
-                new_lines = [ln for ln in lines if ln.strip() != title]
+                new_lines = [ln for ln in lines if ln.strip() not in forms]
                 removed = len(lines) - len(new_lines)
                 lines = new_lines
                 LOG.info(

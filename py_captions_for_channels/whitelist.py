@@ -37,6 +37,17 @@ def _whitelist_tz():
     return None
 
 
+def literal_rule(title: str) -> str:
+    """Return a whitelist line that matches ``title`` literally.
+
+    Titles containing regex operators (e.g. "Mr. Robot", "Show (2020)") would
+    otherwise be interpreted as patterns, and ";" would split the rule into
+    day/channel/time fields.
+    """
+    escaped = re.sub(WhitelistRule.REGEX_OPERATORS, lambda m: "\\" + m.group(0), title)
+    return escaped.replace(";", ".")
+
+
 class WhitelistRule:
     """A single whitelist rule."""
 

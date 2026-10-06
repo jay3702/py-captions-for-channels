@@ -13,6 +13,71 @@ import subprocess
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
+# ISO 639-2 (bibliographic and terminology forms) -> the codes Whisper accepts.
+# Placeholder tags such as "und", "mul", "zxx" and "mis" are deliberately absent
+# so they fall through to the configured AUDIO_LANGUAGE.
+_ISO639_2_TO_WHISPER = {
+    "afr": "af", "amh": "am", "ara": "ar", "asm": "as", "aze": "az",
+    "bak": "ba", "bel": "be", "bul": "bg", "ben": "bn", "bod": "bo",
+    "tib": "bo", "bre": "br", "bos": "bs", "cat": "ca", "ces": "cs",
+    "cze": "cs", "cym": "cy", "wel": "cy", "dan": "da", "deu": "de",
+    "ger": "de", "ell": "el", "gre": "el", "eng": "en", "spa": "es",
+    "est": "et", "eus": "eu", "baq": "eu", "fas": "fa", "per": "fa",
+    "fin": "fi", "fao": "fo", "fra": "fr", "fre": "fr", "glg": "gl",
+    "guj": "gu", "hau": "ha", "haw": "haw", "heb": "he", "hin": "hi",
+    "hrv": "hr", "hat": "ht", "hun": "hu", "hye": "hy", "arm": "hy",
+    "ind": "id", "isl": "is", "ice": "is", "ita": "it", "jpn": "ja",
+    "jav": "jw", "kat": "ka", "geo": "ka", "kaz": "kk", "khm": "km",
+    "kan": "kn", "kor": "ko", "lat": "la", "ltz": "lb", "lin": "ln",
+    "lao": "lo", "lit": "lt", "lav": "lv", "mlg": "mg", "mri": "mi",
+    "mao": "mi", "mkd": "mk", "mac": "mk", "mal": "ml", "mon": "mn",
+    "mar": "mr", "msa": "ms", "may": "ms", "mlt": "mt", "mya": "my",
+    "bur": "my", "nep": "ne", "nld": "nl", "dut": "nl", "nno": "nn",
+    "nor": "no", "nob": "no", "oci": "oc", "pan": "pa", "pol": "pl",
+    "pus": "ps", "por": "pt", "ron": "ro", "rum": "ro", "rus": "ru",
+    "san": "sa", "snd": "sd", "sin": "si", "slk": "sk", "slo": "sk",
+    "slv": "sl", "sna": "sn", "som": "so", "sqi": "sq", "alb": "sq",
+    "srp": "sr", "sun": "su", "swe": "sv", "swa": "sw", "tam": "ta",
+    "tel": "te", "tgk": "tg", "tha": "th", "tuk": "tk", "tgl": "tl",
+    "tur": "tr", "tat": "tt", "ukr": "uk", "urd": "ur", "uzb": "uz",
+    "vie": "vi", "yid": "yi", "yor": "yo", "zho": "zh", "chi": "zh",
+    "cmn": "zh", "yue": "yue",
+}  # fmt: skip
+_WHISPER_LANGUAGES = frozenset(_ISO639_2_TO_WHISPER.values())
+
+
+def _to_whisper_code(code: Optional[str]) -> Optional[str]:
+    """Map a stream/config language tag to a Whisper code, or None if unusable."""
+    if not code:
+        return None
+    norm = code.strip().lower()
+    if norm in _WHISPER_LANGUAGES:
+        return norm
+    return _ISO639_2_TO_WHISPER.get(norm)
+
+
+def whisper_language(
+    stream_language: Optional[str], configured_language: Optional[str]
+) -> Tuple[str, Optional[str]]:
+    """Resolve the language code to pass to Whisper.
+
+    Prefers the selected stream's tag; when that is missing or a placeholder
+    like "und" (common with ah4c and some OTA recordings), falls back to the
+    configured AUDIO_LANGUAGE, then to English.
+
+    Returns:
+        Tuple of (whisper_code, fallback_reason). fallback_reason is None when
+        the stream's own tag was used.
+    """
+    code = _to_whisper_code(stream_language)
+    if code:
+        return code, None
+    reason = f"stream language '{stream_language or 'none'}' is not usable"
+    code = _to_whisper_code(configured_language)
+    if code:
+        return code, f"{reason}; using AUDIO_LANGUAGE '{configured_language}'"
+    return "en", f"{reason} and AUDIO_LANGUAGE '{configured_language}' is unknown"
+
 
 @dataclass
 class AudioStream:

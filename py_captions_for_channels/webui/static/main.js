@@ -777,7 +777,7 @@ async function showManualProcessModal() {
         // When whitelist is disabled, is_allowed() returns true for everything, which would
         // incorrectly make every checkbox appear checked.
         const whitelistChecked = (data.whitelist_enabled && recording.passes_whitelist) ? 'checked' : '';
-        const whitelistCheckbox = `<input type="checkbox" ${whitelistChecked} onchange="toggleWhitelist(this, '${escapeAttr(recording.title)}')" title="Toggle whitelist for ${escapeAttr(recording.title)}">`;
+        const whitelistCheckbox = `<input type="checkbox" ${whitelistChecked} data-title="${escapeAttr(recording.title)}" onchange="toggleWhitelist(this, this.dataset.title)" title="Toggle whitelist for ${escapeAttr(recording.title)}">`;
         
         // Disable checkbox if recording is not yet completed
         const checkboxDisabled = !recording.completed ? 'disabled title="Recording in progress"' : '';

@@ -8,6 +8,7 @@ from py_captions_for_channels.stream_detector import (
     StreamSelection,
     select_audio_stream,
     select_subtitle_stream,
+    whisper_language,
 )
 
 # ---------------------------------------------------------------------------
@@ -188,3 +189,29 @@ class TestStreamSelectionRepr:
         )
         r = repr(sel)
         assert "no subtitles" in r
+
+
+# ---------------------------------------------------------------------------
+# whisper_language
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tag,expected",
+    [("eng", "en"), ("ger", "de"), ("deu", "de"), ("jpn", "ja"), ("es", "es")],
+)
+def test_whisper_language_maps_stream_tag(tag, expected):
+    assert whisper_language(tag, "eng") == (expected, None)
+
+
+@pytest.mark.parametrize("tag", ["und", "UND", "mul", "zxx", "", None, "xyz"])
+def test_whisper_language_falls_back_to_audio_language(tag):
+    code, reason = whisper_language(tag, "spa")
+    assert code == "es"
+    assert "AUDIO_LANGUAGE" in reason
+
+
+def test_whisper_language_defaults_to_english():
+    code, reason = whisper_language("und", "und")
+    assert code == "en"
+    assert reason

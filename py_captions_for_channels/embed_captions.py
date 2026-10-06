@@ -28,6 +28,7 @@ from py_captions_for_channels.config import (
     SUBTITLE_LANGUAGE,
     LANGUAGE_FALLBACK,
     PRESERVE_ALL_AUDIO_TRACKS,
+    KEEP_ORIGINAL,
     NVENC_CQ,
     X264_CRF,
     HWACCEL_DECODE,
@@ -44,7 +45,7 @@ from py_captions_for_channels.encoding_profiles import (
     get_ffmpeg_parameters,
 )
 from py_captions_for_channels.system_monitor import get_pipeline_timeline
-from py_captions_for_channels.stream_detector import select_streams
+from py_captions_for_channels.stream_detector import select_streams, whisper_language
 
 # Unique identifier for our subtitle tracks
 SUBTITLE_TRACK_NAME = "py-captions-for-channels"
@@ -1121,6 +1122,19 @@ def preserve_original(mpg_path, log):
         os.replace(tmp_path, orig_path)
     else:
         log.info(f".cc4chan.orig already exists and will not be modified: {orig_path}")
+
+
+def discard_original(mpg_path, log):
+    """Delete the preserved original after a successful embed (KEEP_ORIGINAL=false).
+
+    Only called once the captioned file has atomically replaced mpg_path, so
+    the recording itself is never at risk.  Reprocessing afterwards reads the
+    captioned file instead of a pristine copy.
+    """
+    for path in (mpg_path + ".cc4chan.orig", mpg_path + ".orig"):
+        if os.path.exists(path):
+            os.remove(path)
+            log.info(f"KEEP_ORIGINAL=false: removed preserved original {path}")
 
 
 def srt_exists_and_valid(srt_path):
@@ -2287,12 +2301,13 @@ def main():
         else:
             log.debug("  No subtitle stream selected")
 
-        # Extract language code for Whisper (convert ISO 639-2/3 to 2-letter code)
-        audio_lang_code = stream_selection.audio_stream.language or "en"
-        # Whisper prefers 2-letter codes (en, es, fr, etc.)
-        selected_language = (
-            audio_lang_code[:2] if len(audio_lang_code) > 2 else audio_lang_code
+        # Map the stream's ISO 639-2 tag to a Whisper code; "und"/missing tags
+        # fall back to AUDIO_LANGUAGE.
+        selected_language, lang_fallback = whisper_language(
+            stream_selection.audio_stream.language, AUDIO_LANGUAGE
         )
+        if lang_fallback:
+            log.info(f"Whisper language: {lang_fallback} -> {selected_language}")
 
         # Store stream index for later use in encoding
         selected_audio_index = stream_selection.audio_index
@@ -2309,7 +2324,7 @@ def main():
             sys.exit(1)
         else:
             log.warning("Falling back to processing all streams (legacy behavior)")
-            selected_language = "en"  # Default to English
+            selected_language, _ = whisper_language(None, AUDIO_LANGUAGE)
             selected_audio_index = None  # Process all audio streams
 
     # Check if source file already has our subtitle track
@@ -2979,6 +2994,8 @@ def main():
                 output_path=mpg_path,
                 misc_label="Replacing output",
             )
+            if not KEEP_ORIGINAL:
+                discard_original(mpg_path, log)
             pipeline.job_complete(job_id)
             log.info("Caption embedding complete (remux).")
         else:
@@ -3061,6 +3078,8 @@ def main():
             lambda: [os.remove(f) for f in [temp_av] if os.path.exists(f)],
             misc_label="Cleaning up",
         )
+        if not KEEP_ORIGINAL:
+            discard_original(mpg_path, log)
         pipeline.job_complete(job_id)
         log.info("Caption embedding complete (h264).")
     else:

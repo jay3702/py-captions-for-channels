@@ -518,6 +518,10 @@ POLL_MAX_QUEUE_SIZE = get_env_int(
 # Pipeline configuration
 DRY_RUN = get_env_bool("DRY_RUN", False)
 
+# Keep the pre-caption recording as <file>.cc4chan.orig after embedding.
+# false deletes it once the captioned file has replaced the original.
+KEEP_ORIGINAL = get_env_bool("KEEP_ORIGINAL", True)
+
 # Processing gate — set to false to run in monitoring-only mode.
 # The watcher and web UI remain fully functional (recordings are visible,
 # queue and history are tracked) but no caption jobs are ever started,
