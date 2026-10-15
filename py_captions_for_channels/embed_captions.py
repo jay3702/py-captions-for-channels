@@ -12,6 +12,7 @@ import sys
 import time
 import shutil
 import subprocess
+import textwrap
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -1141,22 +1142,62 @@ def srt_exists_and_valid(srt_path):
     return os.path.exists(srt_path) and os.path.getsize(srt_path) > 0
 
 
-def wrap_caption_text(text: str, max_chars: int) -> str:
-    """Wrap caption text to at most two lines of max_chars characters each.
+def split_caption_segment(
+    start: float, end: float, text: str, max_chars: int, max_lines: int = 2
+):
+    """Split one transcription segment into cues of at most max_lines lines.
 
-    Splits on word boundaries.  If max_chars is 0 (or negative) wrapping is
-    disabled and the original text is returned unchanged.
+    Engines (Whisper especially) can emit segments of 30s / 250+ characters;
+    wrapping those into two lines just leaves a very long second line that the
+    player re-wraps into 5-6 lines covering half the screen. Instead, divide
+    the words into as many cues as needed, balanced by length, and share the
+    segment's time span across them in proportion to their character count.
+
+    Returns a list of (start, end, text) with text already line-wrapped.
+    If max_chars is 0 (or negative) the segment is returned unchanged.
     """
-    if max_chars <= 0 or len(text) <= max_chars:
-        return text
-    # Find the best split point at or before max_chars
-    split_at = text.rfind(" ", 0, max_chars + 1)
-    if split_at <= 0:
-        # No space found — hard-break at max_chars
-        split_at = max_chars
-    line1 = text[:split_at].strip()
-    line2 = text[split_at:].strip()
-    return f"{line1}\n{line2}"
+    text = " ".join(text.split())
+    if max_chars <= 0 or not text:
+        return [(start, end, text)]
+
+    def wrap(chunk):
+        return textwrap.wrap(chunk, max_chars, break_on_hyphens=False)
+
+    lines = wrap(text)
+    if len(lines) <= max_lines:
+        return [(start, end, "\n".join(lines))]
+
+    words = text.split(" ")
+    n_cues = -(-len(lines) // max_lines)  # ceil
+    while True:
+        # Greedily fill each cue up to an even share of the total length,
+        # so cues come out similar in size instead of a tiny trailing one.
+        target = len(text) / n_cues
+        chunks, cur = [], []
+        for word in words:
+            if cur and len(chunks) < n_cues - 1:
+                cur_len = len(" ".join(cur))
+                if cur_len + 1 + len(word) / 2 > target:
+                    chunks.append(" ".join(cur))
+                    cur = []
+            cur.append(word)
+        chunks.append(" ".join(cur))
+        if all(len(wrap(c)) <= max_lines for c in chunks) or n_cues >= len(words):
+            break
+        n_cues += 1
+
+    total_chars = sum(len(c) for c in chunks)
+    duration = max(0.0, end - start)
+    cues = []
+    t = start
+    for idx, chunk in enumerate(chunks):
+        if idx == len(chunks) - 1:
+            t_end = end
+        else:
+            t_end = t + duration * len(chunk) / total_chars
+        cues.append((t, t_end, "\n".join(wrap(chunk))))
+        t = t_end
+    return cues
 
 
 def probe_media_end_time(mpg_path, log):
@@ -2796,20 +2837,24 @@ def main():
                 last_progress_report = 0
                 segment_count = 0
 
+                cue_index = 0
                 for i, segment in enumerate(segments_generator, start=1):
                     segment_count = i
-                    # Format timestamps for SRT
-                    start_time = format_srt_timestamp(segment.start)
-                    end_time = format_srt_timestamp(segment.end)
-
-                    # Add segment to SRT (wrap long lines for readability)
-                    caption_text = wrap_caption_text(
-                        segment.text.strip(), SRT_MAX_LINE_LENGTH
-                    )
-                    srt_lines.append(f"{i}\n")
-                    srt_lines.append(f"{start_time} --> {end_time}\n")
-                    srt_lines.append(f"{caption_text}\n")
-                    srt_lines.append("\n")
+                    # Split long segments into cues of at most two lines each
+                    # so the player never stacks 5-6 lines on screen.
+                    for cue_start, cue_end, caption_text in split_caption_segment(
+                        segment.start,
+                        segment.end,
+                        segment.text.strip(),
+                        SRT_MAX_LINE_LENGTH,
+                    ):
+                        cue_index += 1
+                        start_time = format_srt_timestamp(cue_start)
+                        end_time = format_srt_timestamp(cue_end)
+                        srt_lines.append(f"{cue_index}\n")
+                        srt_lines.append(f"{start_time} --> {end_time}\n")
+                        srt_lines.append(f"{caption_text}\n")
+                        srt_lines.append("\n")
 
                     # Update progress based on segment end time
                     if video_duration > 0:

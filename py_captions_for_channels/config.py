@@ -246,7 +246,8 @@ CAPTION_DELAY_MS = int(os.getenv("CAPTION_DELAY_MS", "0"))
 
 # Maximum characters per caption line before wrapping to a second line.
 # Broadcast standard is 32; a slightly longer value (42) reads more naturally
-# on widescreen displays. Set to 0 to disable wrapping.
+# on widescreen displays. Captions are capped at two lines; longer segments
+# are split into consecutive timed cues. Set to 0 to disable wrapping.
 SRT_MAX_LINE_LENGTH = int(os.getenv("SRT_MAX_LINE_LENGTH", "42"))
 
 # Pipeline optimization mode (Whisper + ffmpeg)
