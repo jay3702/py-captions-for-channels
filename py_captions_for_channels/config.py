@@ -244,11 +244,14 @@ CAPTION_COMMAND = os.getenv("CAPTION_COMMAND", 'echo "Would process: {path}"')
 # Shifts all caption timestamps forward to create delay between audio and captions
 CAPTION_DELAY_MS = int(os.getenv("CAPTION_DELAY_MS", "0"))
 
-# Maximum characters per caption line before wrapping to a second line.
-# Broadcast standard is 32; a slightly longer value (42) reads more naturally
-# on widescreen displays. Captions are capped at two lines; longer segments
-# are split into consecutive timed cues. Set to 0 to disable wrapping.
+# Caption sizing: each caption holds at most SRT_MAX_LINE_LENGTH *
+# SRT_MAX_LINES characters; longer segments are split into consecutive timed
+# cues. No hard line breaks are inserted — the player wraps each caption to
+# its own screen width, so it uses the fewest lines that display allows.
+# Broadcast standard is 32 chars/line; 42 reads more naturally on widescreen.
+# Set SRT_MAX_LINE_LENGTH to 0 to disable splitting.
 SRT_MAX_LINE_LENGTH = int(os.getenv("SRT_MAX_LINE_LENGTH", "42"))
+SRT_MAX_LINES = max(1, int(os.getenv("SRT_MAX_LINES", "2")))
 
 # Pipeline optimization mode (Whisper + ffmpeg)
 # "standard"  - Use hardcoded parameters (proven conservative baseline)
@@ -283,6 +286,14 @@ WHISPER_ENGINE = os.getenv("WHISPER_ENGINE", "local").lower()
 #                    CPU-only for now (see PARAKEET_DEVICE below); falls back
 #                    to faster-whisper on any failure.
 WHISPER_LOCAL_ENGINE = os.getenv("WHISPER_LOCAL_ENGINE", "faster-whisper").lower()
+
+# Per-word timestamps from Faster-Whisper. Its VAD filter stitches speech
+# together around silences, so a segment that follows a pause (a commercial
+# break, a scene change) gets its start time pulled back to the end of the
+# previous speech, and its caption appears 10-20s early. Word timings place
+# each caption when its first word is actually spoken. Costs a little extra
+# transcription time; disable only if that matters more than sync.
+WHISPER_WORD_TIMESTAMPS = get_env_bool("WHISPER_WORD_TIMESTAMPS", True)
 
 # ── Parakeet local transcription (used when WHISPER_LOCAL_ENGINE=parakeet) ──
 # Which device runs Parakeet. Only "cpu" is implemented right now — GPU

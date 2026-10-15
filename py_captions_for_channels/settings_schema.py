@@ -116,6 +116,9 @@ SETTINGS_SCHEMA: Dict[str, SettingSpec] = {
         options=["faster-whisper", "parakeet"],
         label="Local Transcription Engine",
     ),
+    "WHISPER_WORD_TIMESTAMPS": SettingSpec(
+        "transcription", ADVANCED, "checkbox", label="Word-Level Caption Timing"
+    ),
     "PARAKEET_DEVICE": SettingSpec(
         "transcription", ADVANCED, "select", options=["cpu"]
     ),
@@ -144,6 +147,12 @@ SETTINGS_SCHEMA: Dict[str, SettingSpec] = {
     ),
     "KEEP_ORIGINAL": SettingSpec("encoding", BASIC, "checkbox"),
     "CAPTION_DELAY_MS": SettingSpec("encoding", ADVANCED, "number"),
+    "SRT_MAX_LINES": SettingSpec(
+        "encoding", BASIC, "number", label="Caption Lines (per caption)"
+    ),
+    "SRT_MAX_LINE_LENGTH": SettingSpec(
+        "encoding", ADVANCED, "number", label="Caption Line Length (characters)"
+    ),
     "PRESERVE_ALL_AUDIO_TRACKS": SettingSpec("encoding", ADVANCED, "checkbox"),
     "AUDIO_CODEC": SettingSpec(
         "encoding", ADVANCED, "select", options=["auto", "copy", "aac"]

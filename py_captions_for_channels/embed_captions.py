@@ -12,7 +12,6 @@ import sys
 import time
 import shutil
 import subprocess
-import textwrap
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -1142,50 +1141,87 @@ def srt_exists_and_valid(srt_path):
     return os.path.exists(srt_path) and os.path.getsize(srt_path) > 0
 
 
+# How long a caption stays up after its last word is spoken, when per-word
+# timings are available. Never extends past the engine's own segment end.
+CAPTION_HOLD_SECONDS = 1.0
+
+
 def split_caption_segment(
-    start: float, end: float, text: str, max_chars: int, max_lines: int = 2
+    start: float,
+    end: float,
+    text: str,
+    max_chars: int,
+    max_lines: int = 2,
+    words=None,
 ):
-    """Split one transcription segment into cues of at most max_lines lines.
+    """Split one transcription segment into cues of about max_lines lines.
 
-    Engines (Whisper especially) can emit segments of 30s / 250+ characters;
-    wrapping those into two lines just leaves a very long second line that the
-    player re-wraps into 5-6 lines covering half the screen. Instead, divide
-    the words into as many cues as needed, balanced by length, and share the
-    segment's time span across them in proportion to their character count.
+    Engines (Whisper especially) can emit segments of 30s / 250+ characters,
+    which the player wraps into 5-6 lines covering half the screen. Instead,
+    divide the words into as many cues as needed so each holds at most
+    max_chars * max_lines characters, balanced by length.
 
-    Returns a list of (start, end, text) with text already line-wrapped.
-    If max_chars is 0 (or negative) the segment is returned unchanged.
+    No hard line breaks are inserted: the player wraps each cue to its own
+    screen width, so captions use the fewest lines that display allows
+    (a forced break at max_chars produced e.g. five words on one line and a
+    single word on the next, even where everything fit on one line).
+
+    words: optional per-word timings (objects with .word/.start/.end, as
+    faster-whisper's word_timestamps produce). When given, each cue starts
+    when its first word is spoken and ends CAPTION_HOLD_SECONDS after its
+    last — segment start times alone can sit 10-20s before the speech after
+    a silence. Without them the segment's time span is shared across cues
+    in proportion to their character count.
+
+    Returns a list of (start, end, text), text on a single line.
+    If max_chars is 0 (or negative) the segment is not split.
     """
-    text = " ".join(text.split())
-    if max_chars <= 0 or not text:
-        return [(start, end, text)]
+    words = [w for w in (words or []) if w.word.strip()]
+    # Each piece carries its own leading space (as Whisper words do), so
+    # joining them keeps the engine's spacing for languages without spaces.
+    pieces = [w.word for w in words] if words else [" " + p for p in text.split()]
 
-    def wrap(chunk):
-        return textwrap.wrap(chunk, max_chars, break_on_hyphens=False)
+    def join(a, b):
+        return " ".join("".join(pieces[a:b]).split())
 
-    lines = wrap(text)
-    if len(lines) <= max_lines:
-        return [(start, end, "\n".join(lines))]
+    full = join(0, len(pieces))
+    budget = max_chars * max(1, max_lines)
+    bounds = [(0, len(pieces))]
+    if max_chars > 0 and len(full) > budget:
+        n_cues = -(-len(full) // budget)  # ceil
+        while True:
+            # Greedily fill each cue up to an even share of the total length,
+            # so cues come out similar in size instead of a tiny trailing one.
+            target = len(full) / n_cues
+            bounds, a = [], 0
+            for i in range(1, len(pieces)):
+                if len(bounds) < n_cues - 1:
+                    if len(join(a, i)) + 1 + len(pieces[i].strip()) / 2 > target:
+                        bounds.append((a, i))
+                        a = i
+            bounds.append((a, len(pieces)))
+            if all(len(join(a, b)) <= budget for a, b in bounds) or n_cues >= len(
+                pieces
+            ):
+                break
+            n_cues += 1
 
-    words = text.split(" ")
-    n_cues = -(-len(lines) // max_lines)  # ceil
-    while True:
-        # Greedily fill each cue up to an even share of the total length,
-        # so cues come out similar in size instead of a tiny trailing one.
-        target = len(text) / n_cues
-        chunks, cur = [], []
-        for word in words:
-            if cur and len(chunks) < n_cues - 1:
-                cur_len = len(" ".join(cur))
-                if cur_len + 1 + len(word) / 2 > target:
-                    chunks.append(" ".join(cur))
-                    cur = []
-            cur.append(word)
-        chunks.append(" ".join(cur))
-        if all(len(wrap(c)) <= max_lines for c in chunks) or n_cues >= len(words):
-            break
-        n_cues += 1
+    if words:
+        cues = []
+        for idx, (a, b) in enumerate(bounds):
+            last_word_end = words[b - 1].end
+            if idx + 1 < len(bounds):
+                limit = words[bounds[idx + 1][0]].start
+            else:
+                limit = max(end, last_word_end)
+            t_end = min(limit, last_word_end + CAPTION_HOLD_SECONDS)
+            cues.append((words[a].start, t_end, join(a, b)))
+        return cues
 
+    if len(bounds) == 1:
+        return [(start, end, full)]
+
+    chunks = [join(a, b) for a, b in bounds]
     total_chars = sum(len(c) for c in chunks)
     duration = max(0.0, end - start)
     cues = []
@@ -1195,7 +1231,7 @@ def split_caption_segment(
             t_end = end
         else:
             t_end = t + duration * len(chunk) / total_chars
-        cues.append((t, t_end, "\n".join(wrap(chunk))))
+        cues.append((t, t_end, chunk))
         t = t_end
     return cues
 
@@ -1897,7 +1933,7 @@ def shift_srt_timestamps(srt_path, delay_ms, log):
     log.info(f"Shifted SRT timestamps forward by {delay_ms}ms ({delay_sec:.3f}s)")
 
 
-def detect_audio_pts_gaps(path, log, min_gap_sec=0.5):
+def detect_audio_pts_gaps(path, log, min_gap_sec=0.002):
     """Scan the audio stream for forward PTS jumps indicating dropped content.
 
     When a recording discontinuity occurs (e.g., stream briefly switches to
@@ -1906,9 +1942,15 @@ def detect_audio_pts_gaps(path, log, min_gap_sec=0.5):
     audio data that Whisper cannot see — causing captions to lead audio by the
     gap duration after each discontinuity.
 
+    Browser-captured recordings (Chrome Capture for Channels) also drop ~10ms
+    of audio hundreds of times an hour, clustered around ad splices. Each drop
+    is tiny, but they add up to several seconds of lead by the end of a show,
+    so every gap counts — measured against the previous packet's own duration
+    rather than a big fixed threshold.
+
     Returns a list of (position_sec, gap_sec) tuples in real-time coordinates.
-    A gap is reported when consecutive audio packet timestamps jump forward by
-    more than min_gap_sec (default 0.5s, far above the normal ~32ms frame spacing).
+    A gap is reported when a packet starts more than min_gap_sec after the
+    previous packet ends (default 2ms, above 90kHz timestamp rounding jitter).
     """
     cmd = [
         "ffprobe",
@@ -1917,7 +1959,7 @@ def detect_audio_pts_gaps(path, log, min_gap_sec=0.5):
         "-select_streams",
         "a:0",
         "-show_entries",
-        "packet=pts_time,dts_time",
+        "packet=pts_time,dts_time,duration_time",
         "-of",
         "csv=p=0",
         path,
@@ -1932,45 +1974,56 @@ def detect_audio_pts_gaps(path, log, min_gap_sec=0.5):
         log.debug(f"PTS gap detection unavailable: {result.stderr[:100]}")
         return []
 
+    def parse(part):
+        part = part.strip()
+        if not part or part.lower() == "n/a":
+            return None
+        try:
+            return float(part)
+        except ValueError:
+            return None
+
     gaps = []
     prev_pts = None
+    prev_dur = None
     normal_delta_samples = []
     normal_delta = None
 
     for raw_line in result.stdout.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        # Each line: "pts_time,dts_time" — prefer pts, fall back to dts
-        parts = line.split(",")
-        pts = None
-        for part in parts:
-            part = part.strip()
-            if part and part.lower() != "n/a":
-                try:
-                    pts = float(part)
-                    break
-                except ValueError:
-                    continue
+        # Each line: "pts_time,dts_time,duration_time" — prefer pts over dts
+        parts = (raw_line.split(",") + ["", "", ""])[:3]
+        pts = parse(parts[0])
+        if pts is None:
+            pts = parse(parts[1])
         if pts is None:
             continue
+        dur = parse(parts[2])
 
         if prev_pts is not None:
             delta = pts - prev_pts
-            if 0.001 < delta < 0.1:
+            if 0.001 < delta < 0.1 and normal_delta is None:
                 normal_delta_samples.append(delta)
                 if len(normal_delta_samples) == 20:
-                    normal_delta = sum(normal_delta_samples) / len(normal_delta_samples)
-            elif normal_delta is not None and delta >= min_gap_sec:
-                gap_dur = delta - normal_delta
-                gaps.append((prev_pts, gap_dur))
-                log.info(
-                    f"Recording discontinuity at {prev_pts:.3f}s: "
-                    f"audio gap {gap_dur * 1000:.0f}ms"
-                )
+                    normal_delta = sorted(normal_delta_samples)[10]
+            # Prefer the packet's own duration; fall back to the typical spacing
+            expected = prev_dur if prev_dur else normal_delta
+            if expected is not None and delta - expected >= min_gap_sec:
+                gap_dur = delta - expected
+                gaps.append((prev_pts + expected, gap_dur))
+                if gap_dur >= 0.5:
+                    log.info(
+                        f"Recording discontinuity at {prev_pts + expected:.3f}s: "
+                        f"audio gap {gap_dur * 1000:.0f}ms"
+                    )
 
         prev_pts = pts
+        prev_dur = dur
 
+    if gaps:
+        log.info(
+            f"Audio timeline has {len(gaps)} gap(s) totalling "
+            f"{sum(g for _, g in gaps):.2f}s missing from the decoded audio"
+        )
     return gaps
 
 
@@ -1984,6 +2037,7 @@ def correct_srt_for_audio_gaps(srt_path, gaps, log):
     gaps: list of (position_sec, gap_sec) in real-time audio PTS coordinates,
           as returned by detect_audio_pts_gaps().
     """
+    import bisect
     import re
 
     if not gaps:
@@ -2018,14 +2072,13 @@ def correct_srt_for_audio_gaps(srt_path, gaps, log):
         cumulative += gap_dur
         corrections.append((whisper_threshold, cumulative))
 
+    thresholds = [threshold for threshold, _ in corrections]
+
     def apply_correction(w_sec):
-        corr = 0.0
-        for threshold, total_corr in corrections:
-            if w_sec >= threshold:
-                corr = total_corr
-            else:
-                break
-        return w_sec + corr
+        # Hundreds of gaps are common (see detect_audio_pts_gaps); bisect
+        # rather than scanning them all for every timestamp.
+        idx = bisect.bisect_right(thresholds, w_sec)
+        return w_sec + (corrections[idx - 1][1] if idx else 0.0)
 
     lines = []
     with open(srt_path, encoding="utf-8") as f:
@@ -2407,6 +2460,8 @@ def main():
                     WHISPER_ENGINE,
                     WHISPER_LOCAL_ENGINE,
                     SRT_MAX_LINE_LENGTH,
+                    SRT_MAX_LINES,
+                    WHISPER_WORD_TIMESTAMPS,
                 )
 
                 # Segments from a non-local engine (Groq or Parakeet), if one
@@ -2626,6 +2681,10 @@ def main():
                             f"language={selected_language})"
                         )
 
+                    # Per-word timings keep captions in sync after silences
+                    # (see WHISPER_WORD_TIMESTAMPS in config.py).
+                    whisper_params["word_timestamps"] = WHISPER_WORD_TIMESTAMPS
+
                     # Check if file can be safely decoded - if not, extract audio first
                     wav_path = None
                     use_wav_path = input_source  # Default to direct transcription
@@ -2840,13 +2899,15 @@ def main():
                 cue_index = 0
                 for i, segment in enumerate(segments_generator, start=1):
                     segment_count = i
-                    # Split long segments into cues of at most two lines each
-                    # so the player never stacks 5-6 lines on screen.
+                    # Split long segments into cues sized for SRT_MAX_LINES
+                    # lines so the player never stacks 5-6 lines on screen.
                     for cue_start, cue_end, caption_text in split_caption_segment(
                         segment.start,
                         segment.end,
                         segment.text.strip(),
                         SRT_MAX_LINE_LENGTH,
+                        SRT_MAX_LINES,
+                        words=getattr(segment, "words", None),
                     ):
                         cue_index += 1
                         start_time = format_srt_timestamp(cue_start)

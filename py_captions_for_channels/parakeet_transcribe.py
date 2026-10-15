@@ -36,7 +36,7 @@ import os
 import re
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -100,12 +100,23 @@ TOKEN_LINE = re.compile(
 
 
 @dataclass
+class ParakeetWord:
+    """Mirrors the .word/.start/.end shape of faster-whisper's word timings."""
+
+    word: str
+    start: float
+    end: float
+
+
+@dataclass
 class ParakeetSegment:
-    """Mirrors the .start/.end/.text shape faster-whisper segments expose."""
+    """Mirrors the .start/.end/.text/.words shape faster-whisper segments
+    expose; words lets caption splitting time each cue from real speech."""
 
     start: float
     end: float
     text: str
+    words: List[ParakeetWord] = field(default_factory=list)
 
 
 @dataclass
@@ -185,10 +196,19 @@ def _get_fallback_model():
 
 
 def _transcribe_chunk_via_faster_whisper(audio_path: str) -> List[ParakeetSegment]:
+    from py_captions_for_channels import config
+
     model = _get_fallback_model()
-    segments, _info = model.transcribe(audio_path)
+    segments, _info = model.transcribe(
+        audio_path, word_timestamps=config.WHISPER_WORD_TIMESTAMPS
+    )
     return [
-        ParakeetSegment(start=seg.start, end=seg.end, text=seg.text.strip())
+        ParakeetSegment(
+            start=seg.start,
+            end=seg.end,
+            text=seg.text.strip(),
+            words=[ParakeetWord(w.word, w.start, w.end) for w in seg.words or []],
+        )
         for seg in segments
     ]
 
@@ -275,7 +295,7 @@ def _tokens_to_segments(tokens: List[_Token]) -> List[ParakeetSegment]:
     words = [(text, t0, t1) for text, t0, t1 in words if text]
 
     segments = []
-    buf_words: List[str] = []
+    buf_words: List[ParakeetWord] = []
     buf_start_cs = None
     buf_end_cs = None
 
@@ -285,14 +305,15 @@ def _tokens_to_segments(tokens: List[_Token]) -> List[ParakeetSegment]:
                 ParakeetSegment(
                     start=buf_start_cs / 100.0,
                     end=buf_end_cs / 100.0,
-                    text=" ".join(buf_words).strip(),
+                    text=" ".join(w.word.strip() for w in buf_words).strip(),
+                    words=list(buf_words),
                 )
             )
 
     for text, t0_cs, t1_cs in words:
         if buf_start_cs is None:
             buf_start_cs = t0_cs
-        buf_words.append(text)
+        buf_words.append(ParakeetWord(" " + text, t0_cs / 100.0, t1_cs / 100.0))
         buf_end_cs = t1_cs
         span = (buf_end_cs - buf_start_cs) / 100.0
         ends_sentence = text.rstrip().endswith((".", "!", "?"))
@@ -448,6 +469,9 @@ def transcribe_via_parakeet(
                 for seg in segments:
                     seg.start += offset
                     seg.end += offset
+                    for w in seg.words:
+                        w.start += offset
+                        w.end += offset
                 all_segments.extend(segments)
                 if progress_callback:
                     done = i + 1
