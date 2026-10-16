@@ -14,6 +14,7 @@ from .channels_api import ChannelsAPI
 from .parser import Parser
 from .state import StateBackend
 from .pipeline import Pipeline
+from .gpu_slots import belongs_to_other_instance
 from .whitelist import Whitelist
 from .health_check import run_health_checks
 from .execution_tracker import get_tracker, build_manual_process_job_id
@@ -695,6 +696,8 @@ def cleanup_orphaned_processes():
                 if len(parts) >= 2:
                     try:
                         pid = int(parts[1])
+                        if belongs_to_other_instance(pid):
+                            continue
                         LOG.info(
                             "Killing orphaned process (PID %d): %s",
                             pid,
@@ -1383,9 +1386,6 @@ async def main():
     LOG.info("Polling processor background task started")
     await asyncio.sleep(0)
 
-    # Track last manual queue check
-    last_manual_check = datetime.now()
-
     # Get shutdown controller for main loop
     shutdown_controller = get_shutdown_controller()
 
@@ -1402,15 +1402,6 @@ async def main():
                 ),
             )
             break
-
-        # Also check manual queue periodically (every 5 seconds)
-        now = datetime.now()
-        if (now - last_manual_check).total_seconds() > 5:
-            # Non-blocking check of manual queue
-            asyncio.create_task(
-                process_manual_process_queue(state, pipeline, api, parser)
-            )
-            last_manual_check = now
 
         _maybe_update_log_verbosity()
 

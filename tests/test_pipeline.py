@@ -151,3 +151,51 @@ def test_pipeline_no_recovery_for_normal_exit_codes():
     assert result.success is False
     assert result.returncode == 1
     mock.assert_not_called()
+
+
+def _event(name):
+    return ProcessingEvent(
+        timestamp=datetime.now(), path=f"/tmp/{name}.mpg", title=name, source="mock"
+    )
+
+
+def test_concurrent_runs_take_turns_on_gpu_slot(tmp_path, monkeypatch):
+    """The polling and manual loops both call run(); jobs must not overlap."""
+    import threading
+
+    from py_captions_for_channels import config
+
+    monkeypatch.setattr(config, "GPU_SLOT_DIR", str(tmp_path / "slots"))
+    log = tmp_path / "order.log"
+    pipeline = Pipeline(
+        f"echo start >> {log}; sleep 0.5; echo end >> {log}", dry_run=False
+    )
+
+    threads = [
+        threading.Thread(target=pipeline.run, args=(_event(f"show{n}"),))
+        for n in range(2)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert log.read_text().split() == ["start", "end", "start", "end"]
+
+
+def test_cancel_while_waiting_for_gpu(tmp_path, monkeypatch):
+    from py_captions_for_channels import config
+    from py_captions_for_channels.gpu_slots import acquire_gpu_slot
+
+    monkeypatch.setattr(config, "GPU_SLOT_DIR", str(tmp_path / "slots"))
+    holder = acquire_gpu_slot("other instance's job")
+    try:
+        result = Pipeline("echo should-not-run", dry_run=False).run(
+            _event("waiting"), cancel_check=lambda: True
+        )
+    finally:
+        holder.release()
+
+    assert result.success is False
+    assert result.returncode == -2  # reported as "Canceled" by the watcher
+    assert "should-not-run" not in result.stdout

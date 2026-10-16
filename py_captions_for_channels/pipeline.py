@@ -6,6 +6,7 @@ import subprocess
 import signal
 from typing import Callable, Optional
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 import threading
@@ -16,6 +17,7 @@ from .config import (
     LOG_STATS_ENABLED,
     PIPELINE_TIMEOUT,
 )
+from .gpu_slots import INSTANCE_ENV_VAR, acquire_gpu_slot, instance_tag
 from .progress_tracker import get_progress_tracker
 from .execution_tracker import get_tracker
 
@@ -686,317 +688,355 @@ class Pipeline:
                 result.is_dry_run = True
                 return result
 
-            # Visual divider at job start (configurable)
-            if LOG_STATS_ENABLED:
-                log.info("\n" + (LOG_DIVIDER_CHAR * LOG_DIVIDER_LENGTH))
-
-            # Get job number for markers
-            job_number = None
+            # One job at a time per GPU slot - across this instance's loops
+            # and, when GPU_SLOT_DIR is shared, across instances (gpu_slots.py)
+            slot = acquire_gpu_slot(
+                job_id,
+                cancel_check=cancel_check,
+                on_wait=lambda holders: progress_tracker.update_progress(
+                    job_id,
+                    "misc",
+                    0.0,
+                    f"Waiting for GPU (in use by {holders})",
+                    {"phase": "gpu_wait"},
+                ),
+            )
+            if slot is None:
+                progress_tracker.clear_progress(job_id)
+                return PipelineResult(
+                    success=False,
+                    returncode=-2,
+                    stdout="",
+                    stderr="Canceled while waiting for GPU",
+                    command=cmd,
+                    elapsed_seconds=time.time() - start_time,
+                    input_path=event.path,
+                )
             try:
-                tracker = get_tracker()
-                execution = tracker.get_execution(job_id)
-                if execution and execution.get("job_number"):
-                    job_number = execution.get("job_number")
-            except Exception:
-                pass  # Continue without job number if unavailable
-
-            job_marker = f"Job #{job_number}" if job_number else f"Job {job_id[:8]}"
-            log.info("=" * 80)
-            log.info(f"START {job_marker}: {event.title}")
-            log.info("=" * 80)
-            log.info("Running caption pipeline: %s", cmd)
-
-            # Get input duration for progress tracking
-            input_duration = self._probe_input_duration_seconds(event.path)
-
-            try:
-                # Execute command with subprocess.Popen() to stream output in real-time
-                log.debug("About to execute command: %s", cmd)
-
+                # Time the job itself, not the wait for the GPU - including
+                # the UI's stale-job check, which measures from started_at
                 try:
-                    # Ensure child Python process flushes stdout line-by-line
-                    # even when stdout is a pipe (not a TTY).
-                    _env = os.environ.copy()
-                    _env["PYTHONUNBUFFERED"] = "1"
-
-                    proc = subprocess.Popen(
-                        cmd,
-                        shell=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        bufsize=1,  # Line buffered
-                        env=_env,
-                        # Makes shell a process group leader so os.killpg() can
-                        # signal the whole tree (shell + embed_captions).
-                        # Without this, proc.terminate() only kills the shell and
-                        # embed_captions becomes an unkillable orphan.
-                        start_new_session=True,
+                    get_tracker().update_execution(
+                        job_id, started_at=datetime.now(timezone.utc)
                     )
+                except Exception as e:
+                    log.debug("Could not reset started_at after GPU wait: %s", e)
+                return self._run_command(
+                    cmd, event, job_id, log, time.time(), cancel_check
+                )
+            finally:
+                slot.release()
+        finally:
+            pass  # No job_id context to clear with new logger
 
-                    # Stream output and parse progress
-                    stdout, stderr = self._stream_and_capture_output(
-                        proc, job_id, log, input_duration, cancel_check
-                    )
+    def _run_command(
+        self, cmd, event, job_id, log, start_time, cancel_check
+    ) -> PipelineResult:
+        """Run the caption command (GPU slot already held) and collect results."""
+        progress_tracker = get_progress_tracker()
+        proc = None
+        # Visual divider at job start (configurable)
+        if LOG_STATS_ENABLED:
+            log.info("\n" + (LOG_DIVIDER_CHAR * LOG_DIVIDER_LENGTH))
 
-                    returncode = proc.returncode
+        # Get job number for markers
+        job_number = None
+        try:
+            tracker = get_tracker()
+            execution = tracker.get_execution(job_id)
+            if execution and execution.get("job_number"):
+                job_number = execution.get("job_number")
+        except Exception:
+            pass  # Continue without job number if unavailable
 
-                    # Clear progress after completion
-                    progress_tracker = get_progress_tracker()
-                    progress_tracker.clear_progress(job_id)
+        job_marker = f"Job #{job_number}" if job_number else f"Job {job_id[:8]}"
+        log.info("=" * 80)
+        log.info(f"START {job_marker}: {event.title}")
+        log.info("=" * 80)
+        log.info("Running caption pipeline: %s", cmd)
 
-                except subprocess.TimeoutExpired as e:
-                    elapsed = time.time() - start_time
-                    log.error(
-                        "Caption pipeline timed out for %s after %d seconds",
-                        event.path,
-                        PIPELINE_TIMEOUT,
-                    )
-                    # Clear progress
-                    progress_tracker = get_progress_tracker()
-                    progress_tracker.clear_progress(job_id)
-                    log.info("=" * 80)
-                    log.info(f"END {job_marker}: TIMEOUT after {elapsed:.1f}s")
-                    log.info("=" * 80)
-                    return PipelineResult(
-                        success=False,
-                        returncode=-1,
-                        stdout=e.stdout or "",
-                        stderr=f"Command timed out after {PIPELINE_TIMEOUT} seconds",
-                        command=cmd,
-                        elapsed_seconds=elapsed,
-                        input_path=event.path,
-                    )
+        # Get input duration for progress tracking
+        input_duration = self._probe_input_duration_seconds(event.path)
 
-                if returncode != 0:
-                    elapsed = time.time() - start_time
+        try:
+            # Execute command with subprocess.Popen() to stream output in real-time
+            log.debug("About to execute command: %s", cmd)
 
-                    # --- Crash recovery for signal-based exits ---
-                    # When a process is killed by a signal (exit > 128),
-                    # the work may have completed before the crash
-                    # (e.g., SIGSEGV during NVIDIA driver cleanup).
-                    # Validate the output file before declaring failure.
-                    if returncode > 128:
-                        signal_num = returncode - 128
-                        signal_name = self._SIGNAL_EXIT_CODES.get(
-                            returncode, f"signal {signal_num}"
-                        )
-                        if self._validate_crash_recovery(event.path, log):
-                            log.warning(
-                                "Process crashed with %s (exit %d) after "
-                                "%.1fs, but output file is valid — "
-                                "treating as success "
-                                "(crash likely during process shutdown)",
-                                signal_name,
-                                returncode,
-                                elapsed,
-                            )
-                            if stderr:
-                                log.debug(
-                                    "stderr from crashed process: %s",
-                                    stderr[:500],
-                                )
-                            output_files = self._collect_output_files(event.path)
-                            try:
-                                input_size = Path(event.path).stat().st_size
-                            except Exception:
-                                input_size = 0
-                            log.info("=" * 80)
-                            log.info(
-                                f"END {job_marker}: RECOVERED "
-                                f"({signal_name}) in {elapsed:.1f}s"
-                            )
-                            log.info("=" * 80)
-                            return PipelineResult(
-                                success=True,
-                                returncode=0,
-                                stdout=stdout,
-                                stderr=stderr,
-                                command=cmd,
-                                elapsed_seconds=elapsed,
-                                output_files=output_files,
-                                input_size_bytes=input_size,
-                                input_path=event.path,
-                            )
+            try:
+                # Ensure child Python process flushes stdout line-by-line
+                # even when stdout is a pipe (not a TTY).
+                _env = os.environ.copy()
+                _env["PYTHONUNBUFFERED"] = "1"
+                # Lets startup cleanup tell this instance's jobs from those of
+                # other instances on the same host (see watcher.py).
+                _env[INSTANCE_ENV_VAR] = instance_tag()
 
-                    log.error(
-                        "Caption pipeline failed for %s (exit code %d)",
-                        event.path,
-                        returncode,
-                    )
-                    log.error("Command attempted: %s", cmd)
-                    if returncode == 126:
-                        log.error(
-                            "Exit code 126: Permission denied or not executable. "
-                            "Check permissions and shebang for: %s",
-                            cmd,
-                        )
-                    if stderr:
-                        log.error("stderr: %s", stderr[:500])
-                    log.info("=" * 80)
-                    end_msg = (
-                        f"END {job_marker}: FAILED "
-                        f"(exit {returncode}) after {elapsed:.1f}s"
-                    )
-                    log.info(end_msg)
-                    log.info("=" * 80)
-                    return PipelineResult(
-                        success=False,
-                        returncode=returncode,
-                        stdout=stdout,
-                        stderr=stderr,
-                        command=cmd,
-                        elapsed_seconds=elapsed,
-                        input_path=event.path,
-                    )
-                else:
-                    log.info("Caption pipeline completed for %s", event.path)
-                    # Log output to capture optimization markers and processing details
-                    # stdout contains optimization markers and whisper progress
-                    if stdout:
-                        # Show beginning, optimization, and end
-                        if len(stdout) > 5000:
-                            log.info(
-                                "caption generation (beginning): %s", stdout[:2000]
-                            )
-                            # Extract optimization logs specifically
-                            opt_lines = [
-                                line
-                                for line in stdout.split("\n")
-                                if "[OPTIMIZATION]" in line
-                            ]
-                            if opt_lines:
-                                log.info(
-                                    "optimization params: %s", "\n".join(opt_lines)
-                                )
-                            # Extract encoding-related logs
-                            # (GPU backend, hwaccel, encode/fallback)
-                            encoding_lines = [
-                                line
-                                for line in stdout.split("\n")
-                                if any(
-                                    keyword in line
-                                    for keyword in [
-                                        "Trying NVIDIA",
-                                        "Trying QSV",
-                                        "Trying AMF",
-                                        "Trying VAAPI",
-                                        "Trying CPU",
-                                        "NVIDIA encode failed",
-                                        "QSV encode failed",
-                                        "AMF encode failed",
-                                        "VAAPI encode failed",
-                                        "encode failed",
-                                        "falling back",
-                                        "retrying without",
-                                        "Hardware decode enabled",
-                                        "Auto-detected GPU backend",
-                                        "Encoding (",
-                                        "STEP TIMING",
-                                    ]
-                                )
-                            ]
-                            if encoding_lines:
-                                log.info("encoding logs: %s", "\n".join(encoding_lines))
-                            log.info("caption generation (end): %s", stdout[-1000:])
-                        else:
-                            log.info("caption generation output: %s", stdout)
-                    # stderr contains ffmpeg encoding output
-                    if stderr:
-                        # Show beginning, optimization, and end
-                        if len(stderr) > 5000:
-                            log.info("ffmpeg output (beginning): %s", stderr[:2000])
-                            # Extract optimization logs specifically
-                            opt_lines = [
-                                line
-                                for line in stderr.split("\n")
-                                if "[OPTIMIZATION]" in line
-                            ]
-                            if opt_lines:
-                                log.info(
-                                    "optimization params: %s", "\n".join(opt_lines)
-                                )
-                            log.info("ffmpeg output (end): %s", stderr[-1000:])
-                        else:
-                            log.info("ffmpeg output: %s", stderr)
+                proc = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,  # Line buffered
+                    env=_env,
+                    # Makes shell a process group leader so os.killpg() can
+                    # signal the whole tree (shell + embed_captions).
+                    # Without this, proc.terminate() only kills the shell and
+                    # embed_captions becomes an unkillable orphan.
+                    start_new_session=True,
+                )
 
-                    # Collect output file statistics
-                    elapsed = time.time() - start_time
-                    output_files = self._collect_output_files(event.path)
-                    # Parse ffmpeg speed if present
-                    ffmpeg_speed = None
-                    m = re.search(r"speed=([0-9.]+)x", stderr)
-                    if m:
-                        ffmpeg_speed = float(m.group(1))
-                    try:
-                        input_size = Path(event.path).stat().st_size
-                    except Exception:
-                        input_size = 0
+                # Stream output and parse progress
+                stdout, stderr = self._stream_and_capture_output(
+                    proc, job_id, log, input_duration, cancel_check
+                )
 
-                    log.info("=" * 80)
-                    log.info(f"END {job_marker}: SUCCESS in {elapsed:.1f}s")
-                    log.info("=" * 80)
+                returncode = proc.returncode
 
-                    return PipelineResult(
-                        success=True,
-                        returncode=0,
-                        stdout=stdout,
-                        stderr=stderr,
-                        command=cmd,
-                        elapsed_seconds=elapsed,
-                        output_files=output_files,
-                        input_size_bytes=input_size,
-                        input_path=event.path,
-                    )
+                # Clear progress after completion
+                progress_tracker = get_progress_tracker()
+                progress_tracker.clear_progress(job_id)
 
-                    # If ffmpeg speed parsed, log it for reference
-                    if ffmpeg_speed is not None:
-                        log.info(
-                            "Transcode speed reported by ffmpeg: %.2fx", ffmpeg_speed
-                        )
-
-            except Exception as e:
+            except subprocess.TimeoutExpired as e:
                 elapsed = time.time() - start_time
-                log.error("Exception running caption pipeline: %s", e)
-                log.error("Command attempted: %s", cmd)
-
-                # Clean up subprocess if still running to prevent orphans
-                try:
-                    if proc and proc.poll() is None:
-                        log.warning("Terminating subprocess due to exception")
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            log.warning("Subprocess didn't terminate, killing it")
-                            proc.kill()
-                            try:
-                                proc.wait(timeout=5)
-                            except subprocess.TimeoutExpired:
-                                _reap_in_background(proc, log)
-                except Exception as cleanup_err:
-                    log.error("Error cleaning up subprocess: %s", cleanup_err)
-
-                # Clear progress tracking
-                try:
-                    progress_tracker.clear_progress(job_id)
-                except Exception as progress_err:
-                    log.error(
-                        "Error clearing progress after exception: %s", progress_err
-                    )
-
+                log.error(
+                    "Caption pipeline timed out for %s after %d seconds",
+                    event.path,
+                    PIPELINE_TIMEOUT,
+                )
+                # Clear progress
+                progress_tracker = get_progress_tracker()
+                progress_tracker.clear_progress(job_id)
                 log.info("=" * 80)
-                log.info(f"END {job_marker}: EXCEPTION after {elapsed:.1f}s")
+                log.info(f"END {job_marker}: TIMEOUT after {elapsed:.1f}s")
                 log.info("=" * 80)
-
                 return PipelineResult(
                     success=False,
                     returncode=-1,
-                    stdout="",
-                    stderr=str(e),
+                    stdout=e.stdout or "",
+                    stderr=f"Command timed out after {PIPELINE_TIMEOUT} seconds",
                     command=cmd,
                     elapsed_seconds=elapsed,
                     input_path=event.path,
                 )
-        finally:
-            pass  # No job_id context to clear with new logger
+
+            if returncode != 0:
+                elapsed = time.time() - start_time
+
+                # --- Crash recovery for signal-based exits ---
+                # When a process is killed by a signal (exit > 128),
+                # the work may have completed before the crash
+                # (e.g., SIGSEGV during NVIDIA driver cleanup).
+                # Validate the output file before declaring failure.
+                if returncode > 128:
+                    signal_num = returncode - 128
+                    signal_name = self._SIGNAL_EXIT_CODES.get(
+                        returncode, f"signal {signal_num}"
+                    )
+                    if self._validate_crash_recovery(event.path, log):
+                        log.warning(
+                            "Process crashed with %s (exit %d) after "
+                            "%.1fs, but output file is valid — "
+                            "treating as success "
+                            "(crash likely during process shutdown)",
+                            signal_name,
+                            returncode,
+                            elapsed,
+                        )
+                        if stderr:
+                            log.debug(
+                                "stderr from crashed process: %s",
+                                stderr[:500],
+                            )
+                        output_files = self._collect_output_files(event.path)
+                        try:
+                            input_size = Path(event.path).stat().st_size
+                        except Exception:
+                            input_size = 0
+                        log.info("=" * 80)
+                        log.info(
+                            f"END {job_marker}: RECOVERED "
+                            f"({signal_name}) in {elapsed:.1f}s"
+                        )
+                        log.info("=" * 80)
+                        return PipelineResult(
+                            success=True,
+                            returncode=0,
+                            stdout=stdout,
+                            stderr=stderr,
+                            command=cmd,
+                            elapsed_seconds=elapsed,
+                            output_files=output_files,
+                            input_size_bytes=input_size,
+                            input_path=event.path,
+                        )
+
+                log.error(
+                    "Caption pipeline failed for %s (exit code %d)",
+                    event.path,
+                    returncode,
+                )
+                log.error("Command attempted: %s", cmd)
+                if returncode == 126:
+                    log.error(
+                        "Exit code 126: Permission denied or not executable. "
+                        "Check permissions and shebang for: %s",
+                        cmd,
+                    )
+                if stderr:
+                    log.error("stderr: %s", stderr[:500])
+                log.info("=" * 80)
+                end_msg = (
+                    f"END {job_marker}: FAILED "
+                    f"(exit {returncode}) after {elapsed:.1f}s"
+                )
+                log.info(end_msg)
+                log.info("=" * 80)
+                return PipelineResult(
+                    success=False,
+                    returncode=returncode,
+                    stdout=stdout,
+                    stderr=stderr,
+                    command=cmd,
+                    elapsed_seconds=elapsed,
+                    input_path=event.path,
+                )
+            else:
+                log.info("Caption pipeline completed for %s", event.path)
+                # Log output to capture optimization markers and processing details
+                # stdout contains optimization markers and whisper progress
+                if stdout:
+                    # Show beginning, optimization, and end
+                    if len(stdout) > 5000:
+                        log.info("caption generation (beginning): %s", stdout[:2000])
+                        # Extract optimization logs specifically
+                        opt_lines = [
+                            line
+                            for line in stdout.split("\n")
+                            if "[OPTIMIZATION]" in line
+                        ]
+                        if opt_lines:
+                            log.info("optimization params: %s", "\n".join(opt_lines))
+                        # Extract encoding-related logs
+                        # (GPU backend, hwaccel, encode/fallback)
+                        encoding_lines = [
+                            line
+                            for line in stdout.split("\n")
+                            if any(
+                                keyword in line
+                                for keyword in [
+                                    "Trying NVIDIA",
+                                    "Trying QSV",
+                                    "Trying AMF",
+                                    "Trying VAAPI",
+                                    "Trying CPU",
+                                    "NVIDIA encode failed",
+                                    "QSV encode failed",
+                                    "AMF encode failed",
+                                    "VAAPI encode failed",
+                                    "encode failed",
+                                    "falling back",
+                                    "retrying without",
+                                    "Hardware decode enabled",
+                                    "Auto-detected GPU backend",
+                                    "Encoding (",
+                                    "STEP TIMING",
+                                ]
+                            )
+                        ]
+                        if encoding_lines:
+                            log.info("encoding logs: %s", "\n".join(encoding_lines))
+                        log.info("caption generation (end): %s", stdout[-1000:])
+                    else:
+                        log.info("caption generation output: %s", stdout)
+                # stderr contains ffmpeg encoding output
+                if stderr:
+                    # Show beginning, optimization, and end
+                    if len(stderr) > 5000:
+                        log.info("ffmpeg output (beginning): %s", stderr[:2000])
+                        # Extract optimization logs specifically
+                        opt_lines = [
+                            line
+                            for line in stderr.split("\n")
+                            if "[OPTIMIZATION]" in line
+                        ]
+                        if opt_lines:
+                            log.info("optimization params: %s", "\n".join(opt_lines))
+                        log.info("ffmpeg output (end): %s", stderr[-1000:])
+                    else:
+                        log.info("ffmpeg output: %s", stderr)
+
+                # Collect output file statistics
+                elapsed = time.time() - start_time
+                output_files = self._collect_output_files(event.path)
+                # Parse ffmpeg speed if present
+                ffmpeg_speed = None
+                m = re.search(r"speed=([0-9.]+)x", stderr)
+                if m:
+                    ffmpeg_speed = float(m.group(1))
+                try:
+                    input_size = Path(event.path).stat().st_size
+                except Exception:
+                    input_size = 0
+
+                log.info("=" * 80)
+                log.info(f"END {job_marker}: SUCCESS in {elapsed:.1f}s")
+                log.info("=" * 80)
+
+                return PipelineResult(
+                    success=True,
+                    returncode=0,
+                    stdout=stdout,
+                    stderr=stderr,
+                    command=cmd,
+                    elapsed_seconds=elapsed,
+                    output_files=output_files,
+                    input_size_bytes=input_size,
+                    input_path=event.path,
+                )
+
+                # If ffmpeg speed parsed, log it for reference
+                if ffmpeg_speed is not None:
+                    log.info("Transcode speed reported by ffmpeg: %.2fx", ffmpeg_speed)
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            log.error("Exception running caption pipeline: %s", e)
+            log.error("Command attempted: %s", cmd)
+
+            # Clean up subprocess if still running to prevent orphans
+            try:
+                if proc and proc.poll() is None:
+                    log.warning("Terminating subprocess due to exception")
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        log.warning("Subprocess didn't terminate, killing it")
+                        proc.kill()
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            _reap_in_background(proc, log)
+            except Exception as cleanup_err:
+                log.error("Error cleaning up subprocess: %s", cleanup_err)
+
+            # Clear progress tracking
+            try:
+                progress_tracker.clear_progress(job_id)
+            except Exception as progress_err:
+                log.error("Error clearing progress after exception: %s", progress_err)
+
+            log.info("=" * 80)
+            log.info(f"END {job_marker}: EXCEPTION after {elapsed:.1f}s")
+            log.info("=" * 80)
+
+            return PipelineResult(
+                success=False,
+                returncode=-1,
+                stdout="",
+                stderr=str(e),
+                command=cmd,
+                elapsed_seconds=elapsed,
+                input_path=event.path,
+            )

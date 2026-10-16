@@ -182,6 +182,10 @@ SETTINGS_SCHEMA: Dict[str, SettingSpec] = {
     # ---------------------------------------------------------------- Processing Rules
     "PROCESSING_ENABLED": SettingSpec("processing", BASIC, "checkbox"),
     "WHITELIST_REQUIRED": SettingSpec("processing", ADVANCED, "checkbox"),
+    "INSTANCE_NAME": SettingSpec("processing", ADVANCED, "text"),
+    "GPU_SLOTS": SettingSpec(
+        "processing", ADVANCED, "number", label="GPU Slots (shared jobs at once)"
+    ),
     "DRY_RUN": SettingSpec("processing", ADVANCED, "checkbox"),
     "PIPELINE_TIMEOUT": SettingSpec("processing", ADVANCED, "number"),
     "STALE_EXECUTION_SECONDS": SettingSpec("processing", ADVANCED, "number"),
@@ -261,6 +265,11 @@ HIDDEN_KEYS = frozenset(
         "USE_WEBHOOK",  # legacy flags superseded by DISCOVERY_MODE
         "TRANSCODE_FOR_FIRETV",  # legacy alias superseded by EMBED_CAPTIONS
         "WSL_LIB_PATH",  # written by scripts/setup-wsl.sh; docker-compose only
+        # docker-compose only (multi-instance GPU sharing; see MULTI_INSTANCE.md)
+        "GPU_SLOT_DIR",
+        "GPU_SLOT_HOST_DIR",
+        "CONTAINER_NAME",
+        "GLANCES_PORT",
     }
 )
 

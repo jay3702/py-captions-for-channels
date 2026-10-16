@@ -1,7 +1,9 @@
 services:
   py-captions:
     image: ghcr.io/jay3702/py-captions-for-channels:latest
-    container_name: py-captions-for-channels
+    # Running several instances on one host (e.g. one per Channels DVR)?
+    # Give each its own CONTAINER_NAME — see docs/MULTI_INSTANCE.md.
+    container_name: ${CONTAINER_NAME:-py-captions-for-channels}
     restart: unless-stopped
     runtime: ${DOCKER_RUNTIME:-runc}
     
@@ -46,6 +48,11 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_VERBOSITY=${LOG_VERBOSITY:-NORMAL}
       
+      # GPU sharing between instances: jobs take a slot in this directory
+      # before running. Mount the same host directory here in every instance
+      # (GPU_SLOT_HOST_DIR) to make them take turns on the GPU.
+      - GPU_SLOT_DIR=/gpu-slots
+
       # Experimental features
       - CHANNELS_FILES_ENABLED=${CHANNELS_FILES_ENABLED:-false}
 
@@ -87,6 +94,11 @@ services:
       - ${LIBRARY_HOST_PATH_2:-library_slot_2}:${LIBRARY_CONTAINER_PATH_2:-/mnt/library2}
       # Slot 3 — third NAS / server (leave LIBRARY_HOST_PATH_3 unset to skip)
       - ${LIBRARY_HOST_PATH_3:-library_slot_3}:${LIBRARY_CONTAINER_PATH_3:-/mnt/library3}
+      # GPU slot directory. Unset: a per-instance volume (this instance's jobs
+      # run one at a time). Set GPU_SLOT_HOST_DIR to the same local host
+      # directory in every instance sharing the GPU, e.g. /var/lib/py-captions/gpu-slots
+      # (a local path on the GPU host — not a network share).
+      - ${GPU_SLOT_HOST_DIR:-gpu_slots}:/gpu-slots
     devices:
       # Intel/AMD GPU passthrough for FFmpeg hardware encode/decode (QSV/VAAPI).
       # Defaults to /dev/null:/dev/null — a harmless no-op that never touches
@@ -107,7 +119,7 @@ services:
     ports:
       - "${WEBHOOK_PORT:-9000}:${WEBHOOK_PORT:-9000}"
       - "${WEB_UI_PORT:-8000}:${WEB_UI_PORT:-8000}"
-      - "61208:61208"  # Glances web UI (legacy, may be removed)
+      - "${GLANCES_PORT:-61208}:61208"  # Glances web UI (legacy, may be removed)
 
     logging:
       driver: "json-file"
@@ -144,3 +156,5 @@ volumes:
   library_slot_1:
   library_slot_2:
   library_slot_3:
+  # Per-instance GPU slot directory, used when GPU_SLOT_HOST_DIR is not set.
+  gpu_slots:

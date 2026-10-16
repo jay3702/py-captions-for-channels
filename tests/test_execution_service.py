@@ -167,6 +167,36 @@ class TestMarkStaleExecutions:
         ex = service.get_execution("fresh")
         assert ex.status == "running"
 
+    def _waiting(self, service, job_id, progress_age):
+        from py_captions_for_channels.services.progress_service import (
+            ProgressService,
+        )
+        from py_captions_for_channels.models import Progress
+
+        service.create_execution(
+            job_id=job_id,
+            title="Queued",
+            status="running",
+            started_at=datetime.now(timezone.utc) - timedelta(hours=3),
+        )
+        ProgressService(service.db).update_progress(
+            job_id, "misc", 0.0, "Waiting for GPU", {"phase": "gpu_wait"}
+        )
+        row = service.db.query(Progress).filter(Progress.job_id == job_id).first()
+        row.updated_at = datetime.now(timezone.utc) - progress_age
+        service.db.commit()
+
+    def test_job_waiting_for_gpu_is_not_stale(self, service):
+        self._waiting(service, "waiting", timedelta(seconds=5))
+        service.mark_stale_executions(timeout_seconds=3600)
+        assert service.get_execution("waiting").status == "running"
+
+    def test_abandoned_gpu_wait_is_still_stale(self, service):
+        # Waiter stopped refreshing its progress: it's gone, not waiting
+        self._waiting(service, "abandoned", timedelta(minutes=10))
+        service.mark_stale_executions(timeout_seconds=3600)
+        assert service.get_execution("abandoned").status == "completed"
+
 
 class TestClearOldExecutions:
     def test_keeps_only_n_most_recent(self, service):

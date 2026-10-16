@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
-from ..models import Execution, ExecutionStep, JobSequence
+from ..models import Execution, ExecutionStep, JobSequence, Progress
 
 LOG = logging.getLogger(__name__)
 
@@ -334,6 +334,24 @@ class ExecutionService:
             return True
         return False
 
+    def _is_waiting_for_gpu(self, job_id: str, now: datetime) -> bool:
+        """True if the job is alive and waiting for a GPU slot.
+
+        Waiting jobs refresh their gpu_wait progress every few seconds, so a
+        fresh record means the waiter is still there.
+        """
+        progress = self.db.query(Progress).filter(Progress.job_id == job_id).first()
+        if not progress or not progress.progress_metadata:
+            return False
+        try:
+            phase = json.loads(progress.progress_metadata).get("phase")
+        except (ValueError, AttributeError):
+            return False
+        updated_at = progress.updated_at
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+        return phase == "gpu_wait" and (now - updated_at).total_seconds() < 120
+
     def mark_stale_executions(self, timeout_seconds: int = 7200) -> int:
         """Mark long-running and stuck executions as failed/cancelled.
 
@@ -362,6 +380,13 @@ class ExecutionService:
                 f"Running execution {execution.id}: elapsed={elapsed}s, "
                 f"timeout={timeout_seconds}s"
             )
+
+            if elapsed > timeout_seconds and self._is_waiting_for_gpu(
+                execution.id, now
+            ):
+                # Queued behind other jobs for the GPU (gpu_slots.py), not
+                # stuck; started_at is reset once it actually starts.
+                continue
 
             if elapsed > timeout_seconds:
                 execution.status = "completed"

@@ -6,6 +6,7 @@ See .env.example for all available options.
 """
 
 import os
+import socket
 import re
 from pathlib import Path
 
@@ -552,6 +553,18 @@ STALE_EXECUTION_SECONDS = get_env_int("STALE_EXECUTION_SECONDS", PIPELINE_TIMEOU
 MANUAL_PROCESS_POLL_SECONDS = get_env_int("MANUAL_PROCESS_POLL_SECONDS", 10)
 # Backward compatibility - support old env var name
 REPROCESS_POLL_SECONDS = MANUAL_PROCESS_POLL_SECONDS
+
+# GPU sharing between instances (see gpu_slots.py). Each caption job takes one
+# of GPU_SLOTS slots in GPU_SLOT_DIR before it runs. To share one GPU between
+# several instances (e.g. one per Channels DVR on the same GPU machine), mount
+# the same host directory into every instance and point GPU_SLOT_DIR at it;
+# it must be a local directory on that machine, not a network share. Left at
+# the default, jobs of this instance alone run one at a time.
+GPU_SLOTS = max(1, get_env_int("GPU_SLOTS", 1))
+GPU_SLOT_DIR = os.getenv("GPU_SLOT_DIR") or os.path.join(DATA_DIR, "gpu-slots")
+# Name shown to other instances when this one holds the GPU. Defaults to the
+# host name (the container ID under Docker), so set it when sharing.
+INSTANCE_NAME = os.getenv("INSTANCE_NAME") or socket.gethostname()
 
 # Watchdog: detects when the polling/manual-process loops have wedged (e.g. a
 # subprocess stuck in uninterruptible sleep on a hung network mount that
