@@ -35,6 +35,7 @@ if (-not $MyInvocation.MyCommand.Path) {
 $SCRIPTS_NEEDED = @(
     "scripts/setup-wsl.ps1",
     "scripts/setup-wsl.sh",
+    "scripts/lib/dvr-discovery.sh",
     "scripts/autostart.ps1"
 )
 
@@ -65,16 +66,21 @@ $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ScriptsDir = Join-Path $ScriptRoot "scripts"
 
 $anyDownloaded = $false
+# Run via 'irm | iex', the scripts live in %TEMP% from any earlier run (e.g.
+# the first instance's install): always fetch fresh copies there. A repo
+# checkout keeps its own files.
+$refresh = $ScriptRoot.TrimEnd('\') -eq ([IO.Path]::GetTempPath()).TrimEnd('\')
 
 foreach ($rel in $SCRIPTS_NEEDED) {
     $dest = Join-Path $ScriptRoot $rel
-    if (Test-Path $dest) { continue }
+    if ((Test-Path $dest) -and -not $refresh) { continue }
 
     if (-not $anyDownloaded) {
         Write-Step "Downloading installer scripts..."
         New-Item -ItemType Directory -Force -Path $ScriptsDir | Out-Null
     }
 
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
     $url = "$REPO_RAW/$($rel -replace '\\', '/')"
     Write-Host "  Fetching $rel" -ForegroundColor DarkGray
     try {

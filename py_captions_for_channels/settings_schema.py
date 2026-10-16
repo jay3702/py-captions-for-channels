@@ -182,7 +182,7 @@ SETTINGS_SCHEMA: Dict[str, SettingSpec] = {
     # ---------------------------------------------------------------- Processing Rules
     "PROCESSING_ENABLED": SettingSpec("processing", BASIC, "checkbox"),
     "WHITELIST_REQUIRED": SettingSpec("processing", ADVANCED, "checkbox"),
-    "INSTANCE_NAME": SettingSpec("processing", ADVANCED, "text"),
+    "INSTANCE_NAME": SettingSpec("processing", ADVANCED, "text", label="Instance Name"),
     "GPU_SLOTS": SettingSpec(
         "processing", ADVANCED, "number", label="GPU Slots (shared jobs at once)"
     ),
@@ -268,6 +268,7 @@ HIDDEN_KEYS = frozenset(
         # docker-compose only (multi-instance GPU sharing; see MULTI_INSTANCE.md)
         "GPU_SLOT_DIR",
         "GPU_SLOT_HOST_DIR",
+        "GPU_SLOT_VOLUME",
         "CONTAINER_NAME",
         "GLANCES_PORT",
     }

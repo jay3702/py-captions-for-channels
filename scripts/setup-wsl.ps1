@@ -105,16 +105,18 @@ foreach ($port in @(8000, 9000)) {
 }
 if ($usedPorts) {
     Write-Warn "Port(s) already in use on Windows: $($usedPorts -join ', ')"
-    Write-Warn "This usually means a previous py-captions install is still running."
+    Write-Warn "This usually means py-captions is already installed on this PC."
     Write-Host ""
     Write-Host "  Options:" -ForegroundColor White
-    Write-Host "    C = Clean up automatically (stop container + remove portproxy rules)" -ForegroundColor White
-    Write-Host "    S = Skip / continue anyway" -ForegroundColor White
+    Write-Host "    A = Add another instance for a different Channels DVR" -ForegroundColor White
+    Write-Host "        (keeps the existing one running; they take turns on the GPU," -ForegroundColor DarkGray
+    Write-Host "         and the installer picks free ports for the new one)" -ForegroundColor DarkGray
+    Write-Host "    C = Clean up a previous install (stop its container + remove portproxy rules)" -ForegroundColor White
     Write-Host "    Q = Quit" -ForegroundColor White
     Write-Host ""
-    $portChoice = Read-Host "  Choice [C/s/q]"
+    $portChoice = Read-Host "  Choice [A/c/q]"
     if ($portChoice -match "^[Qq]") { Write-Host "  Aborted." -ForegroundColor Yellow; exit 0 }
-    if ($portChoice -notmatch "^[Ss]") {
+    if ($portChoice -match "^[Cc]") {
         # Auto-cleanup: stop the Docker container and remove portproxy rules.
         Write-Step "Stopping py-captions container (inside WSL)..."
         $stopScript = 'cd ~/py-captions-for-channels 2>/dev/null && docker compose down 2>/dev/null; docker stop py-captions-for-channels 2>/dev/null; exit 0'
@@ -361,4 +363,4 @@ if (Test-Path $AutostartScript) {
 }
 
 Write-Host ""
-Write-Ok "All done — open http://localhost:8000 in your browser"
+Write-Ok "All done — open the web UI address the installer showed (http://localhost:8000 for a first install)"

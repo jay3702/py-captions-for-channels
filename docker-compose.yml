@@ -49,8 +49,8 @@ services:
       - LOG_VERBOSITY=${LOG_VERBOSITY:-NORMAL}
       
       # GPU sharing between instances: jobs take a slot in this directory
-      # before running. Mount the same host directory here in every instance
-      # (GPU_SLOT_HOST_DIR) to make them take turns on the GPU.
+      # before running. Every instance on this Docker host mounts the same
+      # volume (see gpu_slots below), so they take turns on the GPU.
       - GPU_SLOT_DIR=/gpu-slots
 
       # Experimental features
@@ -94,10 +94,9 @@ services:
       - ${LIBRARY_HOST_PATH_2:-library_slot_2}:${LIBRARY_CONTAINER_PATH_2:-/mnt/library2}
       # Slot 3 — third NAS / server (leave LIBRARY_HOST_PATH_3 unset to skip)
       - ${LIBRARY_HOST_PATH_3:-library_slot_3}:${LIBRARY_CONTAINER_PATH_3:-/mnt/library3}
-      # GPU slot directory. Unset: a per-instance volume (this instance's jobs
-      # run one at a time). Set GPU_SLOT_HOST_DIR to the same local host
-      # directory in every instance sharing the GPU, e.g. /var/lib/py-captions/gpu-slots
-      # (a local path on the GPU host — not a network share).
+      # GPU slot directory: the shared gpu_slots volume by default. To use a
+      # host folder instead, set GPU_SLOT_HOST_DIR (a local path on this
+      # machine, the same in every instance — not a network share).
       - ${GPU_SLOT_HOST_DIR:-gpu_slots}:/gpu-slots
     devices:
       # Intel/AMD GPU passthrough for FFmpeg hardware encode/decode (QSV/VAAPI).
@@ -156,5 +155,8 @@ volumes:
   library_slot_1:
   library_slot_2:
   library_slot_3:
-  # Per-instance GPU slot directory, used when GPU_SLOT_HOST_DIR is not set.
+  # GPU slots, shared by every instance on this Docker host: the fixed name
+  # (not prefixed with the stack/project name) is what makes them share it.
+  # Give an instance a different GPU_SLOT_VOLUME only if it uses its own GPU.
   gpu_slots:
+    name: ${GPU_SLOT_VOLUME:-py-captions-gpu-slots}

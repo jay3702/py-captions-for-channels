@@ -66,6 +66,33 @@ echo ""
 _detect_pkg_mgr
 echo "Package manager: $PKG_MGR"
 
+# ── another instance already on this host? ───────────────────────────────────
+# Several instances (one per Channels DVR) can share this machine's GPU — see
+# docs/MULTI_INSTANCE.md. A new one needs its own names and ports.
+ADD_INSTANCE=false
+INSTANCE_NAME="" CONTAINER_NAME="" PCC_INSTANCE_SUFFIX=""
+_PCC_INSTANCES=$(_pcc_existing_instances)
+if [[ -n "$_PCC_INSTANCES" ]]; then
+    echo ""
+    echo "py-captions-for-channels is already running on this host:"
+    cut -d'|' -f1 <<<"$_PCC_INSTANCES" | sed 's/^/  • /'
+    read -rp "Set up an additional instance for a different Channels DVR? [Y/n]: " _add
+    if [[ ! "$_add" =~ ^[Nn]$ ]]; then
+        ADD_INSTANCE=true
+        while [[ -z "$INSTANCE_NAME" ]]; do
+            read -rp "Name for this instance (e.g. Bedroom DVR): " INSTANCE_NAME
+            INSTANCE_NAME=$(tr -d '|"\\' <<<"$INSTANCE_NAME")
+        done
+        CONTAINER_NAME="py-captions-$(_pcc_slug "$INSTANCE_NAME")"
+        while grep -q "^${CONTAINER_NAME}|" <<<"$_PCC_INSTANCES"; do
+            CONTAINER_NAME="${CONTAINER_NAME}-2"
+        done
+        # Own mount service / credentials file names (see dvr-discovery.sh)
+        PCC_INSTANCE_SUFFIX="-${CONTAINER_NAME#py-captions-}"
+        DEFAULT_DEPLOY_DIR="$HOME/${CONTAINER_NAME}"
+    fi
+fi
+
 # ── deploy directory ──────────────────────────────────────────────────────────
 read -rp "Where should the config live? [$DEFAULT_DEPLOY_DIR]: " DEPLOY_DIR
 DEPLOY_DIR="${DEPLOY_DIR:-$DEFAULT_DEPLOY_DIR}"
@@ -167,8 +194,10 @@ echo "  1) On this machine (local disk or already-mounted path)"
 echo "  2) On a NAS / remote machine"
 read -rp "Choose [1-2]: " _storage_choice
 
-NAS_SERVER="" NAS_SHARE="" NAS_EXPORT="" MOUNT_POINT="/mnt/channels"
-CRED_FILE="/etc/cifs-credentials-py-captions"
+NAS_SERVER="" NAS_SHARE="" NAS_EXPORT=""
+# An additional instance mounts its DVR's share at its own mount point
+MOUNT_POINT="/mnt/channels${PCC_INSTANCE_SUFFIX}"
+CRED_FILE="/etc/cifs-credentials-py-captions${PCC_INSTANCE_SUFFIX}"
 STORAGE_TYPE="local"
 
 if [[ "$_storage_choice" == "2" ]]; then
@@ -279,18 +308,25 @@ set_env "DVR_MEDIA_HOST_PATH" "$MOUNT_POINT"
 set_env "DVR_RECORDINGS_PATH" "$MOUNT_POINT"
 set_env "LOCAL_PATH_PREFIX"   "$MOUNT_POINT"
 
-# ── port collision check (Portainer's own UI commonly sits on 9000) ─────────
-WEBHOOK_PORT=9000
-if ss -tlnH "sport = :9000" 2>/dev/null | grep -q ":9000"; then
-    WEBHOOK_PORT=9001
-    while ss -tlnH "sport = :${WEBHOOK_PORT}" 2>/dev/null | grep -q ":${WEBHOOK_PORT}"; do
-        WEBHOOK_PORT=$((WEBHOOK_PORT + 1))
-    done
+# ── port collision check ─────────────────────────────────────────────────────
+# Portainer's own UI commonly sits on 9000; other instances reserve their
+# ports even while stopped.
+_pcc_scan_ports
+WEBHOOK_PORT=$(_pcc_free_port 9000)
+WEB_UI_PORT=$(_pcc_free_port 8000)
+if [[ "$WEBHOOK_PORT" != 9000 ]]; then
     echo ""
     echo "Port 9000 is already in use on this host (likely Portainer itself)."
     echo "Using WEBHOOK_PORT=${WEBHOOK_PORT} instead."
 fi
 set_env "WEBHOOK_PORT" "$WEBHOOK_PORT"
+set_env "WEB_UI_PORT"  "$WEB_UI_PORT"
+
+if [[ "$ADD_INSTANCE" == true ]]; then
+    set_env "CONTAINER_NAME" "$CONTAINER_NAME"
+    set_env "GLANCES_PORT"   "$(_pcc_free_port 61208)"
+    set_env "INSTANCE_NAME"  "$INSTANCE_NAME"
+fi
 
 # ── compose-level bind-mount targets, self-contained in this same file ──────
 set_env "HOST_DATA_DIR" "$DEPLOY_DIR/data"
@@ -322,10 +358,14 @@ echo ""
 echo "  DVR URL     : $CHANNELS_DVR_URL"
 echo "  Recordings  : $MOUNT_POINT"
 echo "  Hardware    : $HW_PROFILE"
+echo "  Web UI port : $WEB_UI_PORT"
 echo "  Webhook port: $WEBHOOK_PORT"
+if [[ "$ADD_INSTANCE" == true ]]; then
+    echo "  Instance    : $INSTANCE_NAME ($CONTAINER_NAME)"
+fi
 echo ""
 echo "Next steps in Portainer:"
-echo "  1. Stacks -> Add stack -> name it -> build method: Web editor"
+echo "  1. Stacks -> Add stack -> name it${CONTAINER_NAME:+ ${CONTAINER_NAME}} -> build method: Web editor"
 echo "  2. Paste the contents of docker-compose.yml unmodified"
 echo "     (https://github.com/jay3702/py-captions-for-channels/blob/main/docker-compose.yml)"
 echo "  3. Under Environment variables, click 'Load variables from .env file'"
@@ -335,3 +375,19 @@ echo ""
 echo "That one file covers everything Docker needs before the container"
 echo "starts (this host's paths) *and* everything the app needs at runtime"
 echo "(DVR URL, whisper/caption settings, etc.) — no other values to type in."
+
+# Instances set up before GPU sharing don't take turns on the GPU until
+# their stack runs the current docker-compose.yml.
+if [[ "$ADD_INSTANCE" == true ]]; then
+    _stale=()
+    while IFS='|' read -r _name _dir; do
+        [[ -n "$_name" ]] && ! _pcc_shares_gpu "$_name" && _stale+=("$_name")
+    done <<<"$_PCC_INSTANCES"
+    if [[ ${#_stale[@]} -gt 0 ]]; then
+        echo ""
+        echo "Also update these existing instances so they take turns on the GPU:"
+        printf '  • %s\n' "${_stale[@]}"
+        echo "  Portainer: open the stack -> Editor, replace it with the current"
+        echo "  docker-compose.yml, then Update the stack with 'Re-pull image' on."
+    fi
+fi

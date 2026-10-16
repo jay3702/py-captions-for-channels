@@ -17,7 +17,8 @@
 param(
     [string]$InstallDir    = "$env:USERPROFILE\py-captions-for-channels",
     [switch]$RegisterOnly,   # internal: elevated re-launch to set firewall + LAN
-    [string]$WslIp         = ""
+    [string]$WslIp         = "",
+    [string]$Ports         = "8000,9000"  # internal: ports for -RegisterOnly to open
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,16 +38,18 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 
 if ($isAdmin -and $RegisterOnly) {
     # ── Firewall rules ────────────────────────────────────────────────────
-    foreach ($entry in @(
-        @{ Port = 8000; Name = "py-captions Web UI" },
-        @{ Port = 9000; Name = "py-captions Webhook" }
-    )) {
-        if (-not (Get-NetFirewallRule -DisplayName $entry.Name -ErrorAction SilentlyContinue)) {
-            New-NetFirewallRule -DisplayName $entry.Name -Direction Inbound `
-                -Protocol TCP -LocalPort $entry.Port -Action Allow | Out-Null
-            Write-Ok "Firewall: allowed inbound TCP $($entry.Port) ($($entry.Name))"
+    foreach ($port in ($Ports -split ',' | ForEach-Object { [int]$_ })) {
+        $ruleName = switch ($port) {
+            8000    { "py-captions Web UI" }
+            9000    { "py-captions Webhook" }
+            default { "py-captions TCP $port" }
+        }
+        if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
+            New-NetFirewallRule -DisplayName $ruleName -Direction Inbound `
+                -Protocol TCP -LocalPort $port -Action Allow | Out-Null
+            Write-Ok "Firewall: allowed inbound TCP $port ($ruleName)"
         } else {
-            Write-Ok "Firewall rule for port $($entry.Port) already exists"
+            Write-Ok "Firewall rule for port $port already exists"
         }
     }
 
@@ -144,21 +147,59 @@ if ($publicAdapters) {
     Write-Ok "Network adapter profile OK"
 }
 
-# ── Ports in use ──────────────────────────────────────────────────────────
-Write-Step "Checking ports 8000 and 9000..."
-$usedPorts = @()
-foreach ($port in @(8000, 9000)) {
-    if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
-        $usedPorts += $port
+# ── Existing instances ────────────────────────────────────────────────────
+# Several instances (one per Channels DVR) can share this PC's GPU, each with
+# its own folder, ports and container name — see docs/MULTI_INSTANCE.md.
+function Invoke-Docker {
+    $ErrorActionPreference = "Continue"   # native stderr must not be fatal here
+    try { & docker @args 2>$null } catch { }
+}
+# Templates use Go's backtick strings, never double quotes: Windows
+# PowerShell 5.1 strips embedded double quotes from native-command arguments.
+$existing = @(@(Invoke-Docker ps -a --filter "label=com.docker.compose.service=py-captions" `
+    --format '{{.Names}}|{{.Label `com.docker.compose.project.working_dir`}}') | Where-Object { $_ })
+$addInstance = $false
+$containerName = ""
+$instanceName = ""
+if ($existing) {
+    Write-Host ""
+    Write-Host "  py-captions-for-channels is already installed on this PC:" -ForegroundColor White
+    $existing | ForEach-Object { Write-Host "    • $(($_ -split '\|')[0])" -ForegroundColor White }
+    $add = Read-Host "  Add another instance for a different Channels DVR? [Y/n]"
+    if ($add -notmatch "^[Nn]") {
+        $addInstance = $true
+        while (-not $instanceName) {
+            $instanceName = (Read-Host "  Name for this instance (e.g. Bedroom DVR)") -replace '[|"\\]', ''
+        }
+        $slug = ($instanceName.ToLower() -replace '[^a-z0-9]+', '-').Trim('-')
+        if ($slug.Length -gt 24) { $slug = $slug.Substring(0, 24).Trim('-') }
+        if (-not $slug) { $slug = "dvr2" }
+        $containerName = "py-captions-$slug"
+        $names = $existing | ForEach-Object { ($_ -split '\|')[0] }
+        while ($names -contains $containerName) { $containerName = "$containerName-2" }
+        $InstallDir = Join-Path (Split-Path -Parent $InstallDir) $containerName
     }
 }
-if ($usedPorts) {
-    Write-Warn "Port(s) already in use: $($usedPorts -join ', ')"
-    $cont = Read-Host "  Continue anyway? [y/N]"
-    if ($cont -notmatch "^[Yy]") { exit 0 }
-} else {
-    Write-Ok "Ports 8000 and 9000 are free"
+
+# ── Ports — skip ones in use, or reserved by other (even stopped) containers
+Write-Step "Choosing ports..."
+$reserved = @()
+$ids = @(@(Invoke-Docker ps -aq) | Where-Object { $_ })
+if ($ids) {
+    $tmpl = '{{range $p, $b := .HostConfig.PortBindings}}{{range $b}}{{.HostPort}} {{end}}{{end}}'
+    $reserved = @(((Invoke-Docker inspect --format $tmpl @ids) -join " ") -split '\s+' |
+        Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ })
 }
+function Get-FreePort([int]$Start) {
+    $p = $Start
+    while (($reserved -contains $p) -or
+           (Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)) { $p++ }
+    return $p
+}
+$webPort = Get-FreePort 8000
+$webhookPort = Get-FreePort 9000
+$glancesPort = Get-FreePort 61208
+Write-Ok "Web UI port $webPort, webhook port $webhookPort"
 
 # ── NVIDIA GPU (optional) ─────────────────────────────────────────────────
 Write-Step "Checking for NVIDIA GPU..."
@@ -274,8 +315,20 @@ if (Test-Path $envFile) {
         "",
         "TZ=$tzIana",
         "SERVER_TZ=$tzIana",
+        "",
+        "WEB_UI_PORT=$webPort",
+        "WEBHOOK_PORT=$webhookPort",
         ""
     )
+    if ($addInstance) {
+        $envLines += @(
+            "# Additional instance: names and ports that don't collide with the others",
+            "CONTAINER_NAME=$containerName",
+            "GLANCES_PORT=$glancesPort",
+            "INSTANCE_NAME=$instanceName",
+            ""
+        )
+    }
     if ($dockerRuntime -eq "nvidia") {
         $envLines += @(
             "DOCKER_RUNTIME=nvidia",
@@ -285,6 +338,13 @@ if (Test-Path $envFile) {
     }
     $envLines | Set-Content $envFile
     Write-Ok ".env written to $InstallDir\.env"
+}
+
+# An existing .env (re-run on an installed folder) keeps its own ports
+foreach ($pair in @(@("WEB_UI_PORT", "webPort"), @("WEBHOOK_PORT", "webhookPort"))) {
+    $m = Select-String -Path $envFile -Pattern "^$($pair[0])=(\d+)" | Select-Object -First 1
+    if ($m) { Set-Variable -Name $pair[1] -Value ([int]$m.Matches[0].Groups[1].Value) }
+    elseif (-not $addInstance) { Set-Variable -Name $pair[1] -Value $(if ($pair[0] -eq "WEB_UI_PORT") { 8000 } else { 9000 }) }
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -303,6 +363,28 @@ if ($LASTEXITCODE -ne 0) {
 Pop-Location
 Write-Ok "Container started"
 
+# Instances installed before GPU sharing don't take turns on the GPU until
+# they run the current docker-compose.yml.
+if ($addInstance) {
+    foreach ($entry in $existing) {
+        $name, $dir = $entry -split '\|', 2
+        $shares = (Invoke-Docker inspect $name --format '{{range .Mounts}}{{if eq .Destination `/gpu-slots`}}yes{{end}}{{end}}') -join ""
+        if ($shares -match "yes") { continue }
+        if ($dir -and (Test-Path (Join-Path $dir ".git"))) {
+            $upd = Read-Host "  Update '$name' so it takes turns on the GPU with this one (git pull + restart)? [Y/n]"
+            if ($upd -notmatch "^[Nn]") {
+                Push-Location $dir
+                git pull --ff-only 2>&1 | Out-Null
+                docker compose up -d 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+                Pop-Location
+                continue
+            }
+        }
+        Write-Warn "'$name' won't take turns on the GPU until it's updated: in its folder run"
+        Write-Warn "  git pull; docker compose pull; docker compose up -d"
+    }
+}
+
 # ════════════════════════════════════════════════════════════════════════════
 # FIREWALL RULES (requires elevation)
 # ════════════════════════════════════════════════════════════════════════════
@@ -310,7 +392,7 @@ Write-Host ""
 Write-Step "Configuring Windows Firewall (requires Administrator)..."
 $scriptPath = $MyInvocation.MyCommand.Path
 Start-Process powershell -Verb RunAs -Wait -ArgumentList `
-    "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -RegisterOnly"
+    "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -RegisterOnly -Ports $webPort,$webhookPort"
 Write-Ok "Firewall rules applied"
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -338,9 +420,12 @@ Write-Host "━━━━━━━━━━━━━━━━━━━━━━�
 Write-Host "  py-captions-for-channels is running!" -ForegroundColor Green
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Web UI (this machine):  http://localhost:8000" -ForegroundColor White
+Write-Host "  Web UI (this machine):  http://localhost:$webPort" -ForegroundColor White
 if ($hostIp) {
-    Write-Host "  Web UI (LAN):           http://${hostIp}:8000" -ForegroundColor White
+    Write-Host "  Web UI (LAN):           http://${hostIp}:$webPort" -ForegroundColor White
+}
+if ($addInstance) {
+    Write-Host "  Instance:               $instanceName ($containerName)" -ForegroundColor White
 }
 Write-Host ""
 Write-Host "  Repository:  $InstallDir" -ForegroundColor DarkGray

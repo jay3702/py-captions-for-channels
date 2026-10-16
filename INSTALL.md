@@ -11,6 +11,10 @@ Both tracks end at the same place: a running Docker container with a web dashboa
 
 ## Quick Install
 
+> **Several Channels DVRs, one GPU machine?** Install once per DVR on the GPU
+> machine: run the same installer again and choose to add another instance.
+> See [docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md).
+
 ### Linux
 
 Run this on your server (Ubuntu, Debian, Fedora, RHEL/Rocky/Alma, or openSUSE). No prerequisites needed beyond `curl` and `sudo` access:

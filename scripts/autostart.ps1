@@ -41,6 +41,42 @@ function Write-Ok($msg)   { Write-Host "OK  $msg" -ForegroundColor Green }
 function Write-Step($msg) { Write-Host ">>> $msg" -ForegroundColor Cyan }
 function Write-Warn($msg) { Write-Host "!   $msg" -ForegroundColor Yellow }
 
+# Web UI + webhook host ports of every py-captions instance in the distro
+# (several instances can share this PC's GPU, each on its own ports — see
+# docs/MULTI_INSTANCE.md). Falls back to 8000/9000 before any instance exists.
+function Get-InstancePorts {
+    $ErrorActionPreference = "Continue"   # native stderr must not be fatal here
+    $ports = @()
+    try {
+        # --exec: no Linux shell in between, so the template's $ signs and
+        # backticks reach docker untouched.
+        $ids = @(@(wsl -d $Distro --exec docker ps -aq --filter "label=com.docker.compose.service=py-captions" 2>$null) |
+            ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+        if ($ids) {
+            $tmpl = '{{range $p, $b := .HostConfig.PortBindings}}{{if ne $p `61208/tcp`}}{{range $b}}{{.HostPort}} {{end}}{{end}}{{end}}'
+            $out = (wsl -d $Distro --exec docker inspect --format $tmpl @ids 2>$null) -join " "
+            $ports = @($out -split '\s+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ })
+        }
+    } catch { }
+    if (-not $ports) { $ports = @(8000, 9000) }
+    return @($ports | Sort-Object -Unique)
+}
+
+function Add-FirewallRules([int[]]$Ports) {
+    foreach ($port in $Ports) {
+        $ruleName = switch ($port) {
+            8000    { "py-captions Web UI" }
+            9000    { "py-captions Webhook" }
+            default { "py-captions TCP $port" }
+        }
+        if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
+            New-NetFirewallRule -DisplayName $ruleName -Direction Inbound `
+                -Protocol TCP -LocalPort $port -Action Allow | Out-Null
+            Write-Ok "Firewall: allowed inbound TCP $port ($ruleName)"
+        }
+    }
+}
+
 # ── Require an elevated session — exit clearly if not Administrator ─────────
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
                [Security.Principal.WindowsBuiltInRole]"Administrator")
@@ -59,12 +95,13 @@ if (-not $isAdmin) {
 if ($ProxyOnly) {
     if (-not $WslIp) { exit 1 }
     Write-Step "Refreshing portproxy rules (WSL2 IP: $WslIp)..."
-    foreach ($port in @(8000, 9000)) {
+    $InstancePorts = Get-InstancePorts
+    foreach ($port in $InstancePorts) {
         netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>$null | Out-Null
         netsh interface portproxy add    v4tov4 listenport=$port listenaddress=0.0.0.0 `
             connectport=$port connectaddress=$WslIp | Out-Null
     }
-    Write-Ok "Portproxy: LAN:8000 and LAN:9000 -> WSL2 ($WslIp)"
+    Write-Ok "Portproxy: LAN ports $($InstancePorts -join ', ') -> WSL2 ($WslIp)"
     exit 0
 }
 
@@ -96,16 +133,9 @@ if (-not $TriggerType) {
 }
 
 # ── Firewall rules ────────────────────────────────────────────────────────
-foreach ($entry in @(
-    @{ Port = 8000; Name = "py-captions Web UI" },
-    @{ Port = 9000; Name = "py-captions Webhook" }
-)) {
-    if (-not (Get-NetFirewallRule -DisplayName $entry.Name -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule -DisplayName $entry.Name -Direction Inbound `
-            -Protocol TCP -LocalPort $entry.Port -Action Allow | Out-Null
-        Write-Ok "Firewall: allowed inbound TCP $($entry.Port) ($($entry.Name))"
-    }
-}
+# Re-checked below once Docker is running, in case it wasn't up yet here
+$InstancePorts = Get-InstancePorts
+Add-FirewallRules $InstancePorts
 
 # ── .wslconfig — mirrored networking (Win 11 22H2+) ──────────────────────
 $osBuild = [System.Environment]::OSVersion.Version.Build
@@ -134,14 +164,14 @@ if ($osBuild -ge 22621) {
         $useMirrored = $true
     }
     if ($useMirrored) {
-        foreach ($port in @(8000, 9000)) {
+        foreach ($port in $InstancePorts) {
             netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>$null | Out-Null
         }
     }
 }
 if (-not $useMirrored) {
     Write-Step "Setting up portproxy placeholder rules for LAN access..."
-    foreach ($port in @(8000, 9000)) {
+    foreach ($port in $InstancePorts) {
         netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>$null | Out-Null
         netsh interface portproxy add v4tov4 listenport=$port listenaddress=0.0.0.0 `
             connectport=$port connectaddress=127.0.0.1 | Out-Null
@@ -289,6 +319,11 @@ if ($ready) {
     Write-Warn "systemd did not report ready within 60 s — Docker may need a moment."
 }
 
+# Docker is up now: pick up every instance's ports (a newly added instance
+# may use ports other than 8000/9000)
+$InstancePorts = Get-InstancePorts
+Add-FirewallRules $InstancePorts
+
 # ── Portproxy refresh (non-mirrored only) ─────────────────────────────────
 if (-not $useMirrored) {
     Write-Step "Refreshing LAN portproxy rules..."
@@ -300,12 +335,12 @@ if (-not $useMirrored) {
         Start-Sleep -Seconds 3
     }
     if ($wslIp) {
-        foreach ($port in @(8000, 9000)) {
+        foreach ($port in $InstancePorts) {
             netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>$null | Out-Null
             netsh interface portproxy add    v4tov4 listenport=$port listenaddress=0.0.0.0 `
                 connectport=$port connectaddress=$wslIp | Out-Null
         }
-        Write-Ok "LAN access configured — other devices can reach http://$(hostname):8000"
+        Write-Ok "LAN access configured for ports $($InstancePorts -join ', ')"
     } else {
         Write-Warn "Could not determine WSL2 IP — portproxy skipped. LAN access may not work."
     }
@@ -315,8 +350,8 @@ if (-not $useMirrored) {
 
 $taskNote = if ($TriggerType -eq "Boot") { "at system boot (before login)" } else { "at Windows logon" }
 Write-Host ""
-Write-Host "  Web dashboard (this machine):  http://localhost:8000" -ForegroundColor White
-Write-Host "  Web dashboard (LAN):           http://$(hostname):8000" -ForegroundColor White
+Write-Host "  Ports open for LAN access:     $($InstancePorts -join ', ')" -ForegroundColor White
+Write-Host "  Web dashboard (LAN):           http://$(hostname):<web UI port>" -ForegroundColor White
 Write-Host "  Startup task:                  registered ($taskNote)" -ForegroundColor DarkGray
 Write-Host ""
-Write-Ok "All done — open http://localhost:8000 in your browser"
+Write-Ok "All done — open the web UI address the installer showed (http://localhost:8000 for a first install)"

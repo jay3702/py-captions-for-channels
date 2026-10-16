@@ -256,7 +256,11 @@ _mount_nfs_export() {
 # the share is temporarily unreachable at boot.
 _install_media_mount_service() {
     local protocol="$1" mount_point="$2" server="$3" share_or_export="$4" cred_file="${5:-}"
-    local mount_script=/usr/local/bin/py-captions-mount.sh
+    # Additional instances (see _pcc_* below) get their own unit and script so
+    # installing one never replaces another instance's mount.
+    local sfx="${PCC_INSTANCE_SUFFIX:-}"
+    local unit="py-captions-mount${sfx}.service"
+    local mount_script="/usr/local/bin/py-captions-mount${sfx}.sh"
 
     if [[ "$protocol" == "cifs" ]]; then
         sudo tee "$mount_script" >/dev/null <<SVC_SCRIPT
@@ -287,7 +291,7 @@ SVC_SCRIPT
     fi
     sudo chmod +x "$mount_script"
 
-    sudo tee /etc/systemd/system/py-captions-mount.service >/dev/null <<SVC_UNIT
+    sudo tee "/etc/systemd/system/${unit}" >/dev/null <<SVC_UNIT
 [Unit]
 Description=Mount recordings share for py-captions-for-channels
 After=network-online.target
@@ -304,12 +308,86 @@ WantedBy=multi-user.target
 SVC_UNIT
 
     sudo mkdir -p /etc/systemd/system/docker.service.d
-    sudo tee /etc/systemd/system/docker.service.d/py-captions-mount.conf >/dev/null <<SVC_OVERRIDE
+    sudo tee "/etc/systemd/system/docker.service.d/py-captions-mount${sfx}.conf" >/dev/null <<SVC_OVERRIDE
 [Unit]
-After=py-captions-mount.service
-Wants=py-captions-mount.service
+After=${unit}
+Wants=${unit}
 SVC_OVERRIDE
 
     sudo systemctl daemon-reload >>"${LOG:-/dev/null}" 2>&1 || true
-    sudo systemctl enable py-captions-mount.service >>"${LOG:-/dev/null}" 2>&1 || true
+    sudo systemctl enable "${unit}" >>"${LOG:-/dev/null}" 2>&1 || true
+}
+
+# ── Multiple instances on one Docker host ────────────────────────────────────
+# Several instances (one per Channels DVR) can share one GPU machine; they
+# take turns on the GPU through the shared py-captions-gpu-slots volume (see
+# docker-compose.yml). These helpers let an installer notice an existing
+# instance and give the new one names and ports that don't collide with it.
+
+_PCC_SERVICE_LABEL="com.docker.compose.service=py-captions"
+
+_pcc_docker() {
+    command -v docker &>/dev/null || return 1
+    docker "$@" 2>/dev/null || sudo -n docker "$@" 2>/dev/null
+}
+
+# One line per existing instance (running or stopped): "<container>|<compose dir>"
+_pcc_existing_instances() {
+    _pcc_docker ps -a --filter "label=${_PCC_SERVICE_LABEL}" \
+        --format '{{.Names}}|{{.Label "com.docker.compose.project.working_dir"}}' || true
+}
+
+# Host ports reserved by any container, running or stopped — a stopped
+# instance isn't listening, but would fail to start if its port were reused.
+_pcc_container_ports() {
+    local ids
+    ids=$(_pcc_docker ps -aq) || return 0
+    [[ -n "$ids" ]] || return 0
+    # shellcheck disable=SC2086
+    _pcc_docker inspect --format \
+        '{{range $p, $b := .HostConfig.PortBindings}}{{range $b}}{{.HostPort}} {{end}}{{end}}' \
+        $ids | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u || true
+}
+
+_pcc_port_in_use() {
+    local p="$1"
+    ss -tlnH "sport = :${p}" 2>/dev/null | grep -q ":${p}" && return 0
+    grep -qx "$p" <<<"${_PCC_USED_PORTS:-}"
+}
+
+# First port >= $1 that is neither listening nor reserved by a container.
+# Call _pcc_scan_ports first to load container reservations.
+_pcc_free_port() {
+    local p="$1"
+    while _pcc_port_in_use "$p"; do p=$((p + 1)); done
+    echo "$p"
+}
+
+_pcc_scan_ports() {
+    _PCC_USED_PORTS=$(_pcc_container_ports)
+}
+
+# "Bedroom DVR" -> "bedroom-dvr" (for container, folder and mount names)
+_pcc_slug() {
+    local s
+    s=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-24)
+    echo "${s:-dvr2}"
+}
+
+# True if the container already mounts a GPU slot directory, i.e. it runs a
+# docker-compose.yml new enough to share the GPU with other instances.
+_pcc_shares_gpu() {
+    _pcc_docker inspect "$1" \
+        --format '{{range .Mounts}}{{if eq .Destination "/gpu-slots"}}yes{{end}}{{end}}' \
+        | grep -q yes
+}
+
+# Bring an existing instance up to date (git checkout + compose installs only)
+# so it shares the GPU. Returns 1 if it isn't a checkout we can update.
+_pcc_update_instance() {
+    local dir="$1"
+    [[ -d "$dir/.git" && -f "$dir/docker-compose.yml" ]] || return 1
+    git -C "$dir" pull --ff-only >>"${LOG:-/dev/null}" 2>&1 || return 1
+    (cd "$dir" && _pcc_docker compose pull >>"${LOG:-/dev/null}" 2>&1 \
+        && _pcc_docker compose up -d >>"${LOG:-/dev/null}" 2>&1)
 }

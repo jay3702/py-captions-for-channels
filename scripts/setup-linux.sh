@@ -224,22 +224,19 @@ fi
 # the busy port later and fail outright (or, worse, sit in a silent
 # restart-loop under restart:unless-stopped). Most common cause on a Docker
 # host: Portainer's own web UI already owns 9000.
-_find_free_port() {
-    local p="$1"
-    while ss -tlnH "sport = :${p}" 2>/dev/null | grep -q ":${p}"; do
-        p=$((p + 1))
-    done
-    echo "$p"
+# Also skips ports reserved by existing containers (running or stopped), such
+# as another py-captions instance on this machine.
+_pick_ports() {
+    _pcc_scan_ports
+    WEBHOOK_PORT=$(_pcc_free_port 9000)
+    WEB_UI_PORT=$(_pcc_free_port 8000)
+    GLANCES_PORT=$(_pcc_free_port 61208)
 }
-
-WEBHOOK_PORT=9000
-if ss -tlnH "sport = :9000" 2>/dev/null | grep -q ":9000"; then
-    WEBHOOK_PORT=$(_find_free_port 9001)
+_pick_ports
+if [[ "$WEBHOOK_PORT" != 9000 ]]; then
     _PREFLIGHT_WARN+=("Port 9000 already in use (often Portainer) — using ${WEBHOOK_PORT} for the webhook port instead.")
 fi
-WEB_UI_PORT=8000
-if ss -tlnH "sport = :8000" 2>/dev/null | grep -q ":8000"; then
-    WEB_UI_PORT=$(_find_free_port 8001)
+if [[ "$WEB_UI_PORT" != 8000 ]]; then
     _PREFLIGHT_WARN+=("Port 8000 already in use — using ${WEB_UI_PORT} for the web UI instead.")
 fi
 
@@ -285,19 +282,34 @@ Allow these ports now?" 12; then
     fi
 fi
 
-# ── Stale container ──────────────────────────────────────────────────────────
-# Use sudo so this works even when the user's docker group membership isn't
-# active yet (e.g. Docker was just installed in this same session).
-if command -v docker &>/dev/null && \
+# ── Existing installation: add another instance, or replace it ──────────────
+# Several instances (one per Channels DVR) can share this machine's GPU — see
+# docs/MULTI_INSTANCE.md. _pcc_docker falls back to sudo, so this works even
+# when the user's docker group membership isn't active yet.
+ADD_INSTANCE=false
+INSTANCE_NAME="" CONTAINER_NAME="" PCC_INSTANCE_SUFFIX=""
+_PCC_INSTANCES=$(_pcc_existing_instances)
+if [[ -z "$_PCC_INSTANCES" ]] && command -v docker &>/dev/null && \
    sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^py-captions'; then
-    if wt_yesno "Pre-flight: Existing Container" \
-"A Docker container named 'py-captions' already exists.
+    # A container from a much older, pre-compose-label install
+    _PCC_INSTANCES="py-captions-for-channels|"
+fi
+if [[ -n "$_PCC_INSTANCES" ]]; then
+    _pcc_list=$(cut -d'|' -f1 <<<"$_PCC_INSTANCES" | sed 's/^/    • /')
+    _existing_choice=$(wt_menu "Existing Installation" \
+"py-captions-for-channels is already installed on this machine:
 
-This may be a leftover from a previous install.  Remove it now so
-docker compose can start a fresh container?" 12; then
-        sudo docker rm -f py-captions py-captions-for-channels >> "$LOG" 2>&1 || true
+${_pcc_list}
+
+Add another instance for a different Channels DVR? Each instance has
+its own settings and web UI, and they take turns on the GPU." 18 2 \
+        "add"     "Add an instance for another Channels DVR" \
+        "replace" "Remove the existing container and reinstall it") || cancelled
+    if [[ "$_existing_choice" == "add" ]]; then
+        ADD_INSTANCE=true
     else
-        _PREFLIGHT_WARN+=("Existing container kept — docker compose may fail.")
+        sudo docker rm -f py-captions py-captions-for-channels >> "$LOG" 2>&1 || true
+        _pick_ports
     fi
 fi
 
@@ -749,6 +761,52 @@ Distro: ${DISTRO_ID} ${DISTRO_VER}  (${PKG_MGR})" 18
 # GATHER CONFIGURATION  (all questions up front)
 # ════════════════════════════════════════════════════════════════════════════
 
+# ── Additional instance: name, container name, folder ───────────────────────
+UPDATE_INSTANCES=()   # existing instances to update so they share the GPU
+MANUAL_UPDATE=()      # ... that we can't update ourselves (e.g. Portainer)
+if [[ "$ADD_INSTANCE" == true ]]; then
+    INSTANCE_NAME=""
+    while [[ -z "$INSTANCE_NAME" ]]; do
+        INSTANCE_NAME=$(wt_input "Instance Name" \
+"A name for this instance — usually the DVR it captions.
+The other instances show it while it's using the GPU.
+
+Example:  Bedroom DVR" "DVR 2") || cancelled
+        INSTANCE_NAME=$(tr -d '|"\\' <<<"$INSTANCE_NAME")
+    done
+    CONTAINER_NAME="py-captions-$(_pcc_slug "$INSTANCE_NAME")"
+    while grep -q "^${CONTAINER_NAME}|" <<<"$_PCC_INSTANCES"; do
+        CONTAINER_NAME="${CONTAINER_NAME}-2"
+    done
+    # Own mount service / credentials file names (see dvr-discovery.sh)
+    PCC_INSTANCE_SUFFIX="-${CONTAINER_NAME#py-captions-}"
+    DEFAULT_DEPLOY_DIR="$(dirname "$DEFAULT_DEPLOY_DIR")/${CONTAINER_NAME}"
+
+    # Instances installed before GPU sharing need updating to take turns
+    while IFS='|' read -r _name _dir; do
+        [[ -n "$_name" ]] || continue
+        _pcc_shares_gpu "$_name" && continue
+        if [[ -d "$_dir/.git" ]]; then
+            UPDATE_INSTANCES+=("$_dir")
+        else
+            MANUAL_UPDATE+=("$_name")
+        fi
+    done <<<"$_PCC_INSTANCES"
+    if [[ ${#UPDATE_INSTANCES[@]} -gt 0 ]]; then
+        if ! wt_yesno "Update Existing Instance" \
+"These instances predate GPU sharing:
+
+$(printf '    %s\n' "${UPDATE_INSTANCES[@]}")
+They need updating (git pull + restart, about a minute) so the
+instances take turns on the GPU instead of running jobs at once.
+
+Update them during this install?" 16; then
+            MANUAL_UPDATE+=("${UPDATE_INSTANCES[@]}")
+            UPDATE_INSTANCES=()
+        fi
+    fi
+fi
+
 # ── Deploy directory ──────────────────────────────────────────────────────────
 DEPLOY_DIR=$(wt_input "Deploy Location" \
     "Where should the repository be stored?\n(Press Enter for the default)" \
@@ -811,8 +869,10 @@ STORAGE_LOC=$(wt_menu "Recordings Storage" \
     "local"  "On this machine  (recordings are on a local disk or mount)" \
     "remote" "On a remote machine  (NAS or network share)") || cancelled
 
-NAS_SERVER="" NAS_SHARE="" NAS_EXPORT="" MOUNT_POINT="/mnt/channels"
-CRED_FILE="/etc/cifs-credentials-py-captions"
+NAS_SERVER="" NAS_SHARE="" NAS_EXPORT=""
+# An additional instance mounts its DVR's share at its own mount point
+MOUNT_POINT="/mnt/channels${PCC_INSTANCE_SUFFIX}"
+CRED_FILE="/etc/cifs-credentials-py-captions${PCC_INSTANCE_SUFFIX}"
 USE_CIFS=false; USE_NFS=false; USE_LOCAL=false
 STORAGE_TYPE="other"
 
@@ -904,7 +964,7 @@ Tip: hidden shares end with \$ and won't appear in anonymous scans." \
 
         MOUNT_POINT=$(wt_input "Mount Point" \
             "Local directory to mount the remote share at:" \
-            "/mnt/channels") || cancelled
+            "$MOUNT_POINT") || cancelled
         ;;
 esac
 
@@ -954,7 +1014,7 @@ fi
 wt_yesno "Confirm Settings" \
 "Ready to install with these settings:
 
-  Deploy dir    : $DEPLOY_DIR
+  Deploy dir    : $DEPLOY_DIR$([[ "$ADD_INSTANCE" == true ]] && printf '\n  Instance      : %s (%s)' "$INSTANCE_NAME" "$CONTAINER_NAME")
   DVR URL       : $CHANNELS_DVR_URL
   Storage       : ${_STORAGE_SUMMARY}
   Event source  : ${_EVENT_SUMMARY}
@@ -962,7 +1022,7 @@ wt_yesno "Confirm Settings" \
   Webhook port  : ${WEBHOOK_PORT}$([[ "$WEBHOOK_PORT" != "9000" ]] && echo " (9000 was busy)")
   Distro        : ${DISTRO_ID} ${DISTRO_VER}
 
-Proceed with installation?" 19 || cancelled
+Proceed with installation?" 20 || cancelled
 
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 1 — Docker Engine
@@ -1363,6 +1423,13 @@ set_env "CHANNELS_DVR_URL" "$CHANNELS_DVR_URL"
 set_env "WEBHOOK_PORT" "$WEBHOOK_PORT"
 set_env "WEB_UI_PORT"  "$WEB_UI_PORT"
 
+# Additional instance: names and ports that don't collide with the others
+if [[ "$ADD_INSTANCE" == true ]]; then
+    set_env "CONTAINER_NAME" "$CONTAINER_NAME"
+    set_env "GLANCES_PORT"   "$GLANCES_PORT"
+    set_env "INSTANCE_NAME"  "$INSTANCE_NAME"
+fi
+
 if [[ "$GPU_OK" == true ]]; then
     set_env "DOCKER_RUNTIME"         "nvidia"
     set_env "NVIDIA_VISIBLE_DEVICES" "all"
@@ -1569,6 +1636,25 @@ _launch_step() {
 }
 gauge "Starting" "Pulling image and starting container (~5 GB first run)..." _launch_step
 
+# Outside the gauge (a subshell), so failures land in MANUAL_UPDATE.
+# Same image as above, already pulled: quick.
+for _dir in "${UPDATE_INSTANCES[@]}"; do
+    wt_info "Updating" "Updating the instance in ${_dir} so it shares the GPU..."
+    _pcc_update_instance "$_dir" || MANUAL_UPDATE+=("$_dir")
+done
+
+if [[ ${#MANUAL_UPDATE[@]} -gt 0 ]]; then
+    wt_msg "Update Other Instances" \
+"Until they're updated, these instances won't take turns on the GPU
+with this one:
+
+$(printf '    %s\n' "${MANUAL_UPDATE[@]}")
+Installed from a folder: run 'git pull', then
+  docker compose pull && docker compose up -d
+in that folder. Portainer: replace the stack's compose file with the
+current docker-compose.yml and update it with 'Re-pull image' on." 18 || true
+fi
+
 # ════════════════════════════════════════════════════════════════════════════
 # WAIT FOR HEALTHY STARTUP
 # ════════════════════════════════════════════════════════════════════════════
@@ -1597,7 +1683,7 @@ _STARTUP_RESULT=$(mktemp)
 if [[ "$(cat "$_STARTUP_RESULT")" == "ok" ]]; then
     STARTUP_STATUS="\n\nWeb UI is up and responding at ${WEB_UI_URL}"
 else
-    STARTUP_LOGS=$(docker logs --tail 20 py-captions-for-channels 2>&1 | tail -20 || true)
+    STARTUP_LOGS=$(docker logs --tail 20 "${CONTAINER_NAME:-py-captions-for-channels}" 2>&1 | tail -20 || true)
     wt_msg "Startup Warning" \
 "The web UI did not respond within 90 seconds.
 
@@ -1607,7 +1693,7 @@ ${STARTUP_LOGS}
 
 Setup is otherwise complete.  Try opening
 ${WEB_UI_URL} in a moment, or run:
-  docker logs py-captions-for-channels
+  docker logs ${CONTAINER_NAME:-py-captions-for-channels}
 
 Full log: ${LOG}" 24 || true
     STARTUP_STATUS="\n\nNOTE: Web UI did not respond during setup — check logs."
